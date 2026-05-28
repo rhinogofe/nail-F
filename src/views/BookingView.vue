@@ -99,6 +99,22 @@ function isClosedDay(date) {
   return blocks.some((b) => b.is_full_day)
 }
 
+function findFirstOpenDate(fromDate) {
+  let cursor = startOfDay(fromDate)
+  while (cursor <= maxBookDate) {
+    const iso = toLocalYmd(cursor)
+    if (!isClosedDay(iso)) return iso
+    cursor = addDays(cursor, 1)
+  }
+  return null
+}
+
+function alignWindowToDate(iso) {
+  const target = parseYmdLocal(iso)
+  const start = target < todayDate ? todayDate : target
+  windowStartDate.value = startOfDay(start)
+}
+
 function isHourBlocked(hour) {
   return blockedSlots.value.some((b) => {
     if (b.is_full_day) return true
@@ -137,15 +153,15 @@ async function loadDate() {
     ])
 
     if (isClosedDay(beforeLoadDate)) {
-      await refreshBlocksAndEnsureSelection()
+      await refreshBlocksAndEnsureSelection(true)
 
-      if (selectedDate.value !== beforeLoadDate) {
+      if (!isClosedDay(selectedDate.value)) {
         await loadDate()
         return
       }
 
       bookingStore.bookingsByDate[selectedDate.value] = []
-      errorMessage.value = 'วันนี้ร้านปิดรับคิว'
+      errorMessage.value = 'ช่วงนี้ร้านปิดรับคิวทั้งวัน กรุณาเลือกวันอื่น'
       return
     }
   } catch (error) {
@@ -323,10 +339,25 @@ function selectDate(date) {
   loadDate()
 }
 
-async function refreshBlocksAndEnsureSelection() {
-  const from = toLocalYmd(windowStartDate.value)
-  const to = toLocalYmd(addDays(windowStartDate.value, visibleDayCount.value - 1))
+async function refreshBlocksAndEnsureSelection(fullRange = false) {
+  const from = fullRange ? toLocalYmd(todayDate) : toLocalYmd(windowStartDate.value)
+  const to = fullRange
+    ? toLocalYmd(maxBookDate)
+    : toLocalYmd(addDays(windowStartDate.value, visibleDayCount.value - 1))
   await bookingStore.fetchBlocksRange(from, to)
+
+  if (fullRange) {
+    const firstOpen = findFirstOpenDate(todayDate)
+    if (!firstOpen) {
+      errorMessage.value = 'ไม่มีวันเปิดรับคิวในช่วง 30 วันนี้'
+      return
+    }
+    if (isClosedDay(selectedDate.value) || !visibleWeekDays.value.find((d) => d.iso === selectedDate.value)) {
+      selectedDate.value = firstOpen
+      alignWindowToDate(firstOpen)
+    }
+    return
+  }
 
   if (!visibleWeekDays.value.find((d) => d.iso === selectedDate.value)) {
     if (visibleWeekDays.value[0]) {
@@ -374,7 +405,7 @@ function goToPayment(booking) {
 onMounted(async () => {
   updateScreenMode()
   window.addEventListener('resize', updateScreenMode)
-  await refreshBlocksAndEnsureSelection()
+  await refreshBlocksAndEnsureSelection(true)
   await Promise.all([
     loadDate(),
     bookingStore.fetchMyBookings().catch(() => null),
