@@ -16,8 +16,8 @@ const errorMessage = ref('')
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 
+// OAuth ปิดไว้ก่อน — เปิดใช้เมื่อตั้งค่า env บน server แล้ว
 const providers = [
-  { key: 'google', label: 'เข้าสู่ระบบด้วย Google', icon: 'G' },
   { key: 'line', label: 'เข้าสู่ระบบด้วย LINE', icon: 'L' },
   { key: 'facebook', label: 'เข้าสู่ระบบด้วย Facebook', icon: 'f' },
 ]
