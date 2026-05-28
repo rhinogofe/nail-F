@@ -321,6 +321,20 @@ body {
   font-size: 22px;
 }
 
+.booking-strip-hint {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.booking-strip-hint strong {
+  color: #0f766e;
+}
+
 .week-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

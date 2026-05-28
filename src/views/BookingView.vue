@@ -459,7 +459,14 @@ onUnmounted(() => {
           <strong>{{ day.day }}</strong>
         </button>
       </div>
-      <p v-if="visibleWeekDays.length === 0" class="muted">ช่วงวันที่นี้ปิดทั้งวันทั้งหมด</p>
+      <p v-if="visibleWeekDays.length === 0" class="booking-strip-hint muted">
+        <template v-if="canGoNext">
+          ช่วงวันที่นี้ร้านปิดรับคิวทั้งวัน — กด <strong>ถัดไป</strong> เพื่อดูวันเพิ่มเติม
+        </template>
+        <template v-else>
+          ไม่มีวันเปิดรับคิวในช่วง 30 วันนี้
+        </template>
+      </p>
 
     
 
