@@ -339,6 +339,28 @@ async function cancelUnpaid(id) {
   }
 }
 
+async function cancelPaid(id) {
+  const ok = await Swal.fire({
+    title: 'ยืนยันยกเลิกคิวชำระแล้ว',
+    html: 'ใช้กรณีลูกค้าขอเลื่อนวัน/ยกเลิกคิว<br>ช่วงเวลานี้จะว่างให้จองใหม่ได้',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยันยกเลิก',
+    cancelButtonText: 'ปิด',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(`/api/admin/bookings/${id}/cancel-paid`)
+    message.value = data?.message || 'ยกเลิกคิวชำระแล้วแล้ว'
+    await loadBookings()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ยกเลิกคิวไม่สำเร็จ'
+  }
+}
+
 function resetOptionForm() {
   optionForm.value = {
     id: null,
@@ -545,6 +567,13 @@ onMounted(loadNailOptions)
             @click="markDone(item.id)"
           >
             ทำเสร็จ +10 แต้ม
+          </button>
+          <button
+            v-if="item.status === 'pending'"
+            class="btn danger"
+            @click="cancelPaid(item.id)"
+          >
+            ยกเลิกคิว (เลื่อนวัน)
           </button>
         </div>
       </div>

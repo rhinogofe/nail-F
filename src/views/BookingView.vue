@@ -499,7 +499,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-      <p v-if="visibleSlots.length === 0" class="muted">วันนี้ไม่มีช่วงเวลาที่เปิดรับคิว</p>
+      <p v-if="visibleSlots.length === 0" class="muted">วันนี้ไม่มีช่วงเวลาที่เปิดรับคิวสามารถกดปุ่ม (ถัดไป) เพื่อดูวันที่ต่อไป</p>
     </section>
   </main>
 </template>
