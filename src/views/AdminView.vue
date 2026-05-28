@@ -476,7 +476,9 @@ async function removeNailOption(item) {
     if (optionForm.value.id === item.id) resetOptionForm()
     await loadNailOptions()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'ลบบริการไม่สำเร็จ'
+    const msg = error?.response?.data?.error || 'ลบบริการไม่สำเร็จ'
+    errorMessage.value = msg
+    await Swal.fire({ title: 'ลบไม่สำเร็จ', text: msg, icon: 'error' })
   }
 }
 
