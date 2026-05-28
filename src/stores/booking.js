@@ -75,8 +75,9 @@ export const useBookingStore = defineStore('booking', {
       await this.fetchMyBookings()
       return data?.booking
     },
-    async fetchNailOptions() {
-      const { data } = await api.get('/api/bookings/options')
+    async fetchNailOptions(date) {
+      const params = date ? { date } : {}
+      const { data } = await api.get('/api/bookings/options', { params })
       this.nailOptions = data || []
       return this.nailOptions
     },

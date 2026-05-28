@@ -42,6 +42,8 @@ const optionForm = ref({
   price: 0,
   duration_min: 60,
   is_active: true,
+  show_from_date: '',
+  show_to_date: '',
 })
 const loading = ref(false)
 const message = ref('')
@@ -345,7 +347,18 @@ function resetOptionForm() {
     price: 0,
     duration_min: 60,
     is_active: true,
+    show_from_date: '',
+    show_to_date: '',
   }
+}
+
+function optionShowRangeText(item) {
+  const from = formatDateKey(item.show_from_date)
+  const to = formatDateKey(item.show_to_date)
+  if (!from && !to) return 'แสดงทุกวัน'
+  if (from && to) return `แสดง ${from} ถึง ${to}`
+  if (from) return `แสดงตั้งแต่ ${from}`
+  return `แสดงถึง ${to}`
 }
 
 async function loadNailOptions() {
@@ -365,6 +378,8 @@ function startEditOption(item) {
     price: Number(item.price),
     duration_min: Number(item.duration_min),
     is_active: Boolean(item.is_active),
+    show_from_date: formatDateKey(item.show_from_date) || '',
+    show_to_date: formatDateKey(item.show_to_date) || '',
   }
 }
 
@@ -388,12 +403,21 @@ async function saveNailOption() {
 
   message.value = ''
   errorMessage.value = ''
+  const showFrom = String(optionForm.value.show_from_date || '').trim()
+  const showTo = String(optionForm.value.show_to_date || '').trim()
+  if (showFrom && showTo && showFrom > showTo) {
+    errorMessage.value = 'วันเริ่มแสดงต้องไม่เกินวันสิ้นสุดแสดง'
+    return
+  }
+
   const payload = {
     option_name: name,
     description: String(optionForm.value.description || '').trim() || null,
     price: Number(optionForm.value.price),
     duration_min: Number(optionForm.value.duration_min),
     is_active: Boolean(optionForm.value.is_active),
+    show_from_date: showFrom || null,
+    show_to_date: showTo || null,
   }
 
   try {
@@ -545,7 +569,16 @@ onMounted(loadNailOptions)
           ระยะเวลา (นาที)
           <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
         </label>
+        <label>
+          แสดงตั้งแต่วันที่
+          <input v-model="optionForm.show_from_date" type="date" class="admin-input" />
+        </label>
+        <label>
+          แสดงถึงวันที่
+          <input v-model="optionForm.show_to_date" type="date" class="admin-input" />
+        </label>
       </div>
+      <p class="muted" style="margin: 0 0 10px">ว่างทั้งสองช่อง = แสดงทุกวัน (เช่น เกษตร) · กรอกช่วงวันเมื่อเปิดเฉพาะช่วง (เช่น จุฬา 28–29 มิ.ย.)</p>
       <div class="admin-form-row">
         <label class="admin-checkbox">
           <input v-model="optionForm.is_active" type="checkbox" />
@@ -566,6 +599,7 @@ onMounted(loadNailOptions)
           </span>
           <p class="muted">{{ item.description || '-' }}</p>
           <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
+          <p class="muted">{{ optionShowRangeText(item) }}</p>
         </div>
         <div class="row">
           <button class="btn" @click="startEditOption(item)">แก้ไข</button>
@@ -753,7 +787,7 @@ onMounted(loadNailOptions)
 }
 
 .admin-option-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .bulk-block-box {

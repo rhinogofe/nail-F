@@ -131,7 +131,10 @@ async function loadDate() {
   successMessage.value = ''
   try {
     const beforeLoadDate = selectedDate.value
-    await bookingStore.fetchByDate(selectedDate.value)
+    await Promise.all([
+      bookingStore.fetchByDate(selectedDate.value),
+      bookingStore.fetchNailOptions(selectedDate.value).catch(() => []),
+    ])
 
     if (isClosedDay(beforeLoadDate)) {
       await refreshBlocksAndEnsureSelection()
@@ -152,7 +155,11 @@ async function loadDate() {
 
 async function book(startHour) {
   if (!nailOptions.value.length) {
-    await Swal.fire({ title: 'ยังไม่มีรายการบริการ', text: 'กรุณาเพิ่ม Nailoption ก่อนจอง', icon: 'warning' })
+    await Swal.fire({
+      title: 'ไม่มีบริการให้เลือก',
+      text: 'วันนี้ยังไม่มีสถานที่/บริการที่เปิดรับจอง กรุณาเลือกวันอื่น',
+      icon: 'warning',
+    })
     return
   }
 
@@ -371,7 +378,6 @@ onMounted(async () => {
   await Promise.all([
     loadDate(),
     bookingStore.fetchMyBookings().catch(() => null),
-    bookingStore.fetchNailOptions().catch(() => []),
     loadMyCoupons(),
   ])
 })
