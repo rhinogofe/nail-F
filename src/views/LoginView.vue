@@ -96,9 +96,9 @@ async function loginWithPhone() {
         <button class="btn primary login-submit" :disabled="submitting" @click="loginWithPhone">
           {{ submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบด้วยชื่อและเบอร์' }}
         </button>
+        <p v-if="errorMessage" class="error" style="margin-top:8px">{{ errorMessage }}</p>
       </div>
-      <!-- <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-      <p class="muted divider-text">หรือเข้าสู่ระบบด้วย</p>
+      <!-- <p class="muted divider-text">หรือเข้าสู่ระบบด้วย</p>
 
       <a
         v-for="provider in loginLinks"

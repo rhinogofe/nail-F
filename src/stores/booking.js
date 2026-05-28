@@ -8,9 +8,17 @@ function toLocalYmd(date) {
   return `${y}-${m}-${d}`
 }
 
+function parseYmd(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 function normalizeDateKey(value) {
   if (!value) return ''
-  if (typeof value === 'string') return value.slice(0, 10)
+  if (typeof value === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+    return toLocalYmd(new Date(value))
+  }
   return toLocalYmd(new Date(value))
 }
 
@@ -45,8 +53,8 @@ export const useBookingStore = defineStore('booking', {
     },
     async fetchBlocksRange(from, to) {
       const { data } = await api.get('/api/bookings/blocks', { params: { from, to } })
-      const fromDate = new Date(from)
-      const toDate = new Date(to)
+      const fromDate = parseYmd(from)
+      const toDate = parseYmd(to)
       const dateCursor = new Date(fromDate)
       while (dateCursor <= toDate) {
         const key = toLocalYmd(dateCursor)
