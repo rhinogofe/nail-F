@@ -55,7 +55,112 @@ const adminTabs = [
   { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
   { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
   { key: 'blocks', label: 'ปิดร้าน', icon: 'ti-calendar-off' },
+  { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
+
+// ── Shop hours ─────────────────────────────
+const shopOpenHour = ref(9)
+const shopLastBookingHour = ref(18)
+const hourOptions = Array.from({ length: 23 }, (_, i) => i)
+
+// ── Advance days ────────────────────────────
+const advanceDays = ref(30)
+
+async function loadAdvanceDays() {
+  try {
+    const { data } = await api.get('/api/admin/settings/advance-days')
+    advanceDays.value = data.advance_days ?? 30
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดจำนวนวันล่วงหน้าไม่สำเร็จ'
+  }
+}
+
+async function saveAdvanceDays() {
+  if (!Number.isInteger(advanceDays.value) || advanceDays.value < 1 || advanceDays.value > 365) {
+    errorMessage.value = 'จำนวนวันต้องอยู่ระหว่าง 1-365'
+    return
+  }
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.patch('/api/admin/settings/advance-days', { advance_days: advanceDays.value })
+    message.value = `บันทึกแล้ว: ลูกค้าเห็นปฏิทิน ${advanceDays.value} วัน (รวมวันนี้)`
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
+  }
+}
+
+async function loadShopHours() {
+  try {
+    const { data } = await api.get('/api/admin/settings/shop-hours')
+    shopOpenHour.value = data.open_hour ?? 9
+    shopLastBookingHour.value = data.last_booking_hour ?? 18
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดเวลาร้านไม่สำเร็จ'
+  }
+}
+
+async function saveShopHours() {
+  if (shopOpenHour.value >= shopLastBookingHour.value - 1) {
+    errorMessage.value = 'เวลาเปิดต้องน้อยกว่าเวลาจองสุดท้ายอย่างน้อย 2 ชั่วโมง'
+    return
+  }
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.patch('/api/admin/settings/shop-hours', {
+      open_hour: shopOpenHour.value,
+      last_booking_hour: shopLastBookingHour.value,
+    })
+    message.value = `บันทึกเวลาร้านแล้ว: เปิด ${shopOpenHour.value}:00 – จองสุดท้าย ${shopLastBookingHour.value}:00 (ปิด ${shopLastBookingHour.value + 2}:00)`
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกเวลาร้านไม่สำเร็จ'
+  }
+}
+
+// ── Users ────────────────────────────────────
+const users = ref([])
+const userSearch = ref('')
+
+const filteredUsers = computed(() => {
+  const q = userSearch.value.trim().toLowerCase()
+  if (!q) return users.value
+  return users.value.filter(u =>
+    u.name?.toLowerCase().includes(q) ||
+    u.email?.toLowerCase().includes(q)
+  )
+})
+
+async function loadUsers() {
+  try {
+    const { data } = await api.get('/api/admin/users')
+    users.value = data
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดผู้ใช้ไม่สำเร็จ'
+  }
+}
+
+async function toggleAdmin(user) {
+  const next = !user.is_admin
+  const ok = await Swal.fire({
+    title: next ? 'ให้สิทธิ์แอดมิน' : 'ถอดสิทธิ์แอดมิน',
+    text: `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมินของ "${user.name}" ใช่ไหม`,
+    icon: 'question', showCancelButton: true,
+    confirmButtonText: 'ยืนยัน', cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+  try {
+    await api.patch(`/api/admin/users/${user.id}/set-admin`, { is_admin: next })
+    user.is_admin = next
+    message.value = `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมิน "${user.name}" แล้ว`
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'อัปเดตสิทธิ์ไม่สำเร็จ'
+  }
+}
+
+function providerLabel(p) {
+  return { google: 'Google', facebook: 'Facebook', line: 'LINE', phone: 'เบอร์โทร' }[p] || p
+}
 
 function switchTab(tab) {
   if (activeTab.value === tab) return
@@ -515,6 +620,9 @@ onMounted(loadBookings)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
 onMounted(loadNailOptions)
+onMounted(loadShopHours)
+onMounted(loadAdvanceDays)
+onMounted(loadUsers)
 </script>
 
 <template>
@@ -683,6 +791,48 @@ onMounted(loadNailOptions)
 
       <hr class="admin-divider" />
 
+      <h3>เวลาเปิด-ปิดร้าน</h3>
+      <p class="muted">กำหนดช่วงเวลาที่ลูกค้าสามารถเลือกจองได้ในหน้าจอง (ทุกคิวใช้เวลา 2 ชั่วโมง)</p>
+      <div class="admin-form-row" style="flex-wrap:wrap">
+        <label class="admin-label-grow">
+          เวลาเปิดร้าน
+          <select v-model.number="shopOpenHour" class="admin-input">
+            <option v-for="h in hourOptions" :key="h" :value="h">{{ String(h).padStart(2,'0') }}:00</option>
+          </select>
+        </label>
+        <label class="admin-label-grow">
+          จองสุดท้ายได้ถึง
+          <select v-model.number="shopLastBookingHour" class="admin-input">
+            <option v-for="h in hourOptions" :key="h" :value="h">{{ String(h).padStart(2,'0') }}:00 (ปิด {{ String(h+2).padStart(2,'0') }}:00)</option>
+          </select>
+        </label>
+        <button class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveShopHours">บันทึกเวลาร้าน</button>
+      </div>
+      <div class="shop-hours-preview">
+        <i class="ti ti-clock" style="font-size:16px;color:#e11d48"></i>
+        ลูกค้าจะเห็นช่วงเวลา
+        <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
+        (ปิดรับ {{ String(shopLastBookingHour + 2).padStart(2,'0') }}:00)
+      </div>
+
+      <hr class="admin-divider" />
+
+      <h3>จำนวนวันจองล่วงหน้า</h3>
+      <p class="muted">จำนวนวันที่ลูกค้าเห็นในปฏิทิน รวมวันนี้ (เช่น 7 = วันนี้ + อีก 6 วัน)</p>
+      <div class="admin-form-row">
+        <label class="admin-label-grow">
+          จองล่วงหน้าได้ (วัน)
+          <input v-model.number="advanceDays" type="number" min="1" max="365" step="1" class="admin-input" />
+        </label>
+        <button class="btn primary admin-action-btn" @click="saveAdvanceDays">บันทึก</button>
+      </div>
+      <div class="shop-hours-preview">
+        <i class="ti ti-calendar-event" style="font-size:16px;color:#e11d48"></i>
+        ลูกค้าเห็นปฏิทิน <strong>{{ advanceDays }} วัน</strong> (รวมวันนี้)
+      </div>
+
+      <hr class="admin-divider" />
+
       <h3>ใช้คูปองลูกค้า</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -794,6 +944,48 @@ onMounted(loadNailOptions)
         <button class="btn danger" @click="removeBlock(item.id)">ลบ</button>
       </div>
     </section>
+
+    <!-- ── ผู้ใช้ ── -->
+    <section v-show="activeTab === 'users'" class="card admin-section">
+      <h3>รายชื่อผู้ใช้</h3>
+      <div class="admin-form-row" style="margin-bottom:14px">
+        <label class="admin-label-grow">
+          ค้นหา
+          <input
+            v-model="userSearch"
+            type="text"
+            placeholder="ชื่อหรืออีเมล..."
+            class="admin-input"
+          />
+        </label>
+      </div>
+
+      <p v-if="filteredUsers.length === 0" class="muted">ไม่พบผู้ใช้</p>
+
+      <div v-for="u in filteredUsers" :key="u.id" class="admin-item user-item">
+        <div class="user-info">
+          <strong>{{ u.name }}</strong>
+          <span class="user-badge-provider">{{ providerLabel(u.provider) }}</span>
+          <p class="muted">{{ u.email || '-' }}</p>
+          <p class="muted">
+            แต้ม {{ u.total_points }} ·
+            จอง {{ u.total_bookings }} ครั้ง ·
+            เสร็จ {{ u.completed_bookings }} ครั้ง ·
+            สมัคร {{ formatDateKey(u.created_at) }}
+          </p>
+        </div>
+        <div class="row" style="flex-shrink:0">
+          <button
+            class="btn"
+            :class="u.is_admin ? 'danger' : ''"
+            @click="toggleAdmin(u)"
+          >
+            {{ u.is_admin ? 'ถอดแอดมิน' : 'ให้สิทธิ์แอดมิน' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
   </main>
 </template>
 
@@ -988,6 +1180,43 @@ onMounted(loadNailOptions)
 .badge-inactive {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.shop-hours-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.user-item {
+  align-items: flex-start;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.user-badge-provider {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+  vertical-align: middle;
 }
 
 @media (max-width: 820px) {

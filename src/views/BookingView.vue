@@ -20,15 +20,22 @@ const pendingHour = ref(null)
 const selectedOptionIds = ref([])
 const serviceError = ref('')
 
-const slots = Array.from({ length: 10 }, (_, i) => i + 9)
+const slots = computed(() => {
+  const result = []
+  for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h++) result.push(h)
+  return result
+})
 const bookings = computed(() => bookingStore.bookingsByDate[selectedDate.value] || [])
 const blockedSlots = computed(() => bookingStore.blocksByDate[selectedDate.value] || [])
 const nailOptions = computed(() => bookingStore.nailOptions || [])
 const myCoupons = ref([])
 const todayDate = startOfDay(new Date())
-const maxBookDate = addDays(todayDate, 30)
+// advanceDays = จำนวนวันที่เห็นรวมวันนี้ (7 = วันนี้ + อีก 6 วัน)
+const maxBookDate = computed(() => addDays(todayDate, Math.max(0, bookingStore.advanceDays - 1)))
 const windowStartDate = ref(startOfDay(new Date()))
 const isMobile = ref(false)
+const POLL_INTERVAL_MS = 45_000
+let pollTimer = null
 
 const weekdayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const thMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -52,14 +59,14 @@ function parseYmdLocal(ymd) {
 const weekDays = computed(() => {
   const items = Array.from({ length: visibleDayCount.value }, (_, i) => {
     const date = addDays(windowStartDate.value, i)
-    if (date > maxBookDate) return null
+    if (date > maxBookDate.value) return null
     const iso = toLocalYmd(date)
     return { iso, day: date.getDate(), label: weekdayNames[date.getDay()], isToday: iso === toLocalYmd(todayDate) }
   })
   return items.filter(Boolean)
 })
 const visibleWeekDays = computed(() => weekDays.value.filter(d => !isClosedDay(d.iso)))
-const visibleSlots = computed(() => slots.filter(h => !isHourBlocked(h)))
+const visibleSlots = computed(() => slots.value.filter(h => !isHourBlocked(h)))
 
 const selectedDateLabel = computed(() => {
   const d = parseYmdLocal(selectedDate.value)
@@ -80,14 +87,14 @@ function updateScreenMode() { isMobile.value = window.innerWidth <= 820 }
 function toHourLabel(hour) { return `${hour}:00` }
 
 const canGoPrev = computed(() => windowStartDate.value > todayDate)
-const canGoNext = computed(() => addDays(windowStartDate.value, visibleDayCount.value) <= maxBookDate)
+const canGoNext = computed(() => addDays(windowStartDate.value, visibleDayCount.value) <= maxBookDate.value)
 
 function isClosedDay(date) {
   return (bookingStore.blocksByDate[date] || []).some(b => b.is_full_day)
 }
 function findFirstOpenDate(fromDate) {
   let cursor = startOfDay(fromDate)
-  while (cursor <= maxBookDate) {
+  while (cursor <= maxBookDate.value) {
     const iso = toLocalYmd(cursor)
     if (!isClosedDay(iso)) return iso
     cursor = addDays(cursor, 1)
@@ -116,7 +123,7 @@ function isStartSlot(hour) {
   return b && Number(b.start_hour) === hour
 }
 function canBook(hour) {
-  if (hour > 18) return false
+  if (hour > bookingStore.shopLastBookingHour) return false
   return !bookingForHour(hour) && !bookingForHour(hour + 1) && !isHourBlocked(hour) && !isHourBlocked(hour + 1)
 }
 function hasBookingOnDay(iso) {
@@ -143,6 +150,32 @@ async function loadDate() {
   }
 }
 
+async function refreshSlotData() {
+  try {
+    await bookingStore.fetchByDate(selectedDate.value)
+  } catch {
+    // polling / pre-book refresh — เงียบไว้ รอบถัดไปลองใหม่
+  }
+}
+
+async function pollCurrentDate() {
+  if (document.hidden || busy.value) return
+  await refreshSlotData()
+}
+
+async function ensureSlotStillAvailable(hour) {
+  await refreshSlotData()
+  if (!canBook(hour)) {
+    serviceError.value = 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น'
+    return false
+  }
+  return true
+}
+
+function onVisibilityChange() {
+  if (!document.hidden) pollCurrentDate()
+}
+
 function openBookSheet(hour) {
   if (!canBook(hour)) return
   pendingHour.value = hour
@@ -160,13 +193,22 @@ function closeBookSheet() {
   pendingHour.value = null
 }
 
-function goToServiceStep() {
+async function goToServiceStep() {
   serviceError.value = ''
-  if (!nailOptions.value.length) {
-    serviceError.value = 'ไม่มีบริการให้เลือกในวันนี้'
-    return
+  const hour = pendingHour.value
+  if (hour == null) return
+
+  busy.value = true
+  try {
+    if (!(await ensureSlotStillAvailable(hour))) return
+    if (!nailOptions.value.length) {
+      serviceError.value = 'ไม่มีบริการให้เลือกในวันนี้'
+      return
+    }
+    sheetStep.value = 'services'
+  } finally {
+    busy.value = false
   }
-  sheetStep.value = 'services'
 }
 
 function backToConfirmStep() {
@@ -186,6 +228,8 @@ async function submitBooking() {
   busy.value = true
   serviceError.value = ''
   try {
+    if (!(await ensureSlotStillAvailable(hour))) return
+
     const booking = await bookingStore.bookSlot(
       selectedDate.value,
       hour,
@@ -267,7 +311,7 @@ async function showMyCoupons() {
 
 function selectDate(iso) {
   const picked = parseYmdLocal(iso)
-  if (picked < todayDate || picked > maxBookDate) return
+  if (picked < todayDate || picked > maxBookDate.value) return
   selectedDate.value = iso
   loadDate()
 }
@@ -275,12 +319,12 @@ function selectDate(iso) {
 async function refreshBlocksAndEnsureSelection(fullRange = false) {
   const from = fullRange ? toLocalYmd(todayDate) : toLocalYmd(windowStartDate.value)
   const to = fullRange
-    ? toLocalYmd(maxBookDate)
+    ? toLocalYmd(maxBookDate.value)
     : toLocalYmd(addDays(windowStartDate.value, visibleDayCount.value - 1))
   await bookingStore.fetchBlocksRange(from, to)
   if (fullRange) {
     const first = findFirstOpenDate(todayDate)
-    if (!first) { errorMessage.value = 'ไม่มีวันเปิดรับคิวในช่วง 30 วันนี้'; return }
+    if (!first) { errorMessage.value = `ไม่มีวันเปิดรับคิวในช่วง ${bookingStore.advanceDays} วันนี้`; return }
     if (isClosedDay(selectedDate.value) || !visibleWeekDays.value.find(d => d.iso === selectedDate.value)) {
       selectedDate.value = first
       alignWindowToDate(first)
@@ -301,7 +345,7 @@ async function prevWeek() {
 async function nextWeek() {
   if (!canGoNext.value) return
   windowStartDate.value = addDays(windowStartDate.value, visibleDayCount.value)
-  if (windowStartDate.value > maxBookDate) windowStartDate.value = new Date(maxBookDate)
+  if (windowStartDate.value > maxBookDate.value) windowStartDate.value = new Date(maxBookDate.value)
   await refreshBlocksAndEnsureSelection(); await loadDate()
 }
 
@@ -331,10 +375,17 @@ const canRedeemCoupon = computed(() => totalPoints.value >= 100)
 onMounted(async () => {
   updateScreenMode()
   window.addEventListener('resize', updateScreenMode)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
+  await Promise.all([bookingStore.fetchShopHours(), bookingStore.fetchAdvanceDays()])
   await refreshBlocksAndEnsureSelection(true)
   await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons()])
 })
-onUnmounted(() => window.removeEventListener('resize', updateScreenMode))
+onUnmounted(() => {
+  window.removeEventListener('resize', updateScreenMode)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  if (pollTimer) clearInterval(pollTimer)
+})
 </script>
 
 <template>
@@ -388,7 +439,7 @@ onUnmounted(() => window.removeEventListener('resize', updateScreenMode))
 
       <p v-if="visibleWeekDays.length === 0" class="strip-hint">
         <template v-if="canGoNext">ร้านปิดช่วงนี้ กด <strong>ถัดไป</strong> เพื่อดูวันอื่น</template>
-        <template v-else>ไม่มีวันเปิดรับคิวใน 30 วันนี้</template>
+        <template v-else>ไม่มีวันเปิดรับคิวใน {{ bookingStore.advanceDays }} วันนี้</template>
       </p>
     </header>
 
@@ -501,7 +552,7 @@ onUnmounted(() => window.removeEventListener('resize', updateScreenMode))
 
             <div class="sheet-actions">
               <button type="button" class="btn-cancel" @click="closeBookSheet">ยกเลิก</button>
-              <button type="button" class="btn-confirm" @click="goToServiceStep">
+              <button type="button" class="btn-confirm" :disabled="busy" @click="goToServiceStep">
                 เลือกบริการ
                 <i class="ti ti-arrow-right" aria-hidden="true"></i>
               </button>

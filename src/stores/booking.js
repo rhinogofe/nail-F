@@ -29,6 +29,9 @@ export const useBookingStore = defineStore('booking', {
     nailOptions: [],
     myBookings: [],
     loading: false,
+    shopOpenHour: 9,
+    shopLastBookingHour: 18,
+    advanceDays: 30,
   }),
   actions: {
     async fetchByDate(date) {
@@ -90,6 +93,23 @@ export const useBookingStore = defineStore('booking', {
       const { data } = await api.get('/api/bookings/my')
       this.myBookings = data
       return data
+    },
+    async fetchShopHours() {
+      try {
+        const { data } = await api.get('/api/bookings/shop-hours')
+        this.shopOpenHour = data.open_hour ?? 9
+        this.shopLastBookingHour = data.last_booking_hour ?? 18
+      } catch {
+        // ใช้ค่า default ถ้าโหลดไม่ได้
+      }
+    },
+    async fetchAdvanceDays() {
+      try {
+        const { data } = await api.get('/api/bookings/advance-days')
+        this.advanceDays = data.advance_days ?? 30
+      } catch {
+        // ใช้ค่า default ถ้าโหลดไม่ได้
+      }
     },
   },
 })
