@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import '@tabler/icons-webfont/dist/tabler-icons.min.css'
 import './style.css'
 import App from './App.vue'
 import { createPinia } from 'pinia'
