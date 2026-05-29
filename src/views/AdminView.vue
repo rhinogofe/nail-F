@@ -48,6 +48,21 @@ const optionForm = ref({
 const loading = ref(false)
 const message = ref('')
 const errorMessage = ref('')
+const activeTab = ref('bookings')
+
+const adminTabs = [
+  { key: 'bookings', label: 'จัดการคิว', icon: 'ti-calendar' },
+  { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
+  { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
+  { key: 'blocks', label: 'ปิดร้าน', icon: 'ti-calendar-off' },
+]
+
+function switchTab(tab) {
+  if (activeTab.value === tab) return
+  activeTab.value = tab
+  message.value = ''
+  errorMessage.value = ''
+}
 
 const filtered = computed(() => bookings.value)
 
@@ -506,13 +521,31 @@ onMounted(loadNailOptions)
   <main class="page">
     <header class="topbar card">
       <div>
-        <h2>แอดมิน - จัดการคิว</h2>
+        <h2>แอดมิน</h2>
         <p class="muted">เข้าสู่ระบบโดย {{ auth.user?.name || '-' }}</p>
       </div>
       <button class="btn" @click="backToBooking">กลับหน้าจอง</button>
     </header>
 
-    <section class="card admin-section">
+    <nav class="admin-nav card" aria-label="เมนูแอดมิน">
+      <button
+        v-for="tab in adminTabs"
+        :key="tab.key"
+        type="button"
+        class="admin-nav-item"
+        :class="{ active: activeTab === tab.key }"
+        :aria-current="activeTab === tab.key ? 'page' : undefined"
+        @click="switchTab(tab.key)"
+      >
+        <i class="ti" :class="tab.icon" aria-hidden="true"></i>
+        <span>{{ tab.label }}</span>
+      </button>
+    </nav>
+
+    <p v-if="message" class="alert success">{{ message }}</p>
+    <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+
+    <section v-show="activeTab === 'bookings'" class="card admin-section">
       <div class="admin-filter-row">
         <label class="admin-filter-item">
           วันที่
@@ -530,8 +563,6 @@ onMounted(loadNailOptions)
         </label>
       </div>
 
-      <p v-if="message" class="success">{{ message }}</p>
-      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
       <p v-if="loading" class="muted">กำลังโหลด...</p>
 
       <div v-for="item in filtered" :key="item.id" class="admin-item">
@@ -581,7 +612,7 @@ onMounted(loadNailOptions)
       </div>
     </section>
 
-    <section class="card admin-section">
+    <section v-show="activeTab === 'services'" class="card admin-section">
       <h3>จัดการบริการ (Nailoption)</h3>
       <div class="admin-form-grid admin-option-grid">
         <label>
@@ -639,7 +670,7 @@ onMounted(loadNailOptions)
       </div>
     </section>
 
-    <section class="card admin-section">
+    <section v-show="activeTab === 'settings'" class="card admin-section">
       <h3>ตั้งค่ายอดมัดจำ</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -649,9 +680,9 @@ onMounted(loadNailOptions)
         <button class="btn primary admin-action-btn" @click="saveDepositSetting">บันทึกยอดมัดจำ</button>
       </div>
       <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
-    </section>
 
-    <section class="card admin-section">
+      <hr class="admin-divider" />
+
       <h3>ใช้คูปองลูกค้า</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -662,7 +693,7 @@ onMounted(loadNailOptions)
       </div>
     </section>
 
-    <section class="card admin-section">
+    <section v-show="activeTab === 'blocks'" class="card admin-section">
       <h3>ปิดวัน / ปิดช่วงเวลา</h3>
       <div class="admin-form-row">
         <label>
@@ -767,6 +798,77 @@ onMounted(loadNailOptions)
 </template>
 
 <style scoped>
+.admin-nav {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.admin-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-nav-item {
+  flex: 1 0 auto;
+  min-width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+
+.admin-nav-item i {
+  font-size: 18px;
+}
+
+.admin-nav-item:hover {
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.admin-nav-item.active {
+  border-color: #e11d48;
+  background: #fff1f2;
+  color: #e11d48;
+}
+
+.alert {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.alert.success {
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.alert.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.admin-divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 20px 0;
+}
+
 .admin-section {
   border-radius: 14px;
   padding: 18px;
@@ -889,6 +991,16 @@ onMounted(loadNailOptions)
 }
 
 @media (max-width: 820px) {
+  .admin-nav-item {
+    min-width: 76px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .admin-nav-item i {
+    font-size: 16px;
+  }
+
   .admin-filter-row {
     grid-template-columns: 1fr;
   }
