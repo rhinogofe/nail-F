@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
 import { useAuthStore } from '../stores/auth'
@@ -33,14 +33,36 @@ const todayDate = startOfDay(new Date())
 // advanceDays = จำนวนวันที่เห็นรวมวันนี้ (7 = วันนี้ + อีก 6 วัน)
 const maxBookDate = computed(() => addDays(todayDate, Math.max(0, bookingStore.advanceDays - 1)))
 const windowStartDate = ref(startOfDay(new Date()))
-const isMobile = ref(false)
+const dayStripRef = ref(null)
+const visibleDayCount = ref(7)
 const POLL_INTERVAL_MS = 45_000
+const DAY_PILL_WIDTH = 46
+const DAY_STRIP_GAP = 6
 let pollTimer = null
+let stripResizeTimer = null
 
 const weekdayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const thMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
-const visibleDayCount = computed(() => (isMobile.value ? 4 : 7))
+function measureVisibleDayCount() {
+  const width = dayStripRef.value?.clientWidth
+  if (!width) return
+  const perPill = DAY_PILL_WIDTH + DAY_STRIP_GAP
+  const count = Math.floor((width + DAY_STRIP_GAP) / perPill)
+  visibleDayCount.value = Math.max(3, Math.min(count, 14))
+}
+
+function scheduleStripMeasure() {
+  clearTimeout(stripResizeTimer)
+  stripResizeTimer = setTimeout(async () => {
+    const prev = visibleDayCount.value
+    measureVisibleDayCount()
+    if (prev !== visibleDayCount.value) {
+      await refreshBlocksAndEnsureSelection(false)
+      await loadDate()
+    }
+  }, 150)
+}
 
 function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -83,7 +105,6 @@ const pendingTimeLabel = computed(() => {
 })
 const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
 
-function updateScreenMode() { isMobile.value = window.innerWidth <= 820 }
 function toHourLabel(hour) { return `${hour}:00` }
 
 const canGoPrev = computed(() => windowStartDate.value > todayDate)
@@ -373,17 +394,19 @@ const pointsLabel = computed(() => {
 const canRedeemCoupon = computed(() => totalPoints.value >= 100)
 
 onMounted(async () => {
-  updateScreenMode()
-  window.addEventListener('resize', updateScreenMode)
+  window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
   await Promise.all([bookingStore.fetchShopHours(), bookingStore.fetchAdvanceDays()])
   await refreshBlocksAndEnsureSelection(true)
   await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons()])
+  await nextTick()
+  measureVisibleDayCount()
 })
 onUnmounted(() => {
-  window.removeEventListener('resize', updateScreenMode)
+  window.removeEventListener('resize', scheduleStripMeasure)
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  clearTimeout(stripResizeTimer)
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
@@ -423,7 +446,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Day strip -->
-      <div class="day-strip">
+      <div ref="dayStripRef" class="day-strip">
         <button
           v-for="day in visibleWeekDays"
           :key="day.iso"
@@ -757,9 +780,8 @@ onUnmounted(() => {
 /* Day strip */
 .day-strip {
   display: flex; gap: 6px; padding-bottom: 12px;
-  overflow-x: auto; scrollbar-width: none;
+  overflow: hidden;
 }
-.day-strip::-webkit-scrollbar { display: none; }
 .day-pill {
   flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
   width: 46px; padding: 8px 0; border-radius: 12px;
