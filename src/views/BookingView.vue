@@ -107,6 +107,12 @@ const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
 
 function toHourLabel(hour) { return `${hour}:00` }
 
+function occupiedSlotLabel(status) {
+  if (status === 'awaiting_payment') return 'ไม่ว่าง / รอยืนยัน'
+  if (status === 'pending' || status === 'done') return 'ไม่ว่าง / ยืนยันแล้ว'
+  return 'ไม่ว่าง'
+}
+
 const canGoPrev = computed(() => windowStartDate.value > todayDate)
 const canGoNext = computed(() => addDays(windowStartDate.value, visibleDayCount.value) <= maxBookDate.value)
 
@@ -516,14 +522,14 @@ onUnmounted(() => {
           <div v-else-if="bookingForHour(hour) && isStartSlot(hour)" class="slot-card busy">
             <div class="slot-left">
               <span class="slot-range strike">{{ toHourLabel(bookingForHour(hour).start_hour) }} – {{ toHourLabel(bookingForHour(hour).end_hour) }}</span>
-              <span class="slot-status">ไม่ว่าง</span>
+              <span class="slot-status">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
             </div>
             <span class="badge badge-busy">🔒</span>
           </div>
 
           <!-- ── Continuation row (2nd hour of a 2hr booking) ── -->
           <div v-else-if="bookingForHour(hour) && !isStartSlot(hour)" class="slot-card continuation">
-            <span class="slot-status">ต่อเนื่องจากคิวก่อนหน้า</span>
+            <span class="slot-status">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
           </div>
 
           <!-- ── Free ── -->
