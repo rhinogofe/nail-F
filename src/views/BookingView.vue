@@ -20,9 +20,12 @@ const pendingHour = ref(null)
 const selectedOptionIds = ref([])
 const serviceError = ref('')
 
+const isSlots2hMode = computed(() => bookingStore.bookingDisplayMode === 'slots_2h')
+
 const slots = computed(() => {
   const result = []
-  for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h++) result.push(h)
+  const step = isSlots2hMode.value ? 2 : 1
+  for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h += step) result.push(h)
   return result
 })
 const bookings = computed(() => bookingStore.bookingsByDate[selectedDate.value] || [])
@@ -88,7 +91,12 @@ const weekDays = computed(() => {
   return items.filter(Boolean)
 })
 const visibleWeekDays = computed(() => weekDays.value.filter(d => !isClosedDay(d.iso)))
-const visibleSlots = computed(() => slots.value.filter(h => !isHourBlocked(h)))
+function isSlotRangeBlocked(hour) {
+  if (isSlots2hMode.value) return isHourBlocked(hour) || isHourBlocked(hour + 1)
+  return isHourBlocked(hour)
+}
+
+const visibleSlots = computed(() => slots.value.filter(h => !isSlotRangeBlocked(h)))
 
 const selectedDateLabel = computed(() => {
   const d = parseYmdLocal(selectedDate.value)
@@ -107,9 +115,12 @@ const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
 
 function toHourLabel(hour) { return `${hour}:00` }
 
-function occupiedSlotLabel(status) {
-  if (status === 'awaiting_payment') return 'ไม่ว่าง / รอยืนยัน'
-  if (status === 'pending' || status === 'done') return 'ไม่ว่าง / ยืนยันแล้ว'
+function slotTimeLabel(hour) {
+  if (isSlots2hMode.value) return `${toHourLabel(hour)} – ${toHourLabel(hour + 2)}`
+  return toHourLabel(hour)
+}
+
+function occupiedSlotLabel() {
   return 'ไม่ว่าง'
 }
 
@@ -138,8 +149,11 @@ function isHourBlocked(hour) {
     return hour >= Number(b.start_hour) && hour < Number(b.end_hour)
   })
 }
+function activeBookings() {
+  return bookings.value.filter(b => b.status !== 'cancelled')
+}
 function bookingForHour(hour) {
-  return bookings.value.find(b => {
+  return activeBookings().find(b => {
     const start = Number(b.start_hour)
     const end = Number(b.end_hour ?? start + 2)
     return hour >= start && hour < end
@@ -149,9 +163,26 @@ function isStartSlot(hour) {
   const b = bookingForHour(hour)
   return b && Number(b.start_hour) === hour
 }
+function hasBookingOverlap(hour) {
+  const slotEnd = hour + 2
+  return activeBookings().some(b => {
+    const start = Number(b.start_hour)
+    const end = Number(b.end_hour ?? start + 2)
+    return start < slotEnd && end > hour
+  })
+}
+function isSlotRangeBlockedForBooking(hour) {
+  for (let h = hour; h < hour + 2; h++) {
+    if (isHourBlocked(h)) return true
+  }
+  return false
+}
 function canBook(hour) {
   if (hour > bookingStore.shopLastBookingHour) return false
-  return !bookingForHour(hour) && !bookingForHour(hour + 1) && !isHourBlocked(hour) && !isHourBlocked(hour + 1)
+  if (hour + 2 > bookingStore.shopLastBookingHour + 2) return false
+  if (hasBookingOverlap(hour)) return false
+  if (isSlotRangeBlockedForBooking(hour)) return false
+  return true
 }
 function hasBookingOnDay(iso) {
   return (bookingStore.bookingsByDate[iso] || []).length > 0
@@ -177,6 +208,40 @@ async function loadDate() {
   }
 }
 
+function bookingSettingsSnapshot() {
+  return {
+    shopOpenHour: bookingStore.shopOpenHour,
+    shopLastBookingHour: bookingStore.shopLastBookingHour,
+    advanceDays: bookingStore.advanceDays,
+    bookingDisplayMode: bookingStore.bookingDisplayMode,
+  }
+}
+
+function hasBookingSettingsChanged(before, after) {
+  return (
+    before.shopOpenHour !== after.shopOpenHour ||
+    before.shopLastBookingHour !== after.shopLastBookingHour ||
+    before.advanceDays !== after.advanceDays ||
+    before.bookingDisplayMode !== after.bookingDisplayMode
+  )
+}
+
+async function syncBookingSettings({ refreshLayout = true } = {}) {
+  const before = bookingSettingsSnapshot()
+  await bookingStore.fetchBookingSettings()
+  const after = bookingSettingsSnapshot()
+  if (!refreshLayout || !hasBookingSettingsChanged(before, after)) return false
+
+  const picked = parseYmdLocal(selectedDate.value)
+  if (picked > maxBookDate.value) {
+    selectedDate.value = toLocalYmd(maxBookDate.value)
+    alignWindowToDate(selectedDate.value)
+  }
+  await refreshBlocksAndEnsureSelection(true)
+  await loadDate()
+  return true
+}
+
 async function refreshSlotData() {
   try {
     await bookingStore.fetchByDate(selectedDate.value)
@@ -187,7 +252,8 @@ async function refreshSlotData() {
 
 async function pollCurrentDate() {
   if (document.hidden || busy.value) return
-  await refreshSlotData()
+  const layoutRefreshed = await syncBookingSettings()
+  if (!layoutRefreshed) await refreshSlotData()
 }
 
 async function ensureSlotStillAvailable(hour) {
@@ -199,8 +265,10 @@ async function ensureSlotStillAvailable(hour) {
   return true
 }
 
-function onVisibilityChange() {
-  if (!document.hidden) pollCurrentDate()
+async function onVisibilityChange() {
+  if (document.hidden || busy.value) return
+  const layoutRefreshed = await syncBookingSettings()
+  if (!layoutRefreshed) await refreshSlotData()
 }
 
 function openBookSheet(hour) {
@@ -403,7 +471,7 @@ onMounted(async () => {
   window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
-  await Promise.all([bookingStore.fetchShopHours(), bookingStore.fetchAdvanceDays()])
+  await bookingStore.fetchBookingSettings()
   await refreshBlocksAndEnsureSelection(true)
   await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons()])
   await nextTick()
@@ -491,7 +559,7 @@ onUnmounted(() => {
 
       <template v-else>
         <div v-for="hour in visibleSlots" :key="hour" class="slot-row">
-          <span class="slot-time">{{ toHourLabel(hour) }}</span>
+          <span class="slot-time">{{ slotTimeLabel(hour) }}</span>
 
           <!-- ── Booked by me ── -->
           <div v-if="bookingForHour(hour) && isStartSlot(hour) && bookingForHour(hour).is_mine" class="slot-card mine">
@@ -527,18 +595,26 @@ onUnmounted(() => {
             <span class="badge badge-busy">🔒</span>
           </div>
 
-          <!-- ── Continuation row (2nd hour of a 2hr booking) ── -->
+          <!-- ── Continuation row ── -->
           <div v-else-if="bookingForHour(hour) && !isStartSlot(hour)" class="slot-card continuation">
             <span class="slot-status">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
           </div>
 
-          <!-- ── Free ── -->
-          <div v-else class="slot-card free" :class="{ disabled: !canBook(hour) }" @click="openBookSheet(hour)">
+          <!-- ── จองไม่ได้ (ทับคิว / ปิดช่วงเวลา / เลยเวลา) ── -->
+          <div v-else-if="!canBook(hour)" class="slot-card busy">
+            <div class="slot-left">
+              <span class="slot-range strike">{{ toHourLabel(hour) }} – {{ toHourLabel(hour + 2) }}</span>
+              <span class="slot-status">ไม่ว่าง</span>
+            </div>
+          </div>
+
+          <!-- ── ว่าง จองได้ ── -->
+          <div v-else class="slot-card free" @click="openBookSheet(hour)">
             <div class="slot-left">
               <span class="slot-range">{{ toHourLabel(hour) }} – {{ toHourLabel(hour + 2) }}</span>
               <span class="slot-status">ว่าง</span>
             </div>
-            <button class="book-btn" :disabled="busy || !canBook(hour)" @click.stop="openBookSheet(hour)">
+            <button class="book-btn" :disabled="busy" @click.stop="openBookSheet(hour)">
               จอง
             </button>
           </div>

@@ -32,6 +32,7 @@ export const useBookingStore = defineStore('booking', {
     shopOpenHour: 9,
     shopLastBookingHour: 18,
     advanceDays: 30,
+    bookingDisplayMode: 'normal',
   }),
   actions: {
     async fetchByDate(date) {
@@ -110,6 +111,21 @@ export const useBookingStore = defineStore('booking', {
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }
+    },
+    async fetchBookingDisplay() {
+      try {
+        const { data } = await api.get('/api/bookings/booking-display')
+        this.bookingDisplayMode = data.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
+      } catch {
+        // ใช้ค่า default ถ้าโหลดไม่ได้
+      }
+    },
+    async fetchBookingSettings() {
+      await Promise.all([
+        this.fetchShopHours(),
+        this.fetchAdvanceDays(),
+        this.fetchBookingDisplay(),
+      ])
     },
   },
 })

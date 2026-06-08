@@ -171,6 +171,41 @@ function switchTab(tab) {
 
 const filtered = computed(() => bookings.value)
 
+// ── รูปแบบแสดงเวลาหน้าจองลูกค้า ─────────────
+const bookingDisplayMode = ref('normal')
+
+const displaySlotPreview = computed(() => {
+  const result = []
+  for (let h = shopOpenHour.value; h <= shopLastBookingHour.value; h += 2) {
+    result.push(`${String(h).padStart(2, '0')}:00–${String(h + 2).padStart(2, '0')}:00`)
+  }
+  return result.join(' · ')
+})
+
+async function loadBookingDisplay() {
+  try {
+    const { data } = await api.get('/api/admin/settings/booking-display')
+    bookingDisplayMode.value = data.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดรูปแบบแสดงเวลาไม่สำเร็จ'
+  }
+}
+
+async function saveBookingDisplay() {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.patch('/api/admin/settings/booking-display', {
+      display_mode: bookingDisplayMode.value,
+    })
+    message.value = bookingDisplayMode.value === 'slots_2h'
+      ? 'บันทึกแล้ว: หน้าจองแสดงช่วงเวลา 2 ชม.'
+      : 'บันทึกแล้ว: หน้าจองแสดงแบบปกติ (ทีละชั่วโมง)'
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกรูปแบบแสดงเวลาไม่สำเร็จ'
+  }
+}
+
 async function loadBookings() {
   loading.value = true
   errorMessage.value = ''
@@ -622,6 +657,7 @@ onMounted(loadDepositSetting)
 onMounted(loadNailOptions)
 onMounted(loadShopHours)
 onMounted(loadAdvanceDays)
+onMounted(loadBookingDisplay)
 onMounted(loadUsers)
 </script>
 
@@ -673,6 +709,7 @@ onMounted(loadUsers)
 
       <p v-if="loading" class="muted">กำลังโหลด...</p>
 
+      <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
       <div v-for="item in filtered" :key="item.id" class="admin-item">
         <div>
           <strong>{{ formatDateKey(item.booking_date) }} {{ item.start_hour }}:00 - {{ item.end_hour ?? (Number(item.start_hour) + 2) }}:00</strong>
@@ -813,6 +850,38 @@ onMounted(loadUsers)
         ลูกค้าจะเห็นช่วงเวลา
         <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
         (ปิดรับ {{ String(shopLastBookingHour + 2).padStart(2,'0') }}:00)
+      </div>
+
+      <hr class="admin-divider" />
+
+      <h3>รูปแบบแสดงเวลาหน้าจองลูกค้า</h3>
+      <p class="muted">กำหนดว่าหน้าจองของลูกค้าแสดงเวลาแบบไหน</p>
+      <div class="booking-view-toggle" role="group" aria-label="รูปแบบแสดงเวลาหน้าจอง">
+        <button
+          type="button"
+          class="view-toggle-btn"
+          :class="{ active: bookingDisplayMode === 'normal' }"
+          @click="bookingDisplayMode = 'normal'"
+        >
+          <i class="ti ti-list" aria-hidden="true"></i>
+          ปกติ (ทีละชม.)
+        </button>
+        <button
+          type="button"
+          class="view-toggle-btn"
+          :class="{ active: bookingDisplayMode === 'slots_2h' }"
+          @click="bookingDisplayMode = 'slots_2h'"
+        >
+          <i class="ti ti-clock" aria-hidden="true"></i>
+          ช่วง 2 ชม.
+        </button>
+      </div>
+      <div class="admin-form-row" style="margin-top:10px">
+        <button class="btn primary admin-action-btn" @click="saveBookingDisplay">บันทึกรูปแบบแสดงเวลา</button>
+      </div>
+      <div v-if="bookingDisplayMode === 'slots_2h'" class="shop-hours-preview">
+        <i class="ti ti-layout-list" style="font-size:16px;color:#e11d48"></i>
+        ตัวอย่าง: {{ displaySlotPreview }}
       </div>
 
       <hr class="admin-divider" />
@@ -1085,6 +1154,43 @@ onMounted(loadUsers)
   grid-template-columns: 220px 220px;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.booking-view-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.view-toggle-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+
+.view-toggle-btn i { font-size: 16px; }
+
+.view-toggle-btn:hover {
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.view-toggle-btn.active {
+  border-color: #e11d48;
+  background: #fff1f2;
+  color: #e11d48;
 }
 
 .admin-filter-item {
