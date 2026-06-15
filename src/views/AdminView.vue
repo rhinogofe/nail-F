@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
-import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate } from '../utils/nailOptionHelpers'
+import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -734,7 +734,7 @@ async function deleteBooking(id) {
 }
 
 function optionCountForDate(iso) {
-  return nailOptions.value.filter(item => optionVisibleOnDate(item, iso)).length
+  return nailOptions.value.filter((item) => optionBookableOnDate(item, iso)).length
 }
 
 function serviceDayColor(iso) {

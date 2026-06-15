@@ -21,6 +21,11 @@ export function optionVisibleOnDate(item, iso) {
   return iso <= to
 }
 
+export function optionBookableOnDate(item, iso) {
+  if (item.is_active === false) return false
+  return optionVisibleOnDate(item, iso)
+}
+
 export function isValidHexColor(color) {
   return typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color)
 }
