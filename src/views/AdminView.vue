@@ -79,11 +79,19 @@ const hourOptions = Array.from({ length: 23 }, (_, i) => i)
 
 // ── Advance days ────────────────────────────
 const advanceDays = ref(30)
+const bookUntilDate = ref('')
+
+function formatBookUntilLabel(iso) {
+  if (!iso) return '-'
+  const [y, m, d] = iso.split('-').map(Number)
+  return `${d} ${serviceThMonths[m - 1]} ${y + 543}`
+}
 
 async function loadAdvanceDays() {
   try {
     const { data } = await api.get('/api/admin/settings/advance-days')
     advanceDays.value = data.advance_days ?? 30
+    bookUntilDate.value = data.book_until_date || ''
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดจำนวนวันล่วงหน้าไม่สำเร็จ'
   }
@@ -97,8 +105,10 @@ async function saveAdvanceDays() {
   message.value = ''
   errorMessage.value = ''
   try {
-    await api.patch('/api/admin/settings/advance-days', { advance_days: advanceDays.value })
-    message.value = `บันทึกแล้ว: ลูกค้าเห็นปฏิทิน ${advanceDays.value} วัน (รวมวันนี้)`
+    const { data } = await api.patch('/api/admin/settings/advance-days', { advance_days: advanceDays.value })
+    advanceDays.value = data.advance_days ?? advanceDays.value
+    bookUntilDate.value = data.book_until_date || ''
+    message.value = `บันทึกแล้ว: เปิดจองถึง ${formatBookUntilLabel(bookUntilDate.value)} (ล็อกวันสิ้นสุดแล้ว)`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
   }
@@ -1205,7 +1215,7 @@ onMounted(loadUsers)
       <hr class="admin-divider" />
 
       <h3>จำนวนวันจองล่วงหน้า</h3>
-      <p class="muted">จำนวนวันที่ลูกค้าเห็นในปฏิทิน รวมวันนี้ (เช่น 7 = วันนี้ + อีก 6 วัน)</p>
+      <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
       <div class="admin-form-row">
         <label class="admin-label-grow">
           จองล่วงหน้าได้ (วัน)
@@ -1215,7 +1225,8 @@ onMounted(loadUsers)
       </div>
       <div class="shop-hours-preview">
         <i class="ti ti-calendar-event" style="font-size:16px;color:#e11d48"></i>
-        ลูกค้าเห็นปฏิทิน <strong>{{ advanceDays }} วัน</strong> (รวมวันนี้)
+        เปิดจองถึง <strong>{{ formatBookUntilLabel(bookUntilDate) }}</strong>
+        <span v-if="bookUntilDate" class="muted">({{ advanceDays }} วัน นับจากวันที่กดบันทึกล่าสุด)</span>
       </div>
 
       <hr class="admin-divider" />

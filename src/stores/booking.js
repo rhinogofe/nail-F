@@ -33,6 +33,7 @@ export const useBookingStore = defineStore('booking', {
     shopOpenHour: 9,
     shopLastBookingHour: 18,
     advanceDays: 30,
+    bookUntilDate: '',
     bookingDisplayMode: 'normal',
   }),
   actions: {
@@ -118,6 +119,7 @@ export const useBookingStore = defineStore('booking', {
       try {
         const { data } = await api.get('/api/bookings/advance-days')
         this.advanceDays = data.advance_days ?? 30
+        this.bookUntilDate = data.book_until_date || ''
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }

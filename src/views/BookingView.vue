@@ -34,8 +34,13 @@ const blockedSlots = computed(() => bookingStore.blocksByDate[selectedDate.value
 const nailOptions = computed(() => bookingStore.nailOptions || [])
 const myCoupons = ref([])
 const todayDate = startOfDay(new Date())
-// advanceDays = จำนวนวันที่เห็นรวมวันนี้ (7 = วันนี้ + อีก 6 วัน)
-const maxBookDate = computed(() => addDays(todayDate, Math.max(0, bookingStore.advanceDays - 1)))
+// bookUntilDate = วันสิ้นสุดที่ล็อกตอนแอดมินกดบันทึก (ไม่เลื่อนตามวันนี้)
+const maxBookDate = computed(() => {
+  if (bookingStore.bookUntilDate && /^\d{4}-\d{2}-\d{2}$/.test(bookingStore.bookUntilDate)) {
+    return parseYmdLocal(bookingStore.bookUntilDate)
+  }
+  return addDays(todayDate, Math.max(0, bookingStore.advanceDays - 1))
+})
 const windowStartDate = ref(startOfDay(new Date()))
 const dayStripRef = ref(null)
 const visibleDayCount = ref(7)
@@ -231,6 +236,7 @@ function bookingSettingsSnapshot() {
     shopOpenHour: bookingStore.shopOpenHour,
     shopLastBookingHour: bookingStore.shopLastBookingHour,
     advanceDays: bookingStore.advanceDays,
+    bookUntilDate: bookingStore.bookUntilDate,
     bookingDisplayMode: bookingStore.bookingDisplayMode,
   }
 }
@@ -240,6 +246,7 @@ function hasBookingSettingsChanged(before, after) {
     before.shopOpenHour !== after.shopOpenHour ||
     before.shopLastBookingHour !== after.shopLastBookingHour ||
     before.advanceDays !== after.advanceDays ||
+    before.bookUntilDate !== after.bookUntilDate ||
     before.bookingDisplayMode !== after.bookingDisplayMode
   )
 }
@@ -457,7 +464,7 @@ async function refreshBlocksAndEnsureSelection(fullRange = false) {
   await bookingStore.fetchBlocksRange(from, to)
   if (fullRange) {
     const first = findFirstOpenDate(todayDate)
-    if (!first) { errorMessage.value = `ไม่มีวันเปิดรับคิวในช่วง ${bookingStore.advanceDays} วันนี้`; return }
+    if (!first) { errorMessage.value = 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง'; return }
     if (isClosedDay(selectedDate.value) || !visibleWeekDays.value.find(d => d.iso === selectedDate.value)) {
       selectedDate.value = first
       alignWindowToDate(first)
@@ -581,7 +588,7 @@ onUnmounted(() => {
 
       <p v-if="visibleWeekDays.length === 0" class="strip-hint">
         <template v-if="canGoNext">ร้านปิดช่วงนี้ กด <strong>ถัดไป</strong> เพื่อดูวันอื่น</template>
-        <template v-else>ไม่มีวันเปิดรับคิวใน {{ bookingStore.advanceDays }} วันนี้</template>
+        <template v-else>ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง</template>
       </p>
     </header>
 
