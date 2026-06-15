@@ -112,7 +112,7 @@ function formatBookUntilLabel(iso) {
   const [y, m, d] = iso.split('-').map(Number)
   return `${d} ${serviceThMonths[m - 1]} ${y + 543}`
 }
-
+//nettyfiy
 async function loadAdvanceDays() {
   try {
     const { data } = await api.get('/api/admin/settings/advance-days')
