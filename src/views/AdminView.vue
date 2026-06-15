@@ -73,6 +73,15 @@ const optionColorPresets = [
   { label: 'น้ำเงิน', value: '#3b82f6' },
   { label: 'ส้ม', value: '#f97316' },
 ]
+const serviceLocations = ref([])
+const locationForm = ref({
+  id: null,
+  name: '',
+  color: '#3b82f6',
+  description: '',
+  is_active: true,
+  sort_order: 0,
+})
 const optionForm = ref({
   id: null,
   option_name: '',
@@ -765,6 +774,10 @@ const everyDayOptions = computed(() =>
   nailOptions.value.filter(item => !formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date))
 )
 
+const activeLocationPresets = computed(() =>
+  serviceLocations.value.filter((loc) => loc.is_active)
+)
+
 function formatServiceDateLabel(iso) {
   if (!iso) return ''
   const [y, m, d] = iso.split('-').map(Number)
@@ -852,9 +865,185 @@ function optionShowRangeText(item) {
   const from = formatDateKey(item.show_from_date)
   const to = formatDateKey(item.show_to_date)
   if (!from && !to) return 'แสดงทุกวัน'
+  if (from && to && from === to) {
+    const [, mm, dd] = from.split('-').map(Number)
+    return `วันที่ ${dd} ${serviceThMonths[mm - 1]}`
+  }
   if (from && to) return `แสดง ${from} ถึง ${to}`
   if (from) return `แสดงตั้งแต่ ${from}`
   return `แสดงถึง ${to}`
+}
+
+function optionDeleteLabel(item) {
+  const from = formatDateKey(item.show_from_date)
+  const to = formatDateKey(item.show_to_date)
+  if (from && (!to || from === to)) {
+    const [, mm, dd] = from.split('-').map(Number)
+    return `${item.option_name} (วันที่ ${dd} ${serviceThMonths[mm - 1]})`
+  }
+  if (from && to) return `${item.option_name} (${from} ถึง ${to})`
+  return item.option_name
+}
+
+function isLocationPresetName(name) {
+  return serviceLocations.value.some((loc) => loc.name === name)
+}
+
+function locationExistsOnDay(name) {
+  if (!selectedServiceDate.value) return false
+  return selectedDayOptions.value.some((item) => item.option_name === name)
+}
+
+async function addLocationPreset(preset) {
+  if (!selectedServiceDate.value) return
+  if (locationExistsOnDay(preset.name)) {
+    await Swal.fire({
+      title: 'มีสถานที่นี้แล้ว',
+      text: `วันนี้มี "${preset.name}" อยู่แล้ว`,
+      icon: 'info',
+      confirmButtonText: 'ตกลง',
+    })
+    return
+  }
+
+  const ok = await Swal.fire({
+    title: 'เพิ่มสถานที่',
+    text: `เพิ่ม "${preset.name}" สำหรับ ${formatServiceDateLabel(selectedServiceDate.value)} ใช่ไหม`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'เพิ่ม',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const iso = selectedServiceDate.value
+    await api.post('/api/admin/nailoptions', {
+      option_name: preset.name,
+      description: preset.description || `สถานที่ให้บริการ ${preset.name}`,
+      price: 0,
+      duration_min: 60,
+      is_active: true,
+      is_required: true,
+      color: preset.color,
+      show_from_date: iso,
+      show_to_date: iso,
+    })
+    message.value = `เพิ่มสถานที่ "${preset.name}" แล้ว`
+    resetOptionFormForDay()
+    await loadNailOptions()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'เพิ่มสถานที่ไม่สำเร็จ'
+  }
+}
+
+function resetLocationForm() {
+  locationForm.value = {
+    id: null,
+    name: '',
+    color: '#3b82f6',
+    description: '',
+    is_active: true,
+    sort_order: serviceLocations.value.length,
+  }
+}
+
+function setLocationColor(color) {
+  locationForm.value.color = color
+}
+
+async function loadServiceLocations() {
+  try {
+    const { data } = await api.get('/api/admin/service-locations')
+    serviceLocations.value = data
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดรายการสถานที่ไม่สำเร็จ'
+  }
+}
+
+function startEditLocation(item) {
+  locationForm.value = {
+    id: item.id,
+    name: item.name,
+    color: item.color && isValidHexColor(item.color) ? item.color : '#3b82f6',
+    description: item.description || '',
+    is_active: Boolean(item.is_active),
+    sort_order: Number(item.sort_order) || 0,
+  }
+}
+
+async function saveServiceLocation() {
+  const name = String(locationForm.value.name || '').trim()
+  if (!name) {
+    errorMessage.value = 'กรุณาระบุชื่อสถานที่'
+    return
+  }
+  const colorValue = String(locationForm.value.color || '').trim()
+  if (!isValidHexColor(colorValue)) {
+    errorMessage.value = 'รูปแบบสีไม่ถูกต้อง ใช้ #RRGGBB'
+    return
+  }
+
+  const isEdit = Boolean(locationForm.value.id)
+  const ok = await Swal.fire({
+    title: isEdit ? 'ยืนยันแก้ไขสถานที่' : 'ยืนยันเพิ่มสถานที่',
+    text: `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${name}" ใช่ไหม`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'บันทึก',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  const payload = {
+    name,
+    color: colorValue,
+    description: String(locationForm.value.description || '').trim() || null,
+    is_active: Boolean(locationForm.value.is_active),
+    sort_order: Number(locationForm.value.sort_order) || 0,
+  }
+
+  try {
+    if (isEdit) {
+      await api.patch(`/api/admin/service-locations/${locationForm.value.id}`, payload)
+      message.value = 'แก้ไขสถานที่แล้ว'
+    } else {
+      await api.post('/api/admin/service-locations', payload)
+      message.value = 'เพิ่มสถานที่แล้ว'
+    }
+    resetLocationForm()
+    await loadServiceLocations()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกสถานที่ไม่สำเร็จ'
+  }
+}
+
+async function removeServiceLocation(item) {
+  const ok = await Swal.fire({
+    title: 'ลบสถานที่',
+    text: `ลบ "${item.name}" จากรายการปุ่มลัด ใช่ไหม (บริการที่สร้างไปแล้วไม่หาย)`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.delete(`/api/admin/service-locations/${item.id}`)
+    message.value = `ลบสถานที่ "${item.name}" แล้ว`
+    if (locationForm.value.id === item.id) resetLocationForm()
+    await loadServiceLocations()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ลบสถานที่ไม่สำเร็จ'
+  }
 }
 
 async function loadNailOptions() {
@@ -959,9 +1148,10 @@ async function saveNailOption() {
 }
 
 async function removeNailOption(item) {
+  const label = optionDeleteLabel(item)
   const ok = await Swal.fire({
     title: 'ยืนยันลบบริการ',
-    text: `ลบ "${item.option_name}" ใช่ไหม`,
+    text: `ลบ "${label}" ใช่ไหม`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'ลบ',
@@ -1004,6 +1194,7 @@ onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
 onMounted(loadNailOptions)
+onMounted(loadServiceLocations)
 onMounted(loadShopHours)
 onMounted(loadAdvanceDays)
 onMounted(loadBookingDisplay)
@@ -1323,8 +1514,30 @@ onMounted(loadUsers)
           </div>
         </div>
 
+        <div class="service-location-add card-inner">
+          <h4>เพิ่มสถานที่ให้บริการ</h4>
+          <p class="muted">เลือกสถานที่สำหรับวันนี้ · ลูกค้าต้องเลือกตอนจอง · สีในปฏิทินตามปุ่ม</p>
+          <p v-if="activeLocationPresets.length === 0" class="muted">
+            ยังไม่มีสถานที่ — ไปที่แท็บ <strong>ตั้งค่า</strong> เพื่อเพิ่ม
+          </p>
+          <div v-else class="location-preset-row">
+            <button
+              v-for="preset in activeLocationPresets"
+              :key="preset.id"
+              type="button"
+              class="btn location-preset-btn"
+              :disabled="locationExistsOnDay(preset.name)"
+              @click="addLocationPreset(preset)"
+            >
+              <span class="location-preset-dot" :style="{ background: preset.color }" aria-hidden="true"></span>
+              {{ preset.name }}
+              <span v-if="locationExistsOnDay(preset.name)" class="location-preset-added">มีแล้ว</span>
+            </button>
+          </div>
+        </div>
+
         <div class="service-option-form card-inner">
-          <h4>{{ optionForm.id ? 'แก้ไขบริการ' : 'เพิ่มบริการวันนี้' }}</h4>
+          <h4>{{ optionForm.id ? 'แก้ไขบริการ' : 'เพิ่มบริการอื่น' }}</h4>
           <div class="admin-form-grid admin-option-grid">
             <label>
               ชื่อบริการ *
@@ -1389,6 +1602,7 @@ onMounted(loadUsers)
               {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
             </span>
             <span v-if="item.is_required" class="badge-required">บังคับเลือก</span>
+            <span v-if="isLocationPresetName(item.option_name)" class="badge-location">สถานที่</span>
             <span v-if="!formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date)" class="badge-everyday">ทุกวัน</span>
             <p class="muted">{{ item.description || '-' }}</p>
             <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
@@ -1471,6 +1685,76 @@ onMounted(loadUsers)
       <div v-if="bookingDisplayMode === 'slots_2h'" class="shop-hours-preview">
         <i class="ti ti-layout-list" style="font-size:16px;color:#e11d48"></i>
         ตัวอย่าง: {{ displaySlotPreview }}
+      </div>
+
+      <hr class="admin-divider" />
+
+      <h3>สถานที่ให้บริการ (ปุ่มลัด)</h3>
+      <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเพิ่มบริการในแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำในรายการนี้</p>
+
+      <div class="service-option-form card-inner">
+        <h4>{{ locationForm.id ? 'แก้ไขสถานที่' : 'เพิ่มสถานที่ใหม่' }}</h4>
+        <div class="admin-form-grid admin-option-grid">
+          <label>
+            ชื่อสถานที่ *
+            <input v-model="locationForm.name" type="text" class="admin-input" placeholder="เช่น จุฬา, เกษตร" />
+          </label>
+          <label>
+            รายละเอียด
+            <input v-model="locationForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+          </label>
+          <label>
+            ลำดับแสดง
+            <input v-model.number="locationForm.sort_order" type="number" min="0" step="1" class="admin-input" />
+          </label>
+          <label class="admin-color-field">
+            สีในปฏิทิน
+            <div class="color-picker-row">
+              <input v-model="locationForm.color" type="color" class="admin-color-input" />
+              <input v-model="locationForm.color" type="text" class="admin-input" maxlength="7" placeholder="#3b82f6" />
+            </div>
+            <div class="color-preset-row">
+              <button
+                v-for="preset in optionColorPresets"
+                :key="`loc-${preset.value}`"
+                type="button"
+                class="color-preset-btn"
+                :class="{ active: locationForm.color === preset.value }"
+                :style="{ background: preset.value }"
+                :title="preset.label"
+                :aria-label="preset.label"
+                @click="setLocationColor(preset.value)"
+              ></button>
+            </div>
+          </label>
+        </div>
+        <div class="admin-form-row">
+          <label class="admin-checkbox">
+            <input v-model="locationForm.is_active" type="checkbox" />
+            แสดงเป็นปุ่มลัด
+          </label>
+          <button class="btn primary admin-action-btn" @click="saveServiceLocation">
+            {{ locationForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มสถานที่' }}
+          </button>
+          <button v-if="locationForm.id" type="button" class="btn admin-action-btn" @click="resetLocationForm">ยกเลิกแก้ไข</button>
+        </div>
+      </div>
+
+      <div v-if="serviceLocations.length === 0" class="muted" style="margin-top:10px">ยังไม่มีสถานที่ในระบบ</div>
+      <div v-for="item in serviceLocations" :key="item.id" class="admin-item">
+        <div>
+          <strong>{{ item.name }}</strong>
+          <span class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
+          <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
+            {{ item.is_active ? 'แสดงปุ่ม' : 'ซ่อนปุ่ม' }}
+          </span>
+          <p class="muted">{{ item.description || '-' }}</p>
+          <p class="muted">ลำดับ {{ item.sort_order }}</p>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" @click="startEditLocation(item)">แก้ไข</button>
+          <button type="button" class="btn danger" @click="removeServiceLocation(item)">ลบ</button>
+        </div>
       </div>
 
       <hr class="admin-divider" />
@@ -1975,6 +2259,61 @@ onMounted(loadUsers)
   font-weight: 600;
   background: #fff1f2;
   color: #e11d48;
+}
+
+.badge-location {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.service-location-add {
+  margin-bottom: 14px;
+}
+
+.service-location-add h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.location-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.location-preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 16px;
+  font-weight: 600;
+}
+
+.location-preset-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.location-preset-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, .12);
+  flex-shrink: 0;
+}
+
+.location-preset-added {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
 }
 
 .badge-everyday {
