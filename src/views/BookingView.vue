@@ -118,6 +118,12 @@ const pendingTimeLabel = computed(() => {
   if (h == null) return ''
   return `${toHourLabel(h)} – ${toHourLabel(h + 2)} น.`
 })
+const requiredLocationLabel = computed(() =>
+  nailOptions.value
+    .filter(opt => opt.is_required)
+    .map(opt => opt.option_name)
+    .join(', ')
+)
 const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
 const canSubmitBooking = computed(() => {
   const required = nailOptions.value.filter(opt => opt.is_required)
@@ -698,6 +704,10 @@ onUnmounted(() => {
                 <span class="info-label"><i class="ti ti-hourglass info-ic" aria-hidden="true"></i>ระยะเวลา</span>
                 <span class="info-val">2 ชั่วโมง</span>
               </div>
+              <div v-if="requiredLocationLabel" class="info-row">
+                <span class="info-label"><i class="ti ti-map-pin info-ic" aria-hidden="true"></i>สถานที่</span>
+                <span class="info-val">{{ requiredLocationLabel }}</span>
+              </div>
             </div>
 
             <div class="points-banner">
@@ -719,7 +729,10 @@ onUnmounted(() => {
           <!-- Step 2: เลือกบริการ -->
           <template v-else>
             <h3 class="sheet-title">เลือกบริการ</h3>
-            <p class="sheet-sub">เลือกบริการสำหรับคิวนี้ (รายการที่มีป้ายบังคับต้องเลือก)</p>
+            <p class="sheet-sub">
+              <template v-if="requiredLocationLabel">สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
+              <template v-else>เลือกบริการสำหรับคิวนี้</template>
+            </p>
 
             <div class="sheet-info sheet-info-compact">
               <div class="info-row">
