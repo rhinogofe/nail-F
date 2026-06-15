@@ -602,7 +602,7 @@ onUnmounted(() => {
     <main class="body">
       <div class="date-heading">
         <span class="section-label">
-          {{ selectedDateLabel }}<template v-if="requiredLocationLabel"> สถานที่ให้บริการวันนี้ {{ requiredLocationLabel }}</template>
+          {{ selectedDateLabel }}<template v-if="requiredLocationLabel"> สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
         </span>
       </div>
 
