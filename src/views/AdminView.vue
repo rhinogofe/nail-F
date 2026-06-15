@@ -17,10 +17,36 @@ function todayYm() {
   return todayYmd().slice(0, 7)
 }
 
+function buildCalendarWeeks(monthYm) {
+  const [y, m] = monthYm.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const startPad = new Date(y, m - 1, 1).getDay()
+  const weeks = []
+  let week = Array.from({ length: startPad }, () => null)
+
+  for (let day = 1; day <= lastDay; day++) {
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    week.push({ day, iso, isToday: iso === todayYmd() })
+    if (week.length === 7) {
+      weeks.push(week)
+      week = []
+    }
+  }
+  if (week.length) {
+    while (week.length < 7) week.push(null)
+    weeks.push(week)
+  }
+  return weeks
+}
+
 const date = ref(todayYmd())
 const status = ref('')
 const bookings = ref([])
+const bookingMonth = ref(todayYm())
+const selectedBookingDate = ref('')
+const bookingDaySummary = ref({})
 const blockMonth = ref(todayYm())
+const selectedBlockDate = ref('')
 const blocks = ref([])
 const blockDate = ref(todayYmd())
 const blockType = ref('partial')
@@ -182,6 +208,28 @@ async function toggleAdmin(user) {
   }
 }
 
+async function deleteUser(user) {
+  const ok = await Swal.fire({
+    title: 'ลบผู้ใช้',
+    html: `ลบ <strong>${user.name}</strong> และข้อมูลการจองทั้งหมดของผู้ใช้นี้<br><span style="color:#b91c1c">การลบไม่สามารถยกเลิกได้</span>`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!ok.isConfirmed) return
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.delete(`/api/admin/users/${user.id}`)
+    users.value = users.value.filter((u) => u.id !== user.id)
+    message.value = `ลบผู้ใช้ "${user.name}" แล้ว`
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'ลบผู้ใช้ไม่สำเร็จ'
+  }
+}
+
 function providerLabel(p) {
   return { google: 'Google', facebook: 'Facebook', line: 'LINE', phone: 'เบอร์โทร' }[p] || p
 }
@@ -189,12 +237,78 @@ function providerLabel(p) {
 function switchTab(tab) {
   if (activeTab.value === tab) return
   if (activeTab.value === 'services') closeServiceDay()
+  if (activeTab.value === 'bookings') closeBookingDay()
+  if (activeTab.value === 'blocks') closeBlockDay()
   activeTab.value = tab
   message.value = ''
   errorMessage.value = ''
 }
 
 const filtered = computed(() => bookings.value)
+
+const bookingMonthLabel = computed(() => {
+  const [y, m] = bookingMonth.value.split('-').map(Number)
+  return `${serviceThMonths[m - 1]} ${y + 543}`
+})
+
+const bookingCalendarWeeks = computed(() => buildCalendarWeeks(bookingMonth.value))
+
+function bookingDayStats(iso) {
+  return bookingDaySummary.value[iso] || { unpaid_count: 0, paid_count: 0 }
+}
+
+function bookingDayHasBookings(iso) {
+  const stats = bookingDayStats(iso)
+  return stats.unpaid_count > 0 || stats.paid_count > 0
+}
+
+function bookingDayHasUnpaid(iso) {
+  return bookingDayStats(iso).unpaid_count > 0
+}
+
+function bookingDayColor(iso) {
+  return colorForDate(nailOptions.value, iso)
+}
+
+function bookingDayStyle(iso) {
+  return dayTintStyle(bookingDayColor(iso))
+}
+
+function shiftBookingMonth(delta) {
+  const [y, m] = bookingMonth.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  bookingMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  loadBookingCalendarSummary()
+}
+
+async function loadBookingCalendarSummary() {
+  try {
+    const { data } = await api.get('/api/admin/bookings/calendar-summary', {
+      params: { month: bookingMonth.value },
+    })
+    const map = {}
+    for (const row of data || []) map[row.date] = row
+    bookingDaySummary.value = map
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดปฏิทินคิวไม่สำเร็จ'
+  }
+}
+
+function openBookingDay(iso) {
+  selectedBookingDate.value = iso
+  date.value = iso
+  status.value = ''
+  loadBookings()
+}
+
+function closeBookingDay() {
+  selectedBookingDate.value = ''
+  bookings.value = []
+}
+
+async function reloadBookingViews() {
+  await Promise.all([loadBookings(), loadBookingCalendarSummary()])
+}
 
 // ── รูปแบบแสดงเวลาหน้าจองลูกค้า ─────────────
 const bookingDisplayMode = ref('normal')
@@ -254,6 +368,61 @@ async function loadBlocks() {
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดรายการปิดวันเวลาไม่สำเร็จ'
   }
+}
+
+const blocksByDate = computed(() => {
+  const map = {}
+  for (const item of blocks.value) {
+    const key = formatDateKey(item.block_date)
+    if (!map[key]) map[key] = []
+    map[key].push(item)
+  }
+  return map
+})
+
+const blockMonthLabel = computed(() => {
+  const [y, m] = blockMonth.value.split('-').map(Number)
+  return `${serviceThMonths[m - 1]} ${y + 543}`
+})
+
+const blockCalendarWeeks = computed(() => buildCalendarWeeks(blockMonth.value))
+
+const selectedDayBlocks = computed(() => {
+  if (!selectedBlockDate.value) return []
+  return blocks.value.filter((item) => formatDateKey(item.block_date) === selectedBlockDate.value)
+})
+
+function blockDayMarker(iso) {
+  const items = blocksByDate.value[iso] || []
+  if (!items.length) return null
+  if (items.some((b) => b.is_full_day)) return 'full'
+  return 'partial'
+}
+
+function blockDayColor(iso) {
+  return colorForDate(nailOptions.value, iso)
+}
+
+function blockDayStyle(iso) {
+  return dayTintStyle(blockDayColor(iso))
+}
+
+function shiftBlockMonth(delta) {
+  const [y, m] = blockMonth.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  blockMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  loadBlocks()
+}
+
+function openBlockDay(iso) {
+  selectedBlockDate.value = iso
+  blockDate.value = iso
+  message.value = ''
+  errorMessage.value = ''
+}
+
+function closeBlockDay() {
+  selectedBlockDate.value = ''
 }
 
 async function loadDepositSetting() {
@@ -441,7 +610,7 @@ async function markDone(id) {
   try {
     const { data } = await api.patch(`/api/admin/bookings/${id}/complete`)
     message.value = data?.message || 'อัปเดตสำเร็จ'
-    await Promise.all([loadBookings(), auth.fetchMe().catch(() => null)])
+    await Promise.all([reloadBookingViews(), auth.fetchMe().catch(() => null)])
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'อัปเดตไม่สำเร็จ'
   }
@@ -463,7 +632,7 @@ async function confirmPayment(id) {
   try {
     const { data } = await api.patch(`/api/admin/bookings/${id}/confirm-payment`)
     message.value = data?.message || 'ยืนยันชำระเงินสำเร็จ'
-    await loadBookings()
+    await reloadBookingViews()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ยืนยันชำระเงินไม่สำเร็จ'
   }
@@ -513,7 +682,7 @@ async function cancelUnpaid(id) {
   try {
     const { data } = await api.patch(`/api/admin/bookings/${id}/cancel-unpaid`)
     message.value = data?.message || 'ยกเลิกคิวที่ยังไม่ชำระเงินแล้ว'
-    await loadBookings()
+    await reloadBookingViews()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ยกเลิกคิวไม่สำเร็จ'
   }
@@ -535,9 +704,32 @@ async function cancelPaid(id) {
   try {
     const { data } = await api.patch(`/api/admin/bookings/${id}/cancel-paid`)
     message.value = data?.message || 'ยกเลิกคิวชำระแล้วแล้ว'
-    await loadBookings()
+    await reloadBookingViews()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ยกเลิกคิวไม่สำเร็จ'
+  }
+}
+
+async function deleteBooking(id) {
+  const ok = await Swal.fire({
+    title: 'ลบรายการจอง',
+    text: 'ลบคิวที่ยกเลิกแล้วออกจากระบบ ใช่ไหม? ไม่สามารถกู้คืนได้',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.delete(`/api/admin/bookings/${id}`)
+    message.value = data?.message || 'ลบรายการจองแล้ว'
+    await reloadBookingViews()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ลบรายการจองไม่สำเร็จ'
   }
 }
 
@@ -562,27 +754,7 @@ const serviceMonthLabel = computed(() => {
   return `${serviceThMonths[m - 1]} ${y + 543}`
 })
 
-const serviceCalendarWeeks = computed(() => {
-  const [y, m] = serviceMonth.value.split('-').map(Number)
-  const lastDay = new Date(y, m, 0).getDate()
-  const startPad = new Date(y, m - 1, 1).getDay()
-  const weeks = []
-  let week = Array.from({ length: startPad }, () => null)
-
-  for (let day = 1; day <= lastDay; day++) {
-    const iso = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    week.push({ day, iso, isToday: iso === todayYmd() })
-    if (week.length === 7) {
-      weeks.push(week)
-      week = []
-    }
-  }
-  if (week.length) {
-    while (week.length < 7) week.push(null)
-    weeks.push(week)
-  }
-  return weeks
-})
+const serviceCalendarWeeks = computed(() => buildCalendarWeeks(serviceMonth.value))
 
 const selectedDayOptions = computed(() => {
   if (!selectedServiceDate.value) return []
@@ -597,6 +769,21 @@ function formatServiceDateLabel(iso) {
   if (!iso) return ''
   const [y, m, d] = iso.split('-').map(Number)
   return `${d} ${serviceThMonths[m - 1]} ${y + 543}`
+}
+
+function formatCreatedAt(value) {
+  if (!value) return '-'
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return '-'
+  return dt.toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 function shiftServiceMonth(delta) {
@@ -813,7 +1000,7 @@ function backToBooking() {
   router.push('/bookings')
 }
 
-onMounted(loadBookings)
+onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
 onMounted(loadNailOptions)
@@ -852,71 +1039,145 @@ onMounted(loadUsers)
     <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
 
     <section v-show="activeTab === 'bookings'" class="card admin-section">
-      <div class="admin-filter-row">
-        <label class="admin-filter-item">
-          วันที่
-          <input v-model="date" type="date" @change="loadBookings" class="admin-input" />
-        </label>
-        <label class="admin-filter-item">
-          สถานะ
-          <select v-model="status" @change="loadBookings" class="admin-input">
-            <option value="">ทั้งหมด</option>
-            <option value="awaiting_payment">รอชำระเงิน</option>
-            <option value="pending">ชำระแล้ว / รอให้บริการ</option>
-            <option value="done">ทำเสร็จแล้ว</option>
-            <option value="cancelled">ยกเลิกแล้ว</option>
-          </select>
-        </label>
-      </div>
-
-      <p v-if="loading" class="muted">กำลังโหลด...</p>
-
-      <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
-      <div v-for="item in filtered" :key="item.id" class="admin-item">
-        <div>
-          <strong>{{ formatDateKey(item.booking_date) }} {{ item.start_hour }}:00 - {{ item.end_hour ?? (Number(item.start_hour) + 2) }}:00</strong>
-          <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
-          <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
-          <p class="muted">
-            บริการ:
-            {{
-              item.nail_options?.length
-                ? item.nail_options.map((opt) => opt.option_name).join(', ')
-                : '-'
-            }}
-          </p>
+      <template v-if="!selectedBookingDate">
+        <div class="service-cal-header">
+          <h3>จัดการคิวตามวัน</h3>
+          <p class="muted">กดวันที่ในปฏิทินเพื่อดูรายการคิว · สีตามสถานที่ให้บริการ</p>
         </div>
-        <div class="row">
-          <button
-            v-if="item.status === 'awaiting_payment'"
-            class="btn"
-            @click="confirmPayment(item.id)"
-          >
-            ยืนยันชำระเงิน
+
+        <div class="service-cal-nav">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(-1)" aria-label="เดือนก่อน">
+            <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </button>
-          <button
-            v-if="item.status === 'awaiting_payment'"
-            class="btn danger"
-            @click="cancelUnpaid(item.id)"
-          >
-            ยกเลิกคิวไม่ชำระ
-          </button>
-          <button
-            v-if="item.status === 'pending'"
-            class="btn primary"
-            @click="markDone(item.id)"
-          >
-            ทำเสร็จ +10 แต้ม
-          </button>
-          <button
-            v-if="item.status === 'pending'"
-            class="btn danger"
-            @click="cancelPaid(item.id)"
-          >
-            ยกเลิกคิว (เลื่อนวัน)
+          <span class="service-cal-month">{{ bookingMonthLabel }}</span>
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(1)" aria-label="เดือนถัดไป">
+            <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </button>
         </div>
-      </div>
+
+        <div class="service-cal-weekdays">
+          <span v-for="wd in serviceWeekdays" :key="`bk-${wd}`" class="service-cal-wd">{{ wd }}</span>
+        </div>
+
+        <div class="service-cal-grid">
+          <div v-for="(week, wi) in bookingCalendarWeeks" :key="`bk-week-${wi}`" class="service-cal-week">
+            <button
+              v-for="(cell, ci) in week"
+              :key="`bk-${wi}-${ci}`"
+              type="button"
+              class="service-cal-day booking-cal-day"
+              :class="{
+                empty: !cell,
+                today: cell?.isToday && !bookingDayColor(cell.iso),
+                'has-bookings': cell && bookingDayHasBookings(cell.iso) && !bookingDayColor(cell.iso),
+              }"
+              :style="cell ? bookingDayStyle(cell.iso) : undefined"
+              :disabled="!cell"
+              @click="cell && openBookingDay(cell.iso)"
+            >
+              <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
+              <span v-if="cell && bookingDayHasBookings(cell.iso)" class="booking-cal-stats">
+                <span class="booking-stat-paid" title="ชำระแล้ว">{{ bookingDayStats(cell.iso).paid_count }}</span>
+                <span class="booking-stat-sep">/</span>
+                <span class="booking-stat-unpaid" title="รอชำระ">{{ bookingDayStats(cell.iso).unpaid_count }}</span>
+              </span>
+              <span v-if="cell && bookingDayHasUnpaid(cell.iso)" class="booking-cal-alert" title="มีคิวยังไม่ชำระ">!</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="booking-cal-legend">
+          <span><span class="legend-paid">2</span> ชำระแล้ว</span>
+          <span><span class="legend-unpaid">1</span> รอชำระ</span>
+          <span><span class="booking-cal-alert inline">!</span> มีคิวยังไม่ชำระ</span>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="service-day-header">
+          <button type="button" class="btn service-back-btn" @click="closeBookingDay">
+            <i class="ti ti-arrow-left" aria-hidden="true"></i>
+            กลับปฏิทิน
+          </button>
+          <div>
+            <h3>คิววันที่ {{ formatServiceDateLabel(selectedBookingDate) }}</h3>
+            <p class="muted">
+              ชำระแล้ว {{ bookingDayStats(selectedBookingDate).paid_count }} ·
+              รอชำระ {{ bookingDayStats(selectedBookingDate).unpaid_count }}
+            </p>
+          </div>
+        </div>
+
+        <div class="admin-filter-row">
+          <label class="admin-filter-item">
+            สถานะ
+            <select v-model="status" @change="loadBookings" class="admin-input">
+              <option value="">ทั้งหมด</option>
+              <option value="awaiting_payment">รอชำระเงิน</option>
+              <option value="pending">ชำระแล้ว / รอให้บริการ</option>
+              <option value="done">ทำเสร็จแล้ว</option>
+              <option value="cancelled">ยกเลิกแล้ว</option>
+            </select>
+          </label>
+        </div>
+
+        <p v-if="loading" class="muted">กำลังโหลด...</p>
+
+        <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
+        <div v-for="item in filtered" :key="item.id" class="admin-item">
+          <div>
+            <strong>{{ item.start_hour }}:00 - {{ item.end_hour ?? (Number(item.start_hour) + 2) }}:00</strong>
+            <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
+            <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
+            <p class="muted">
+              บริการ:
+              {{
+                item.nail_options?.length
+                  ? item.nail_options.map((opt) => opt.option_name).join(', ')
+                  : '-'
+              }}
+            </p>
+            <p class="muted">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
+          </div>
+          <div class="row">
+            <button
+              v-if="item.status === 'awaiting_payment'"
+              class="btn"
+              @click="confirmPayment(item.id)"
+            >
+              ยืนยันชำระเงิน
+            </button>
+            <button
+              v-if="item.status === 'awaiting_payment'"
+              class="btn danger"
+              @click="cancelUnpaid(item.id)"
+            >
+              ยกเลิกคิวไม่ชำระ
+            </button>
+            <button
+              v-if="item.status === 'pending'"
+              class="btn primary"
+              @click="markDone(item.id)"
+            >
+              ทำเสร็จ +10 แต้ม
+            </button>
+            <button
+              v-if="item.status === 'pending'"
+              class="btn danger"
+              @click="cancelPaid(item.id)"
+            >
+              ยกเลิกคิว (เลื่อนวัน)
+            </button>
+            <button
+              v-if="item.status === 'cancelled'"
+              class="btn danger"
+              @click="deleteBooking(item.id)"
+            >
+              ลบ
+            </button>
+          </div>
+        </div>
+      </template>
     </section>
 
     <section v-show="activeTab === 'services'" class="card admin-section">
@@ -1241,106 +1502,167 @@ onMounted(loadUsers)
       </div>
     </section>
 
-    <section v-show="activeTab === 'blocks'" class="card admin-section">
-      <h3>ปิดวัน / ปิดช่วงเวลา</h3>
-      <div class="admin-form-row">
-        <label>
-          เดือนที่ดู
-          <input v-model="blockMonth" type="month" @change="loadBlocks" class="admin-input" />
-        </label>
-      </div>
+    <section v-show="activeTab === 'blocks'" class="card admin-section admin-blocks-section">
+      <template v-if="!selectedBlockDate">
+        <div class="service-cal-header">
+          <h3>ปิดวัน / ปิดช่วงเวลา</h3>
+          <p class="muted">กดวันที่ในปฏิทินเพื่อจัดการรายการปิด · สีตามสถานที่ให้บริการ</p>
+        </div>
 
-      <div class="bulk-block-box">
-        <h4>ปิดล่วงหน้า 7 / 15 / 30 วัน (ทั้งวัน หรือ บางช่วงเวลา)</h4>
-        <div class="admin-form-grid admin-bulk-settings">
+        <div class="bulk-block-box">
+          <h4>ปิดล่วงหน้า 7 / 15 / 30 วัน (ทั้งวัน หรือ บางช่วงเวลา)</h4>
+          <div class="admin-form-grid admin-bulk-settings">
+            <label>
+              ประเภท
+              <select v-model="bulkBlockType" class="admin-input">
+                <option value="partial">ปิดบางช่วงเวลา</option>
+                <option value="full_day">ปิดทั้งวัน</option>
+              </select>
+            </label>
+            <label v-if="bulkBlockType === 'partial'">
+              เริ่ม (ชม.)
+              <input v-model="bulkBlockStart" type="number" min="0" max="23" class="admin-input" />
+            </label>
+            <label v-if="bulkBlockType === 'partial'">
+              ถึง (ชม.)
+              <input v-model="bulkBlockEnd" type="number" min="1" max="24" class="admin-input" />
+            </label>
+          </div>
+          <div class="admin-form-grid admin-bulk-grid">
+            <label>
+              เริ่มจากวันที่
+              <input v-model="bulkStartDate" type="date" class="admin-input" />
+            </label>
+            <label>
+              จำนวนวัน
+              <input v-model.number="bulkDays" type="number" min="1" max="90" class="admin-input" />
+            </label>
+          </div>
+          <div class="admin-form-row">
+            <label class="admin-label-grow">
+              หมายเหตุ
+              <input v-model="bulkBlockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
+            </label>
+          </div>
+          <p class="bulk-preview">{{ bulkPreviewText }}</p>
+          <div class="bulk-preset-row">
+            <button type="button" class="btn" :class="{ primary: bulkDays === 7 }" @click="bulkDays = 7">7 วัน</button>
+            <button type="button" class="btn" :class="{ primary: bulkDays === 15 }" @click="bulkDays = 15">15 วัน</button>
+            <button type="button" class="btn" :class="{ primary: bulkDays === 30 }" @click="bulkDays = 30">30 วัน</button>
+            <button type="button" class="btn primary admin-action-btn" @click="createBulkBlocks">
+              ยืนยันปิดล่วงหน้า
+            </button>
+          </div>
+        </div>
+
+        <div class="service-cal-nav">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="เดือนก่อน">
+            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+          </button>
+          <span class="service-cal-month">{{ blockMonthLabel }}</span>
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="เดือนถัดไป">
+            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <div class="service-cal-weekdays">
+          <span v-for="wd in serviceWeekdays" :key="`blk-${wd}`" class="service-cal-wd">{{ wd }}</span>
+        </div>
+
+        <div class="service-cal-grid">
+          <div v-for="(week, wi) in blockCalendarWeeks" :key="`blk-week-${wi}`" class="service-cal-week">
+            <button
+              v-for="(cell, ci) in week"
+              :key="`blk-${wi}-${ci}`"
+              type="button"
+              class="service-cal-day block-cal-day"
+              :class="{
+                empty: !cell,
+                today: cell?.isToday && !blockDayColor(cell.iso),
+                'has-block': cell && blockDayMarker(cell.iso) && !blockDayColor(cell.iso),
+              }"
+              :style="cell ? blockDayStyle(cell.iso) : undefined"
+              :disabled="!cell"
+              @click="cell && openBlockDay(cell.iso)"
+            >
+              <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
+              <span
+                v-if="cell && blockDayMarker(cell.iso)"
+                class="block-cal-marker"
+                :class="blockDayMarker(cell.iso)"
+                :title="blockDayMarker(cell.iso) === 'full' ? 'ปิดทั้งวัน' : 'ปิดบางช่วงเวลา'"
+              >
+                {{ blockDayMarker(cell.iso) === 'full' ? '×' : '!' }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="booking-cal-legend block-cal-legend">
+          <span><span class="block-cal-marker full inline">×</span> ปิดทั้งวัน</span>
+          <span><span class="block-cal-marker partial inline">!</span> ปิดบางช่วงเวลา</span>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="service-day-header">
+          <button type="button" class="btn service-back-btn" @click="closeBlockDay">
+            <i class="ti ti-arrow-left" aria-hidden="true"></i>
+            กลับปฏิทิน
+          </button>
+          <div>
+            <h3>ปิดรับคิววันที่ {{ formatServiceDateLabel(selectedBlockDate) }}</h3>
+            <p v-if="blockDayColor(selectedBlockDate)" class="muted">
+              สถานที่ให้บริการ:
+              <span
+                class="block-day-color-dot"
+                :style="{ background: blockDayColor(selectedBlockDate) }"
+              ></span>
+            </p>
+          </div>
+        </div>
+
+        <div v-if="selectedDayBlocks.length === 0" class="muted">ยังไม่มีรายการปิดในวันนี้</div>
+        <div v-for="item in selectedDayBlocks" :key="item.id" class="admin-item">
+          <div>
+            <strong>
+              {{
+                item.is_full_day
+                  ? 'ปิดทั้งวัน'
+                  : `ปิดเวลา ${item.start_hour}:00 - ${item.end_hour}:00`
+              }}
+            </strong>
+            <p v-if="item.note" class="muted">{{ item.note }}</p>
+          </div>
+          <button class="btn danger" @click="removeBlock(item.id)">ลบ</button>
+        </div>
+
+        <h4 class="admin-subtitle">เพิ่มรายการปิดวันนี้</h4>
+        <div class="admin-form-grid">
           <label>
             ประเภท
-            <select v-model="bulkBlockType" class="admin-input">
+            <select v-model="blockType" class="admin-input">
               <option value="partial">ปิดบางช่วงเวลา</option>
               <option value="full_day">ปิดทั้งวัน</option>
             </select>
           </label>
-          <label v-if="bulkBlockType === 'partial'">
-            เริ่ม (ชม.)
-            <input v-model="bulkBlockStart" type="number" min="0" max="23" class="admin-input" />
+          <label v-if="blockType === 'partial'">
+            เริ่ม
+            <input v-model="blockStart" type="number" min="0" max="23" class="admin-input" />
           </label>
-          <label v-if="bulkBlockType === 'partial'">
-            ถึง (ชม.)
-            <input v-model="bulkBlockEnd" type="number" min="1" max="24" class="admin-input" />
-          </label>
-        </div>
-        <div class="admin-form-grid admin-bulk-grid">
-          <label>
-            เริ่มจากวันที่
-            <input v-model="bulkStartDate" type="date" class="admin-input" />
-          </label>
-          <label>
-            จำนวนวัน
-            <input v-model.number="bulkDays" type="number" min="1" max="90" class="admin-input" />
+          <label v-if="blockType === 'partial'">
+            ถึง
+            <input v-model="blockEnd" type="number" min="1" max="24" class="admin-input" />
           </label>
         </div>
         <div class="admin-form-row">
           <label class="admin-label-grow">
             หมายเหตุ
-            <input v-model="bulkBlockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
+            <input v-model="blockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
           </label>
+          <button class="btn primary admin-action-btn" @click="createBlock">เพิ่มรายการปิด</button>
         </div>
-        <p class="bulk-preview">{{ bulkPreviewText }}</p>
-        <div class="bulk-preset-row">
-          <button type="button" class="btn" :class="{ primary: bulkDays === 7 }" @click="bulkDays = 7">7 วัน</button>
-          <button type="button" class="btn" :class="{ primary: bulkDays === 15 }" @click="bulkDays = 15">15 วัน</button>
-          <button type="button" class="btn" :class="{ primary: bulkDays === 30 }" @click="bulkDays = 30">30 วัน</button>
-          <button type="button" class="btn primary admin-action-btn" @click="createBulkBlocks">
-            ยืนยันปิดล่วงหน้า
-          </button>
-        </div>
-      </div>
-
-      <h4 class="admin-subtitle">ปิดทีละวัน</h4>
-      <div class="admin-form-grid">
-        <label>
-          วันที่
-          <input v-model="blockDate" type="date" class="admin-input" />
-        </label>
-        <label>
-          ประเภท
-          <select v-model="blockType" class="admin-input">
-            <option value="partial">ปิดบางช่วงเวลา</option>
-            <option value="full_day">ปิดทั้งวัน</option>
-          </select>
-        </label>
-        <label v-if="blockType === 'partial'">
-          เริ่ม
-          <input v-model="blockStart" type="number" min="0" max="23" class="admin-input" />
-        </label>
-        <label v-if="blockType === 'partial'">
-          ถึง
-          <input v-model="blockEnd" type="number" min="1" max="24" class="admin-input" />
-        </label>
-      </div>
-      <div class="admin-form-row">
-        <label class="admin-label-grow">
-          หมายเหตุ
-          <input v-model="blockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
-        </label>
-        <button class="btn admin-action-btn" @click="createBlock">เพิ่มรายการปิด</button>
-      </div>
-
-      <div v-if="blocks.length === 0" class="muted" style="margin-top: 10px">ยังไม่มีรายการปิดในเดือนนี้</div>
-      <div v-for="item in blocks" :key="item.id" class="admin-item">
-        <div>
-          <strong>{{ formatDateKey(item.block_date) }}</strong>
-          <p class="muted">
-            {{
-              item.is_full_day
-                ? 'ปิดทั้งวัน'
-                : `ปิดเวลา ${item.start_hour}:00 - ${item.end_hour}:00`
-            }}
-          </p>
-          <p v-if="item.note" class="muted">{{ item.note }}</p>
-        </div>
-        <button class="btn danger" @click="removeBlock(item.id)">ลบ</button>
-      </div>
+      </template>
     </section>
 
     <!-- ── ผู้ใช้ ── -->
@@ -1380,6 +1702,7 @@ onMounted(loadUsers)
           >
             {{ u.is_admin ? 'ถอดแอดมิน' : 'ให้สิทธิ์แอดมิน' }}
           </button>
+          <button class="btn danger" @click="deleteUser(u)">ลบ</button>
         </div>
       </div>
     </section>
@@ -1531,10 +1854,14 @@ onMounted(loadUsers)
 
 .admin-label-grow {
   flex: 1;
+  min-width: 0;
 }
 
 .admin-input {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   margin-top: 4px;
   border: 1px solid #d1d5db;
   border-radius: 10px;
@@ -1575,7 +1902,7 @@ onMounted(loadUsers)
 }
 
 .admin-bulk-settings {
-  grid-template-columns: repeat(3, minmax(100px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 10px;
 }
 
@@ -1587,7 +1914,29 @@ onMounted(loadUsers)
 }
 
 .admin-bulk-grid {
-  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-blocks-section label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.admin-blocks-section .admin-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+}
+
+.admin-blocks-section .admin-bulk-settings {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6.5rem), 1fr));
+}
+
+.admin-blocks-section .admin-bulk-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+}
+
+.admin-blocks-section .bulk-block-box {
+  overflow: hidden;
 }
 
 .admin-checkbox {
@@ -1726,6 +2075,113 @@ onMounted(loadUsers)
 
 .service-cal-day.has-options {
   background: #fff1f2;
+}
+
+.booking-cal-day,
+.block-cal-day {
+  min-height: 58px;
+}
+
+.block-cal-day.has-block {
+  background: #f8fafc;
+}
+
+.block-cal-marker {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.block-cal-marker.full {
+  color: #991b1b;
+}
+
+.block-cal-marker.partial {
+  color: #b45309;
+}
+
+.block-cal-marker.inline {
+  display: inline-block;
+  margin-top: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.block-cal-legend {
+  margin-top: 14px;
+}
+
+.block-day-color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  vertical-align: middle;
+  margin-left: 4px;
+  border: 1px solid rgba(0, 0, 0, .12);
+}
+
+.booking-cal-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.booking-stat-paid { color: #15803d; }
+.booking-stat-sep { color: #94a3b8; }
+.booking-stat-unpaid { color: #e11d48; }
+
+.booking-cal-alert {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fbbf24;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
+
+.booking-cal-alert.inline {
+  position: static;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.booking-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.legend-paid,
+.legend-unpaid {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.legend-paid { color: #15803d; }
+.legend-unpaid { color: #e11d48; }
+
+.service-cal-day.has-bookings {
+  background: #f8fafc;
 }
 
 .service-cal-num {
@@ -1914,6 +2370,21 @@ onMounted(loadUsers)
   .admin-bulk-grid,
   .admin-bulk-settings {
     grid-template-columns: 1fr;
+  }
+
+  .admin-blocks-section .admin-form-grid,
+  .admin-blocks-section .admin-bulk-settings,
+  .admin-blocks-section .admin-bulk-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-blocks-section .bulk-preset-row .btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+
+  .admin-blocks-section .bulk-preset-row .admin-action-btn {
+    flex: 1 1 100%;
   }
 
   .bulk-preset-row .btn {
