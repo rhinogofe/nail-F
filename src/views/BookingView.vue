@@ -601,7 +601,9 @@ onUnmounted(() => {
     <!-- ── BODY ── -->
     <main class="body">
       <div class="date-heading">
-        <span class="section-label">{{ selectedDateLabel }}</span>
+        <span class="section-label">
+          {{ selectedDateLabel }}<template v-if="requiredLocationLabel"> สถานที่ให้บริการวันนี้ {{ requiredLocationLabel }}</template>
+        </span>
       </div>
 
       <p v-if="errorMessage" class="msg error">
