@@ -94,6 +94,7 @@ const optionForm = ref({
   show_from_date: '',
   show_to_date: '',
 })
+const optionFormUseColor = ref(false)
 const loading = ref(false)
 const message = ref('')
 const errorMessage = ref('')
@@ -756,6 +757,7 @@ function serviceDayStyle(iso) {
 
 function setOptionColor(color) {
   optionForm.value.color = color
+  optionFormUseColor.value = true
 }
 
 const serviceMonthLabel = computed(() => {
@@ -819,6 +821,7 @@ function closeServiceDay() {
 }
 
 function resetOptionForm() {
+  optionFormUseColor.value = false
   optionForm.value = {
     id: null,
     option_name: '',
@@ -834,6 +837,7 @@ function resetOptionForm() {
 }
 
 function resetOptionFormForDay() {
+  optionFormUseColor.value = false
   optionForm.value = {
     id: null,
     option_name: '',
@@ -1058,6 +1062,7 @@ async function loadNailOptions() {
 function startEditOption(item) {
   const from = formatDateKey(item.show_from_date)
   const to = formatDateKey(item.show_to_date)
+  optionFormUseColor.value = isValidHexColor(item.color)
   optionForm.value = {
     id: item.id,
     option_name: item.option_name,
@@ -1112,8 +1117,10 @@ async function saveNailOption() {
     errorMessage.value = 'วันเริ่มแสดงต้องไม่เกินวันสิ้นสุดแสดง'
     return
   }
-  const colorValue = String(optionForm.value.color || '').trim()
-  if (colorValue && !isValidHexColor(colorValue)) {
+  const colorValue = optionFormUseColor.value
+    ? String(optionForm.value.color || '').trim()
+    : ''
+  if (optionFormUseColor.value && !isValidHexColor(colorValue)) {
     errorMessage.value = 'รูปแบบสีไม่ถูกต้อง ใช้ #RRGGBB'
     return
   }
@@ -1125,7 +1132,7 @@ async function saveNailOption() {
     duration_min: Number(optionForm.value.duration_min),
     is_active: Boolean(optionForm.value.is_active),
     is_required: Boolean(optionForm.value.is_required),
-    color: colorValue || null,
+    color: optionFormUseColor.value ? colorValue : null,
     show_from_date: showFrom || null,
     show_to_date: showTo || null,
   }
@@ -1443,25 +1450,34 @@ onMounted(loadUsers)
                 ระยะเวลา (นาที)
                 <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
               </label>
-              <label class="admin-color-field">
-                สีแสดงในปฏิทิน
-                <div class="color-picker-row">
-                  <input v-model="optionForm.color" type="color" class="admin-color-input" />
-                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
-                </div>
-                <div class="color-preset-row">
-                  <button
-                    v-for="preset in optionColorPresets"
-                    :key="preset.value"
-                    type="button"
-                    class="color-preset-btn"
-                    :class="{ active: optionForm.color === preset.value }"
-                    :style="{ background: preset.value }"
-                    :title="preset.label"
-                    :aria-label="preset.label"
-                    @click="setOptionColor(preset.value)"
-                  ></button>
-                </div>
+              <label class="admin-color-field admin-color-field-full">
+                <span class="admin-color-label-row">
+                  สีแสดงในปฏิทิน
+                  <label class="admin-checkbox admin-checkbox-inline">
+                    <input v-model="optionFormUseColor" type="checkbox" />
+                    ใช้สี
+                  </label>
+                </span>
+                <template v-if="optionFormUseColor">
+                  <div class="color-picker-row">
+                    <input v-model="optionForm.color" type="color" class="admin-color-input" />
+                    <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
+                  </div>
+                  <div class="color-preset-row">
+                    <button
+                      v-for="preset in optionColorPresets"
+                      :key="preset.value"
+                      type="button"
+                      class="color-preset-btn"
+                      :class="{ active: optionForm.color === preset.value }"
+                      :style="{ background: preset.value }"
+                      :title="preset.label"
+                      :aria-label="preset.label"
+                      @click="setOptionColor(preset.value)"
+                    ></button>
+                  </div>
+                </template>
+                <p v-else class="muted admin-color-hint">ไม่ใช้สี — วันในปฏิทินจะไม่เปลี่ยนจากบริการนี้</p>
               </label>
             </div>
             <div class="admin-form-row">
@@ -1485,6 +1501,7 @@ onMounted(loadUsers)
             <div>
               <strong>{{ item.option_name }}</strong>
               <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
+              <span v-else class="badge-no-color">ไม่ใช้สี</span>
               <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
                 {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
               </span>
@@ -1555,25 +1572,34 @@ onMounted(loadUsers)
               ระยะเวลา (นาที)
               <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
             </label>
-            <label class="admin-color-field">
-              สีแสดงในปฏิทิน
-              <div class="color-picker-row">
-                <input v-model="optionForm.color" type="color" class="admin-color-input" />
-                <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
-              </div>
-              <div class="color-preset-row">
-                <button
-                  v-for="preset in optionColorPresets"
-                  :key="preset.value"
-                  type="button"
-                  class="color-preset-btn"
-                  :class="{ active: optionForm.color === preset.value }"
-                  :style="{ background: preset.value }"
-                  :title="preset.label"
-                  :aria-label="preset.label"
-                  @click="setOptionColor(preset.value)"
-                ></button>
-              </div>
+            <label class="admin-color-field admin-color-field-full">
+              <span class="admin-color-label-row">
+                สีแสดงในปฏิทิน
+                <label class="admin-checkbox admin-checkbox-inline">
+                  <input v-model="optionFormUseColor" type="checkbox" />
+                  ใช้สี
+                </label>
+              </span>
+              <template v-if="optionFormUseColor">
+                <div class="color-picker-row">
+                  <input v-model="optionForm.color" type="color" class="admin-color-input" />
+                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
+                </div>
+                <div class="color-preset-row">
+                  <button
+                    v-for="preset in optionColorPresets"
+                    :key="`day-${preset.value}`"
+                    type="button"
+                    class="color-preset-btn"
+                    :class="{ active: optionForm.color === preset.value }"
+                    :style="{ background: preset.value }"
+                    :title="preset.label"
+                    :aria-label="preset.label"
+                    @click="setOptionColor(preset.value)"
+                  ></button>
+                </div>
+              </template>
+              <p v-else class="muted admin-color-hint">ไม่ใช้สี — วันในปฏิทินจะไม่เปลี่ยนจากบริการนี้</p>
             </label>
           </div>
           <div class="admin-form-row">
@@ -1598,6 +1624,7 @@ onMounted(loadUsers)
           <div>
             <strong>{{ item.option_name }}</strong>
             <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
+            <span v-else class="badge-no-color">ไม่ใช้สี</span>
             <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
               {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
             </span>
@@ -2270,6 +2297,41 @@ onMounted(loadUsers)
   font-weight: 600;
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.badge-no-color {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.admin-color-field-full {
+  grid-column: 1 / -1;
+}
+
+.admin-color-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.admin-checkbox-inline {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.admin-color-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
 }
 
 .service-location-add {
