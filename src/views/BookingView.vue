@@ -5,6 +5,7 @@ import Swal from 'sweetalert2'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import api from '../api/axios'
+import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -86,7 +87,8 @@ const weekDays = computed(() => {
     const date = addDays(windowStartDate.value, i)
     if (date > maxBookDate.value) return null
     const iso = toLocalYmd(date)
-    return { iso, day: date.getDate(), label: weekdayNames[date.getDay()], isToday: iso === toLocalYmd(todayDate) }
+    const tintColor = colorForDate(bookingStore.allNailOptions, iso)
+    return { iso, day: date.getDate(), label: weekdayNames[date.getDay()], isToday: iso === toLocalYmd(todayDate), tintColor }
   })
   return items.filter(Boolean)
 })
@@ -112,6 +114,22 @@ const pendingTimeLabel = computed(() => {
   return `${toHourLabel(h)} – ${toHourLabel(h + 2)} น.`
 })
 const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
+const canSubmitBooking = computed(() => {
+  const required = nailOptions.value.filter(opt => opt.is_required)
+  if (!required.length) return hasSelectedServices.value
+  return required.every(opt => selectedOptionIds.value.includes(opt.id))
+})
+
+function applyRequiredOptionDefaults() {
+  const requiredIds = nailOptions.value.filter(opt => opt.is_required).map(opt => opt.id)
+  selectedOptionIds.value = [...new Set([...selectedOptionIds.value, ...requiredIds])]
+}
+
+function missingRequiredOptionNames() {
+  return nailOptions.value
+    .filter(opt => opt.is_required && !selectedOptionIds.value.includes(opt.id))
+    .map(opt => opt.option_name)
+}
 
 function toHourLabel(hour) { return `${hour}:00` }
 
@@ -228,7 +246,10 @@ function hasBookingSettingsChanged(before, after) {
 
 async function syncBookingSettings({ refreshLayout = true } = {}) {
   const before = bookingSettingsSnapshot()
-  await bookingStore.fetchBookingSettings()
+  await Promise.all([
+    bookingStore.fetchBookingSettings(),
+    bookingStore.fetchAllNailOptions(),
+  ])
   const after = bookingSettingsSnapshot()
   if (!refreshLayout || !hasBookingSettingsChanged(before, after)) return false
 
@@ -253,7 +274,12 @@ async function refreshSlotData() {
 async function pollCurrentDate() {
   if (document.hidden || busy.value) return
   const layoutRefreshed = await syncBookingSettings()
-  if (!layoutRefreshed) await refreshSlotData()
+  if (!layoutRefreshed) {
+    await Promise.all([
+      refreshSlotData(),
+      bookingStore.fetchAllNailOptions().catch(() => null),
+    ])
+  }
 }
 
 async function ensureSlotStillAvailable(hour) {
@@ -300,6 +326,7 @@ async function goToServiceStep() {
       serviceError.value = 'ไม่มีบริการให้เลือกในวันนี้'
       return
     }
+    applyRequiredOptionDefaults()
     sheetStep.value = 'services'
   } finally {
     busy.value = false
@@ -314,6 +341,12 @@ function backToConfirmStep() {
 async function submitBooking() {
   const hour = pendingHour.value
   if (hour == null) return
+
+  const missingRequired = missingRequiredOptionNames()
+  if (missingRequired.length) {
+    serviceError.value = `กรุณาเลือกบริการที่จำเป็น: ${missingRequired.join(', ')}`
+    return
+  }
 
   if (!selectedOptionIds.value.length) {
     serviceError.value = 'กรุณาเลือกบริการอย่างน้อย 1 รายการ'
@@ -411,6 +444,11 @@ function selectDate(iso) {
   loadDate()
 }
 
+function dayPillStyle(day) {
+  if (!day.tintColor) return {}
+  return dayTintStyle(day.tintColor, { selected: selectedDate.value === day.iso })
+}
+
 async function refreshBlocksAndEnsureSelection(fullRange = false) {
   const from = fullRange ? toLocalYmd(todayDate) : toLocalYmd(windowStartDate.value)
   const to = fullRange
@@ -472,6 +510,7 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
   await bookingStore.fetchBookingSettings()
+  await bookingStore.fetchAllNailOptions()
   await refreshBlocksAndEnsureSelection(true)
   await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons()])
   await nextTick()
@@ -525,7 +564,13 @@ onUnmounted(() => {
           v-for="day in visibleWeekDays"
           :key="day.iso"
           class="day-pill"
-          :class="{ active: selectedDate === day.iso, today: day.isToday, 'has-book': hasBookingOnDay(day.iso) }"
+          :class="{
+            active: selectedDate === day.iso && !day.tintColor,
+            today: day.isToday && selectedDate !== day.iso && !day.tintColor,
+            'has-book': hasBookingOnDay(day.iso),
+            'has-tint': Boolean(day.tintColor),
+          }"
+          :style="dayPillStyle(day)"
           @click="selectDate(day.iso)"
         >
           <span class="day-name">{{ day.label }}</span>
@@ -667,7 +712,7 @@ onUnmounted(() => {
           <!-- Step 2: เลือกบริการ -->
           <template v-else>
             <h3 class="sheet-title">เลือกบริการ</h3>
-            <p class="sheet-sub">เลือกอย่างน้อย 1 รายการสำหรับคิวนี้</p>
+            <p class="sheet-sub">เลือกบริการสำหรับคิวนี้ (รายการที่มีป้ายบังคับต้องเลือก)</p>
 
             <div class="sheet-info sheet-info-compact">
               <div class="info-row">
@@ -685,20 +730,24 @@ onUnmounted(() => {
                 v-for="opt in nailOptions"
                 :key="opt.id"
                 class="option-card"
-                :class="{ selected: selectedOptionIds.includes(opt.id) }"
+                :class="{ selected: selectedOptionIds.includes(opt.id), required: opt.is_required }"
               >
                 <input
                   v-model="selectedOptionIds"
                   type="checkbox"
                   class="option-input"
                   :value="opt.id"
+                  :disabled="opt.is_required"
                   @change="serviceError = ''"
                 />
                 <span class="option-check" aria-hidden="true">
                   <i class="ti ti-check"></i>
                 </span>
                 <span class="option-body">
-                  <span class="option-name">{{ opt.option_name }}</span>
+                  <span class="option-name">
+                    {{ opt.option_name }}
+                    <span v-if="opt.is_required" class="option-required-tag">บังคับ</span>
+                  </span>
                   <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
                 </span>
                 <span v-if="Number(opt.price) > 0" class="option-price"></span>
@@ -713,7 +762,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="btn-confirm"
-                :disabled="busy || !hasSelectedServices"
+                :disabled="busy || !canSubmitBooking"
                 @click="submitBooking"
               >
                 ยืนยันการจอง
@@ -870,19 +919,34 @@ onUnmounted(() => {
   border: 0.5px solid #f1e8f0; background: #fff;
   cursor: pointer; transition: all .18s; font-family: inherit;
 }
+.day-pill.has-tint .day-name,
+.day-pill.has-tint .day-num {
+  color: inherit;
+}
+.day-pill.has-tint.active .day-name,
+.day-pill.has-tint.active .day-num,
+.day-pill.has-tint.active .day-dot {
+  color: #fff;
+}
+.day-pill.has-tint.active .day-dot {
+  background: rgba(255,255,255,.55);
+}
 .day-pill:hover { background: #fdf2f8; border-color: #fbcfe8; }
-.day-pill.today:not(.active) { border-color: #f9a8d4; background: #fdf2f8; }
-.day-pill.active { background: #e11d48; border-color: #e11d48; }
+.day-pill.has-tint:hover {
+  filter: brightness(0.97);
+}
+.day-pill.today:not(.active):not(.has-tint) { border-color: #f9a8d4; background: #fdf2f8; }
+.day-pill.active:not(.has-tint) { background: #e11d48; border-color: #e11d48; }
 .day-name { font-size: 10px; color: #94a3b8; font-weight: 500; }
 .day-num { font-size: 15px; font-weight: 600; color: #1e293b; }
-.day-pill.today:not(.active) .day-num { color: #e11d48; }
-.day-pill.active .day-name,
-.day-pill.active .day-num { color: #fff; }
+.day-pill.today:not(.active):not(.has-tint) .day-num { color: #e11d48; }
+.day-pill.active:not(.has-tint) .day-name,
+.day-pill.active:not(.has-tint) .day-num { color: #fff; }
 .day-dot {
   width: 4px; height: 4px; border-radius: 50%; background: transparent;
 }
 .day-pill.has-book .day-dot { background: #f9a8d4; }
-.day-pill.active .day-dot { background: rgba(255,255,255,.5); }
+.day-pill.active:not(.has-tint) .day-dot { background: rgba(255,255,255,.5); }
 
 .strip-hint { font-size: 12px; color: #94a3b8; padding: 0 2px 12px; }
 
@@ -1033,6 +1097,13 @@ onUnmounted(() => {
   background: #fff1f2;
   box-shadow: 0 0 0 1px rgba(225, 29, 72, .08);
 }
+.option-card.required {
+  cursor: default;
+}
+.option-card.required:hover {
+  border-color: #e11d48;
+  background: #fff1f2;
+}
 .option-input {
   position: absolute;
   opacity: 0;
@@ -1067,6 +1138,17 @@ onUnmounted(() => {
   gap: 2px;
 }
 .option-name { font-size: 14px; font-weight: 600; color: #1e293b; }
+.option-required-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #e11d48;
+  background: #ffe4e6;
+  vertical-align: middle;
+}
 .option-desc {
   font-size: 12px;
   color: #94a3b8;

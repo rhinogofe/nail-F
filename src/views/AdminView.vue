@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
+import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate } from '../utils/nailOptionHelpers'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -35,6 +36,17 @@ const bulkDays = ref(7)
 const depositAmount = ref(300)
 const useCouponCode = ref('')
 const nailOptions = ref([])
+const serviceMonth = ref(todayYm())
+const selectedServiceDate = ref('')
+const showEveryDayForm = ref(false)
+const serviceWeekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+const serviceThMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
+const optionColorPresets = [
+  { label: 'แดง', value: '#e11d48' },
+  { label: 'เขียว', value: '#22c55e' },
+  { label: 'น้ำเงิน', value: '#3b82f6' },
+  { label: 'ส้ม', value: '#f97316' },
+]
 const optionForm = ref({
   id: null,
   option_name: '',
@@ -42,6 +54,8 @@ const optionForm = ref({
   price: 0,
   duration_min: 60,
   is_active: true,
+  is_required: false,
+  color: '#e11d48',
   show_from_date: '',
   show_to_date: '',
 })
@@ -164,6 +178,7 @@ function providerLabel(p) {
 
 function switchTab(tab) {
   if (activeTab.value === tab) return
+  if (activeTab.value === 'services') closeServiceDay()
   activeTab.value = tab
   message.value = ''
   errorMessage.value = ''
@@ -516,6 +531,83 @@ async function cancelPaid(id) {
   }
 }
 
+function optionCountForDate(iso) {
+  return nailOptions.value.filter(item => optionVisibleOnDate(item, iso)).length
+}
+
+function serviceDayColor(iso) {
+  return colorForDate(nailOptions.value, iso)
+}
+
+function serviceDayStyle(iso) {
+  return dayTintStyle(serviceDayColor(iso))
+}
+
+function setOptionColor(color) {
+  optionForm.value.color = color
+}
+
+const serviceMonthLabel = computed(() => {
+  const [y, m] = serviceMonth.value.split('-').map(Number)
+  return `${serviceThMonths[m - 1]} ${y + 543}`
+})
+
+const serviceCalendarWeeks = computed(() => {
+  const [y, m] = serviceMonth.value.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const startPad = new Date(y, m - 1, 1).getDay()
+  const weeks = []
+  let week = Array.from({ length: startPad }, () => null)
+
+  for (let day = 1; day <= lastDay; day++) {
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    week.push({ day, iso, isToday: iso === todayYmd() })
+    if (week.length === 7) {
+      weeks.push(week)
+      week = []
+    }
+  }
+  if (week.length) {
+    while (week.length < 7) week.push(null)
+    weeks.push(week)
+  }
+  return weeks
+})
+
+const selectedDayOptions = computed(() => {
+  if (!selectedServiceDate.value) return []
+  return nailOptions.value.filter(item => optionVisibleOnDate(item, selectedServiceDate.value))
+})
+
+const everyDayOptions = computed(() =>
+  nailOptions.value.filter(item => !formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date))
+)
+
+function formatServiceDateLabel(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-').map(Number)
+  return `${d} ${serviceThMonths[m - 1]} ${y + 543}`
+}
+
+function shiftServiceMonth(delta) {
+  const [y, m] = serviceMonth.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  serviceMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function openServiceDay(iso) {
+  selectedServiceDate.value = iso
+  resetOptionFormForDay()
+  message.value = ''
+  errorMessage.value = ''
+}
+
+function closeServiceDay() {
+  selectedServiceDate.value = ''
+  showEveryDayForm.value = false
+  resetOptionForm()
+}
+
 function resetOptionForm() {
   optionForm.value = {
     id: null,
@@ -524,9 +616,39 @@ function resetOptionForm() {
     price: 0,
     duration_min: 60,
     is_active: true,
+    is_required: false,
+    color: '#e11d48',
     show_from_date: '',
     show_to_date: '',
   }
+}
+
+function resetOptionFormForDay() {
+  optionForm.value = {
+    id: null,
+    option_name: '',
+    description: '',
+    price: 0,
+    duration_min: 60,
+    is_active: true,
+    is_required: false,
+    color: '#e11d48',
+    show_from_date: selectedServiceDate.value,
+    show_to_date: selectedServiceDate.value,
+  }
+}
+
+function openEveryDayOptionForm() {
+  selectedServiceDate.value = ''
+  showEveryDayForm.value = true
+  resetOptionForm()
+  message.value = ''
+  errorMessage.value = ''
+}
+
+function closeEveryDayForm() {
+  showEveryDayForm.value = false
+  resetOptionForm()
 }
 
 function optionShowRangeText(item) {
@@ -548,6 +670,8 @@ async function loadNailOptions() {
 }
 
 function startEditOption(item) {
+  const from = formatDateKey(item.show_from_date)
+  const to = formatDateKey(item.show_to_date)
   optionForm.value = {
     id: item.id,
     option_name: item.option_name,
@@ -555,8 +679,20 @@ function startEditOption(item) {
     price: Number(item.price),
     duration_min: Number(item.duration_min),
     is_active: Boolean(item.is_active),
-    show_from_date: formatDateKey(item.show_from_date) || '',
-    show_to_date: formatDateKey(item.show_to_date) || '',
+    is_required: Boolean(item.is_required),
+    color: item.color && isValidHexColor(item.color) ? item.color : '#e11d48',
+    show_from_date: from || '',
+    show_to_date: to || '',
+  }
+  if (!from && !to) {
+    showEveryDayForm.value = true
+    selectedServiceDate.value = ''
+  } else if (from && to && from === to) {
+    selectedServiceDate.value = from
+    showEveryDayForm.value = false
+  } else if (from) {
+    selectedServiceDate.value = from
+    showEveryDayForm.value = false
   }
 }
 
@@ -580,10 +716,19 @@ async function saveNailOption() {
 
   message.value = ''
   errorMessage.value = ''
-  const showFrom = String(optionForm.value.show_from_date || '').trim()
-  const showTo = String(optionForm.value.show_to_date || '').trim()
+  let showFrom = String(optionForm.value.show_from_date || '').trim()
+  let showTo = String(optionForm.value.show_to_date || '').trim()
+  if (!isEdit && selectedServiceDate.value) {
+    showFrom = selectedServiceDate.value
+    showTo = selectedServiceDate.value
+  }
   if (showFrom && showTo && showFrom > showTo) {
     errorMessage.value = 'วันเริ่มแสดงต้องไม่เกินวันสิ้นสุดแสดง'
+    return
+  }
+  const colorValue = String(optionForm.value.color || '').trim()
+  if (colorValue && !isValidHexColor(colorValue)) {
+    errorMessage.value = 'รูปแบบสีไม่ถูกต้อง ใช้ #RRGGBB'
     return
   }
 
@@ -593,6 +738,8 @@ async function saveNailOption() {
     price: Number(optionForm.value.price),
     duration_min: Number(optionForm.value.duration_min),
     is_active: Boolean(optionForm.value.is_active),
+    is_required: Boolean(optionForm.value.is_required),
+    color: colorValue || null,
     show_from_date: showFrom || null,
     show_to_date: showTo || null,
   }
@@ -605,7 +752,9 @@ async function saveNailOption() {
       await api.post('/api/admin/nailoptions', payload)
       message.value = 'เพิ่มบริการแล้ว'
     }
-    resetOptionForm()
+    if (selectedServiceDate.value) resetOptionFormForDay()
+    else if (showEveryDayForm.value) resetOptionForm()
+    else resetOptionForm()
     await loadNailOptions()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกบริการไม่สำเร็จ'
@@ -628,7 +777,10 @@ async function removeNailOption(item) {
   try {
     await api.delete(`/api/admin/nailoptions/${item.id}`)
     message.value = 'ลบบริการแล้ว'
-    if (optionForm.value.id === item.id) resetOptionForm()
+    if (optionForm.value.id === item.id) {
+      if (selectedServiceDate.value) resetOptionFormForDay()
+      else resetOptionForm()
+    }
     await loadNailOptions()
   } catch (error) {
     const msg = error?.response?.data?.error || 'ลบบริการไม่สำเร็จ'
@@ -758,61 +910,227 @@ onMounted(loadUsers)
     </section>
 
     <section v-show="activeTab === 'services'" class="card admin-section">
-      <h3>จัดการบริการ (Nailoption)</h3>
-      <div class="admin-form-grid admin-option-grid">
-        <label>
-          ชื่อบริการ *
-          <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
-        </label>
-        <label>
-          รายละเอียด
-          <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
-        </label>
-        <label>
-          ราคา (บาท)
-          <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
-        </label>
-        <label>
-          ระยะเวลา (นาที)
-          <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
-        </label>
-        <label>
-          แสดงตั้งแต่วันที่
-          <input v-model="optionForm.show_from_date" type="date" class="admin-input" />
-        </label>
-        <label>
-          แสดงถึงวันที่
-          <input v-model="optionForm.show_to_date" type="date" class="admin-input" />
-        </label>
-      </div>
-      <p class="muted" style="margin: 0 0 10px">ว่างทั้งสองช่อง = แสดงทุกวัน (เช่น เกษตร) · กรอกช่วงวันเมื่อเปิดเฉพาะช่วง (เช่น จุฬา 28–29 มิ.ย.)</p>
-      <div class="admin-form-row">
-        <label class="admin-checkbox">
-          <input v-model="optionForm.is_active" type="checkbox" />
-          แสดงให้ลูกค้าเลือกจอง
-        </label>
-        <button class="btn primary admin-action-btn" @click="saveNailOption">
-          {{ optionForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มบริการ' }}
-        </button>
-        <button v-if="optionForm.id" class="btn admin-action-btn" @click="resetOptionForm">ยกเลิกแก้ไข</button>
-      </div>
+      <!-- ปฏิทินเลือกวัน -->
+      <template v-if="!selectedServiceDate">
+        <div class="service-cal-header">
+          <h3>จัดการบริการตามวัน</h3>
+          <p class="muted">กดวันที่ในปฏิทินเพื่อเพิ่ม/แก้ไขบริการของวันนั้น</p>
+        </div>
 
-      <div v-if="nailOptions.length === 0" class="muted" style="margin-top: 10px">ยังไม่มีรายการบริการ</div>
-      <div v-for="item in nailOptions" :key="item.id" class="admin-item">
-        <div>
-          <strong>{{ item.option_name }}</strong>
-          <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
-            {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
-          </span>
-          <p class="muted">{{ item.description || '-' }}</p>
-          <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
-          <p class="muted">{{ optionShowRangeText(item) }}</p>
+        <div class="service-cal-nav">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(-1)" aria-label="เดือนก่อน">
+            <i class="ti ti-chevron-left" aria-hidden="true"></i>
+          </button>
+          <span class="service-cal-month">{{ serviceMonthLabel }}</span>
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(1)" aria-label="เดือนถัดไป">
+            <i class="ti ti-chevron-right" aria-hidden="true"></i>
+          </button>
         </div>
-        <div class="row">
-          <button class="btn" @click="startEditOption(item)">แก้ไข</button>
-          <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
+
+        <div class="service-cal-weekdays">
+          <span v-for="wd in serviceWeekdays" :key="wd" class="service-cal-wd">{{ wd }}</span>
         </div>
-      </div>
+
+        <div class="service-cal-grid">
+          <div v-for="(week, wi) in serviceCalendarWeeks" :key="wi" class="service-cal-week">
+            <button
+              v-for="(cell, ci) in week"
+              :key="`${wi}-${ci}`"
+              type="button"
+              class="service-cal-day"
+              :class="{
+                empty: !cell,
+                today: cell?.isToday && !serviceDayColor(cell.iso),
+                'has-options': cell && optionCountForDate(cell.iso) > 0 && !serviceDayColor(cell.iso),
+              }"
+              :style="cell ? serviceDayStyle(cell.iso) : undefined"
+              :disabled="!cell"
+              @click="cell && openServiceDay(cell.iso)"
+            >
+              <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
+              <span v-if="cell && optionCountForDate(cell.iso)" class="service-cal-count">
+                {{ optionCountForDate(cell.iso) }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="service-everyday-section">
+          <div class="service-everyday-head">
+            <h4>บริการแสดงทุกวัน</h4>
+            <button type="button" class="btn primary" @click="openEveryDayOptionForm">+ เพิ่มบริการทุกวัน</button>
+          </div>
+          <p class="muted">บริการที่ไม่ผูกวันที่ จะแสดงให้ลูกค้าเลือกได้ทุกวันในปฏิทินจอง</p>
+
+          <div v-if="showEveryDayForm" class="service-option-form card-inner">
+            <h4>{{ optionForm.id ? 'แก้ไขบริการทุกวัน' : 'เพิ่มบริการทุกวัน' }}</h4>
+            <div class="admin-form-grid admin-option-grid">
+              <label>
+                ชื่อบริการ *
+                <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
+              </label>
+              <label>
+                รายละเอียด
+                <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+              </label>
+              <label>
+                ราคา (บาท)
+                <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
+              </label>
+              <label>
+                ระยะเวลา (นาที)
+                <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
+              </label>
+              <label class="admin-color-field">
+                สีแสดงในปฏิทิน
+                <div class="color-picker-row">
+                  <input v-model="optionForm.color" type="color" class="admin-color-input" />
+                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
+                </div>
+                <div class="color-preset-row">
+                  <button
+                    v-for="preset in optionColorPresets"
+                    :key="preset.value"
+                    type="button"
+                    class="color-preset-btn"
+                    :class="{ active: optionForm.color === preset.value }"
+                    :style="{ background: preset.value }"
+                    :title="preset.label"
+                    :aria-label="preset.label"
+                    @click="setOptionColor(preset.value)"
+                  ></button>
+                </div>
+              </label>
+            </div>
+            <div class="admin-form-row">
+              <label class="admin-checkbox">
+                <input v-model="optionForm.is_active" type="checkbox" />
+                แสดงให้ลูกค้าเลือกจอง
+              </label>
+              <label class="admin-checkbox">
+                <input v-model="optionForm.is_required" type="checkbox" />
+                บังคับเลือกเมื่อจอง
+              </label>
+              <button class="btn primary admin-action-btn" @click="saveNailOption">
+                {{ optionForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มบริการ' }}
+              </button>
+              <button class="btn admin-action-btn" @click="closeEveryDayForm">ยกเลิก</button>
+            </div>
+          </div>
+
+          <div v-if="everyDayOptions.length === 0 && !showEveryDayForm" class="muted">ยังไม่มีบริการทุกวัน</div>
+          <div v-for="item in everyDayOptions" :key="item.id" class="admin-item">
+            <div>
+              <strong>{{ item.option_name }}</strong>
+              <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
+              <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
+                {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
+              </span>
+              <span v-if="item.is_required" class="badge-required">บังคับเลือก</span>
+              <span class="badge-everyday">ทุกวัน</span>
+              <p class="muted">{{ item.description || '-' }}</p>
+              <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
+            </div>
+            <div class="row">
+              <button class="btn" @click="startEditOption(item)">แก้ไข</button>
+              <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- หน้าจัดการบริการของวันที่เลือก -->
+      <template v-else>
+        <div class="service-day-header">
+          <button type="button" class="btn service-back-btn" @click="closeServiceDay">
+            <i class="ti ti-arrow-left" aria-hidden="true"></i>
+            กลับปฏิทิน
+          </button>
+          <div>
+            <h3>บริการวันที่ {{ formatServiceDateLabel(selectedServiceDate) }}</h3>
+            <p class="muted">แสดงเฉพาะวัน {{ selectedServiceDate }}</p>
+          </div>
+        </div>
+
+        <div class="service-option-form card-inner">
+          <h4>{{ optionForm.id ? 'แก้ไขบริการ' : 'เพิ่มบริการวันนี้' }}</h4>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              ชื่อบริการ *
+              <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
+            </label>
+            <label>
+              รายละเอียด
+              <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+            </label>
+            <label>
+              ราคา (บาท)
+              <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
+            </label>
+            <label>
+              ระยะเวลา (นาที)
+              <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
+            </label>
+            <label class="admin-color-field">
+              สีแสดงในปฏิทิน
+              <div class="color-picker-row">
+                <input v-model="optionForm.color" type="color" class="admin-color-input" />
+                <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
+              </div>
+              <div class="color-preset-row">
+                <button
+                  v-for="preset in optionColorPresets"
+                  :key="preset.value"
+                  type="button"
+                  class="color-preset-btn"
+                  :class="{ active: optionForm.color === preset.value }"
+                  :style="{ background: preset.value }"
+                  :title="preset.label"
+                  :aria-label="preset.label"
+                  @click="setOptionColor(preset.value)"
+                ></button>
+              </div>
+            </label>
+          </div>
+          <div class="admin-form-row">
+            <label class="admin-checkbox">
+              <input v-model="optionForm.is_active" type="checkbox" />
+              แสดงให้ลูกค้าเลือกจอง
+            </label>
+            <label class="admin-checkbox">
+              <input v-model="optionForm.is_required" type="checkbox" />
+              บังคับเลือกเมื่อจอง
+            </label>
+            <button class="btn primary admin-action-btn" @click="saveNailOption">
+              {{ optionForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มบริการ' }}
+            </button>
+            <button v-if="optionForm.id" class="btn admin-action-btn" @click="resetOptionFormForDay">ยกเลิกแก้ไข</button>
+          </div>
+        </div>
+
+        <h4 class="admin-subtitle">รายการในวันนี้ ({{ selectedDayOptions.length }})</h4>
+        <div v-if="selectedDayOptions.length === 0" class="muted">ยังไม่มีบริการในวันนี้</div>
+        <div v-for="item in selectedDayOptions" :key="item.id" class="admin-item">
+          <div>
+            <strong>{{ item.option_name }}</strong>
+            <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
+            <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
+              {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
+            </span>
+            <span v-if="item.is_required" class="badge-required">บังคับเลือก</span>
+            <span v-if="!formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date)" class="badge-everyday">ทุกวัน</span>
+            <p class="muted">{{ item.description || '-' }}</p>
+            <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
+            <p v-if="formatDateKey(item.show_from_date) || formatDateKey(item.show_to_date)" class="muted">
+              {{ optionShowRangeText(item) }}
+            </p>
+          </div>
+          <div class="row">
+            <button class="btn" @click="startEditOption(item)">แก้ไข</button>
+            <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
+          </div>
+        </div>
+      </template>
     </section>
 
     <section v-show="activeTab === 'settings'" class="card admin-section">
@@ -1286,6 +1604,244 @@ onMounted(loadUsers)
 .badge-inactive {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.badge-required {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff1f2;
+  color: #e11d48;
+}
+
+.badge-everyday {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.service-cal-header h3 {
+  margin: 0 0 4px;
+}
+
+.service-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+
+.service-cal-nav-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.service-cal-month {
+  min-width: 160px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.service-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.service-cal-wd {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 4px 0;
+}
+
+.service-cal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.service-cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.service-cal-day {
+  position: relative;
+  min-height: 52px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color .15s, background .15s;
+}
+
+.service-cal-day:not(.empty):hover {
+  border-color: #fbcfe8;
+  background: #fdf2f8;
+}
+
+.service-cal-day.empty {
+  border: none;
+  background: transparent;
+  cursor: default;
+  min-height: 0;
+}
+
+.service-cal-day.today {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 1px rgba(225, 29, 72, .12);
+}
+
+.service-cal-day.has-options {
+  background: #fff1f2;
+}
+
+.service-cal-num {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.service-cal-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-top: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.service-everyday-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.service-everyday-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.service-everyday-head h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.service-day-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.service-day-header h3 {
+  margin: 0 0 4px;
+}
+
+.service-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.service-option-form {
+  margin-bottom: 20px;
+}
+
+.card-inner {
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.card-inner h4 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.admin-color-field {
+  grid-column: 1 / -1;
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.admin-color-input {
+  width: 44px;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.color-preset-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.color-preset-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-preset-btn.active {
+  border-color: #1e293b;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #1e293b;
+}
+
+.option-color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+  border: 1px solid rgba(15, 23, 42, .12);
 }
 
 .shop-hours-preview {

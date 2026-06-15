@@ -27,6 +27,7 @@ export const useBookingStore = defineStore('booking', {
     bookingsByDate: {},
     blocksByDate: {},
     nailOptions: [],
+    allNailOptions: [],
     myBookings: [],
     loading: false,
     shopOpenHour: 9,
@@ -84,6 +85,15 @@ export const useBookingStore = defineStore('booking', {
       const { data } = await api.get('/api/bookings/options', { params })
       this.nailOptions = data || []
       return this.nailOptions
+    },
+    async fetchAllNailOptions() {
+      try {
+        const { data } = await api.get('/api/bookings/options')
+        this.allNailOptions = data || []
+        return this.allNailOptions
+      } catch {
+        return this.allNailOptions
+      }
     },
     async cancelBooking(bookingId, date) {
       await api.delete(`/api/bookings/${bookingId}`)
