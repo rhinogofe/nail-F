@@ -45,12 +45,15 @@ const bookings = ref([])
 const bookingMonth = ref(todayYm())
 const selectedBookingDate = ref('')
 const bookingDaySummary = ref({})
+const bookingMonthPaidTotal = ref(0)
+const bookingMonthUnpaidTotal = ref(0)
+const bookingMonthCancelledTotal = ref(0)
 const revenueMonth = ref(todayYm())
 const revenueDaySummary = ref({})
 const revenueMonthTotal = ref(0)
-const revenueMonthBookingCount = ref(0)
-const revenueMonthCancelledCount = ref(0)
+const revenueMonthDepositTotal = ref(0)
 const revenueMonthDoneCount = ref(0)
+const revenueDepositRate = ref(300)
 const revenueLoading = ref(false)
 const blockMonth = ref(todayYm())
 const selectedBlockDate = ref('')
@@ -292,12 +295,12 @@ const bookingMonthLabel = computed(() => {
 const bookingCalendarWeeks = computed(() => buildCalendarWeeks(bookingMonth.value))
 
 function bookingDayStats(iso) {
-  return bookingDaySummary.value[iso] || { unpaid_count: 0, paid_count: 0 }
+  return bookingDaySummary.value[iso] || { unpaid_count: 0, paid_count: 0, cancelled_count: 0 }
 }
 
 function bookingDayHasBookings(iso) {
   const stats = bookingDayStats(iso)
-  return stats.unpaid_count > 0 || stats.paid_count > 0
+  return stats.unpaid_count > 0 || stats.paid_count > 0 || stats.cancelled_count > 0
 }
 
 function bookingDayHasUnpaid(iso) {
@@ -325,8 +328,11 @@ async function loadBookingCalendarSummary() {
       params: { month: bookingMonth.value },
     })
     const map = {}
-    for (const row of data || []) map[row.date] = row
+    for (const row of data?.days || data || []) map[row.date] = row
     bookingDaySummary.value = map
+    bookingMonthPaidTotal.value = Number(data?.month_paid_count) || 0
+    bookingMonthUnpaidTotal.value = Number(data?.month_unpaid_count) || 0
+    bookingMonthCancelledTotal.value = Number(data?.month_cancelled_count) || 0
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดปฏิทินคิวไม่สำเร็จ'
   }
@@ -359,15 +365,13 @@ const revenueCalendarWeeks = computed(() => buildCalendarWeeks(revenueMonth.valu
 function revenueDayStats(iso) {
   return revenueDaySummary.value[iso] || {
     total_amount: 0,
-    booking_count: 0,
-    booked_count: 0,
-    cancelled_count: 0,
+    deposit_amount: 0,
     done_count: 0,
   }
 }
 
 function revenueDayHasData(iso) {
-  return revenueDayStats(iso).booked_count > 0 || revenueDayStats(iso).total_amount > 0
+  return revenueDayStats(iso).done_count > 0
 }
 
 function revenueDayColor(iso) {
@@ -400,9 +404,9 @@ async function loadRevenueSummary() {
     const map = {}
     for (const row of data?.days || []) map[row.date] = row
     revenueDaySummary.value = map
+    revenueDepositRate.value = Number(data?.deposit_rate) || 300
+    revenueMonthDepositTotal.value = Number(data?.month_deposit_total) || 0
     revenueMonthTotal.value = Number(data?.month_total) || 0
-    revenueMonthBookingCount.value = Number(data?.month_booking_count) || 0
-    revenueMonthCancelledCount.value = Number(data?.month_cancelled_count) || 0
     revenueMonthDoneCount.value = Number(data?.month_done_count) || 0
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดสรุปยอดไม่สำเร็จ'
@@ -1455,6 +1459,13 @@ onMounted(loadUsers)
                 <span class="booking-stat-paid" title="ชำระแล้ว">{{ bookingDayStats(cell.iso).paid_count }}</span>
                 <span class="booking-stat-sep">/</span>
                 <span class="booking-stat-unpaid" title="รอชำระ">{{ bookingDayStats(cell.iso).unpaid_count }}</span>
+                <span
+                  v-if="bookingDayStats(cell.iso).cancelled_count > 0"
+                  class="booking-stat-cancelled"
+                  title="ยกเลิก"
+                >
+                  ยก.{{ bookingDayStats(cell.iso).cancelled_count }}
+                </span>
               </span>
               <span v-if="cell && bookingDayHasUnpaid(cell.iso)" class="booking-cal-alert" title="มีคิวยังไม่ชำระ">!</span>
             </button>
@@ -1462,9 +1473,12 @@ onMounted(loadUsers)
         </div>
 
         <div class="booking-cal-legend">
-          <span><span class="legend-paid">2</span> ชำระแล้ว</span>
-          <span><span class="legend-unpaid">1</span> รอชำระ</span>
-          <span><span class="booking-cal-alert inline">!</span> มีคิวยังไม่ชำระ</span>
+          <span><span class="legend-paid">{{ bookingMonthPaidTotal }}</span> ชำระแล้ว</span>
+          <span><span class="legend-unpaid">{{ bookingMonthUnpaidTotal }}</span> รอชำระ</span>
+          <span><span class="legend-cancelled">{{ bookingMonthCancelledTotal }}</span> ยกเลิก</span>
+          <span v-if="bookingMonthUnpaidTotal > 0">
+            <span class="booking-cal-alert inline">!</span> มีคิวยังไม่ชำระ
+          </span>
         </div>
       </template>
 
@@ -1478,7 +1492,8 @@ onMounted(loadUsers)
             <h3>คิววันที่ {{ formatServiceDateLabel(selectedBookingDate) }}</h3>
             <p class="muted">
               ชำระแล้ว {{ bookingDayStats(selectedBookingDate).paid_count }} ·
-              รอชำระ {{ bookingDayStats(selectedBookingDate).unpaid_count }}
+              รอชำระ {{ bookingDayStats(selectedBookingDate).unpaid_count }} ·
+              ยกเลิก {{ bookingDayStats(selectedBookingDate).cancelled_count }}
             </p>
           </div>
         </div>
@@ -1569,7 +1584,7 @@ onMounted(loadUsers)
     <section v-show="activeTab === 'revenue'" class="card admin-section">
       <div class="service-cal-header">
         <h3>สรุปยอดรายเดือน</h3>
-        <p class="muted">ยอดจากคิวที่ทำเสร็จแล้ว · แสดงจำนวนคิวต่อวัน · สีตามสถานที่ให้บริการ</p>
+        
       </div>
 
       <div class="service-cal-nav">
@@ -1603,26 +1618,27 @@ onMounted(loadUsers)
               :style="cell ? revenueDayStyle(cell.iso) : undefined"
             >
               <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
-              <div v-if="cell && revenueDayHasData(cell.iso)" class="revenue-cal-row">
-                <span class="revenue-cal-amount">
-                  {{
-                    revenueDayStats(cell.iso).total_amount > 0
-                      ? formatDayRevenue(revenueDayStats(cell.iso).total_amount)
-                      : ''
-                  }}
-                </span>
+              <div v-if="cell && revenueDayHasData(cell.iso)" class="revenue-cal-body">
+                <div class="revenue-cal-amounts">
+                  <span
+                    v-if="revenueDayStats(cell.iso).deposit_amount > 0"
+                    class="revenue-cal-deposit"
+                    title="มัดจำ"
+                  >
+                    {{ formatDayRevenue(revenueDayStats(cell.iso).deposit_amount) }}
+                  </span>
+                  <span
+                    v-if="revenueDayStats(cell.iso).total_amount > 0"
+                    class="revenue-cal-total"
+                    title="ยอดบริการ"
+                  >
+                    {{ formatDayRevenue(revenueDayStats(cell.iso).total_amount) }}
+                  </span>
+                </div>
                 <span class="revenue-cal-count">
                   <template v-if="revenueDayStats(cell.iso).done_count > 0">
                     {{ revenueDayStats(cell.iso).done_count }} คิว
                   </template>
-                  <span
-                    v-if="revenueDayStats(cell.iso).cancelled_count > 0"
-                    class="revenue-cal-cancelled"
-                  >
-                    {{ revenueDayStats(cell.iso).done_count > 0 ? ' ' : '' }}ยก.{{
-                      revenueDayStats(cell.iso).cancelled_count
-                    }}
-                  </span>
                 </span>
               </div>
             </div>
@@ -1630,22 +1646,22 @@ onMounted(loadUsers)
         </div>
 
         <div class="revenue-month-summary">
-          <div class="revenue-summary-main">
-            <span class="revenue-summary-label">ยอดรวมเดือนนี้</span>
-            <strong class="revenue-summary-total">{{ formatBookingTotal(revenueMonthTotal) }}</strong>
-          </div>
-          <div class="revenue-summary-stats">
-            <span class="revenue-stat-item">
-              <strong>{{ revenueMonthBookingCount.toLocaleString('th-TH') }}</strong> คิวจอง
-            </span>
-            <span class="revenue-stat-sep">·</span>
-            <span class="revenue-stat-item revenue-stat-cancelled">
-              <strong>{{ revenueMonthCancelledCount.toLocaleString('th-TH') }}</strong> ยกเลิก
-            </span>
-            <span class="revenue-stat-sep">·</span>
-            <span class="revenue-stat-item revenue-stat-done">
-              <strong>{{ revenueMonthDoneCount.toLocaleString('th-TH') }}</strong> ทำเสร็จ
-            </span>
+          <div class="revenue-summary-grid">
+            <div class="revenue-summary-block">
+              <span class="revenue-summary-label">มัดจำรวม</span>
+              <strong class="revenue-summary-deposit">{{ formatBookingTotal(revenueMonthDepositTotal) }}</strong>
+              <span class="muted revenue-summary-sub">
+              
+                {{ revenueDepositRate.toLocaleString('th-TH') }} บาท
+              </span>
+            </div>
+            <div class="revenue-summary-block">
+              <span class="revenue-summary-label">ยอดบริการรวม</span>
+              <strong class="revenue-summary-total">{{ formatBookingTotal(revenueMonthTotal) }}</strong>
+              <span class="muted revenue-summary-sub">
+                {{ revenueMonthDoneCount.toLocaleString('th-TH') }} คิวทำเสร็จ
+              </span>
+            </div>
           </div>
         </div>
       </template>
@@ -2904,6 +2920,12 @@ onMounted(loadUsers)
 .booking-stat-sep { color: #94a3b8; }
 .booking-stat-unpaid { color: #e11d48; }
 
+.booking-stat-cancelled {
+  margin-left: 4px;
+  color: #64748b;
+  font-weight: 800;
+}
+
 .booking-cal-alert {
   position: absolute;
   top: 4px;
@@ -2935,7 +2957,8 @@ onMounted(loadUsers)
 }
 
 .legend-paid,
-.legend-unpaid {
+.legend-unpaid,
+.legend-cancelled {
   display: inline-block;
   min-width: 18px;
   text-align: center;
@@ -2945,6 +2968,7 @@ onMounted(loadUsers)
 
 .legend-paid { color: #15803d; }
 .legend-unpaid { color: #e11d48; }
+.legend-cancelled { color: #64748b; }
 
 .service-cal-day.has-bookings {
   background: #f8fafc;
@@ -2956,6 +2980,38 @@ onMounted(loadUsers)
 
 .revenue-cal-day.has-revenue {
   background: #ecfdf5;
+}
+
+.revenue-cal-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.revenue-cal-amounts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.revenue-cal-deposit {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #b45309;
+  word-break: break-word;
+}
+
+.revenue-cal-total {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #15803d;
+  word-break: break-word;
 }
 
 .revenue-cal-row {
@@ -2991,8 +3047,36 @@ onMounted(loadUsers)
   margin-top: 20px;
   padding: 16px 18px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
-  border: 1px solid #bbf7d0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+}
+
+.revenue-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.revenue-summary-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.revenue-summary-deposit {
+  font-size: 22px;
+  font-weight: 800;
+  color: #b45309;
+}
+
+.revenue-summary-sub {
+  font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .revenue-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .revenue-summary-main {
