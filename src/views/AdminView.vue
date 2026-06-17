@@ -1493,7 +1493,8 @@ onMounted(loadUsers)
             <p class="muted">
               ชำระแล้ว {{ bookingDayStats(selectedBookingDate).paid_count }} ·
               รอชำระ {{ bookingDayStats(selectedBookingDate).unpaid_count }} ·
-              ยกเลิก {{ bookingDayStats(selectedBookingDate).cancelled_count }}
+              ยกเลิก {{ bookingDayStats(selectedBookingDate).cancelled_count }} .
+              รวมทั้งหมด {{ bookingDayStats(selectedBookingDate).paid_count  + bookingDayStats(selectedBookingDate).cancelled_count }}
             </p>
           </div>
         </div>
