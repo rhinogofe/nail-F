@@ -211,6 +211,16 @@ async function saveShopHours() {
 // ── Users ────────────────────────────────────
 const users = ref([])
 const userSearch = ref('')
+const userEditOpen = ref(false)
+const userEditItem = ref(null)
+const userEditName = ref('')
+const userEditEmail = ref('')
+const userEditLoginId = ref('')
+const userEditPoints = ref(0)
+const userEditNote = ref('')
+const userEditIsAdmin = ref(false)
+const userEditSaving = ref(false)
+const userEditError = ref('')
 
 const filteredUsers = computed(() => {
   const q = userSearch.value.trim().toLowerCase()
@@ -267,6 +277,79 @@ async function deleteUser(user) {
     message.value = `ลบผู้ใช้ "${user.name}" แล้ว`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'ลบผู้ใช้ไม่สำเร็จ'
+  }
+}
+
+function editUser(user) {
+  userEditItem.value = user
+  userEditName.value = user.name || ''
+  userEditEmail.value = user.email || ''
+  userEditLoginId.value = user.provider_id || ''
+  userEditPoints.value = Number(user.total_points) || 0
+  userEditNote.value = user.admin_note || ''
+  userEditIsAdmin.value = Boolean(user.is_admin)
+  userEditError.value = ''
+  userEditOpen.value = true
+}
+
+function closeUserEdit() {
+  userEditOpen.value = false
+  userEditItem.value = null
+}
+
+async function saveUserEdit() {
+  if (!userEditItem.value) return
+  const name = userEditName.value.trim()
+  const email = userEditEmail.value.trim()
+  const totalPoints = Number(userEditPoints.value)
+  if (!name) {
+    userEditError.value = 'กรุณาระบุชื่อ'
+    return
+  }
+  if (!email) {
+    userEditError.value = 'กรุณาระบุอีเมล'
+    return
+  }
+  if (userEditItem.value.provider === 'phone') {
+    const loginId = userEditLoginId.value.trim()
+    if (!loginId) {
+      userEditError.value = 'กรุณาระบุรหัสล็อกอิน (เบอร์โทร)'
+      return
+    }
+  }
+  if (!Number.isInteger(totalPoints) || totalPoints < 0) {
+    userEditError.value = 'แต้มต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
+    return
+  }
+  if (userEditItem.value.id === auth.user?.id && userEditIsAdmin.value === false && userEditItem.value.is_admin) {
+    userEditError.value = 'ไม่สามารถถอดสิทธิ์แอดมินของตัวเองได้'
+    return
+  }
+
+  userEditSaving.value = true
+  userEditError.value = ''
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const payload = {
+      name,
+      email,
+      total_points: totalPoints,
+      admin_note: userEditNote.value.trim(),
+      is_admin: userEditIsAdmin.value,
+    }
+    if (userEditItem.value.provider === 'phone') {
+      payload.login_id = userEditLoginId.value.trim()
+    }
+    const { data } = await api.patch(`/api/admin/users/${userEditItem.value.id}`, payload)
+    const idx = users.value.findIndex((u) => u.id === userEditItem.value.id)
+    if (idx >= 0 && data?.user) users.value[idx] = data.user
+    message.value = 'บันทึกข้อมูลผู้ใช้แล้ว'
+    closeUserEdit()
+  } catch (err) {
+    userEditError.value = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
+  } finally {
+    userEditSaving.value = false
   }
 }
 
@@ -2288,26 +2371,149 @@ onMounted(loadUsers)
         <div class="user-info">
           <strong>{{ u.name }}</strong>
           <span class="user-badge-provider">{{ providerLabel(u.provider) }}</span>
+          <span v-if="u.is_admin" class="user-badge-admin">แอดมิน</span>
           <p class="muted">{{ u.email || '-' }}</p>
+          <p v-if="u.provider === 'phone'" class="muted">ล็อกอิน: {{ u.provider_id }}</p>
           <p class="muted">
             แต้ม {{ u.total_points }} ·
             จอง {{ u.total_bookings }} ครั้ง ·
             เสร็จ {{ u.completed_bookings }} ครั้ง ·
+            ยกเลิก {{ u.cancelled_bookings ?? 0 }} ครั้ง ·
             สมัคร {{ formatDateKey(u.created_at) }}
           </p>
+          <p v-if="u.admin_note" class="user-admin-note">หมายเหตุ: {{ u.admin_note }}</p>
         </div>
         <div class="row" style="flex-shrink:0">
+          <button type="button" class="btn" @click="editUser(u)">แก้ไขข้อมูล</button>
           <button
             class="btn"
             :class="u.is_admin ? 'danger' : ''"
+            :disabled="u.id === auth.user?.id && u.is_admin"
             @click="toggleAdmin(u)"
           >
             {{ u.is_admin ? 'ถอดแอดมิน' : 'ให้สิทธิ์แอดมิน' }}
           </button>
-          <button class="btn danger" @click="deleteUser(u)">ลบ</button>
+          <button v-if="!u.is_admin" class="btn danger" @click="deleteUser(u)">ลบ</button>
         </div>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="userEditOpen"
+        class="booking-edit-backdrop"
+        @click.self="closeUserEdit"
+      >
+        <div class="booking-edit-modal card" role="dialog" aria-labelledby="user-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="user-edit-title">แก้ไขข้อมูลผู้ใช้</h3>
+            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserEdit">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <p v-if="userEditItem" class="muted booking-edit-meta">
+            {{ providerLabel(userEditItem.provider) }} · สมัคร {{ formatDateKey(userEditItem.created_at) }}
+          </p>
+          <p v-if="userEditItem" class="muted booking-edit-meta user-edit-readonly-stats">
+            จอง {{ userEditItem.total_bookings }} ครั้ง · เสร็จ {{ userEditItem.completed_bookings }} ครั้ง ·
+            ยกเลิก {{ userEditItem.cancelled_bookings ?? 0 }} ครั้ง
+            <span class="user-edit-readonly-hint">(คำนวณจากคิว แก้ไขไม่ได้)</span>
+          </p>
+
+          <label class="booking-edit-field">
+            ชื่อ
+            <input
+              v-model="userEditName"
+              type="text"
+              class="admin-input"
+              @input="userEditError = ''"
+            />
+          </label>
+
+          <label class="booking-edit-field">
+            รหัสล็อกอิน
+            <input
+              v-if="userEditItem?.provider === 'phone'"
+              v-model="userEditLoginId"
+              type="tel"
+              class="admin-input"
+              placeholder="เบอร์โทรที่ใช้ล็อกอิน"
+              @input="userEditError = ''"
+            />
+            <input
+              v-else
+              :value="userEditItem?.provider_id || '-'"
+              type="text"
+              class="admin-input"
+              disabled
+            />
+            <span v-if="userEditItem?.provider !== 'phone'" class="user-edit-readonly-hint">
+              บัญชี {{ providerLabel(userEditItem?.provider) }} ล็อกอินผ่าน {{ providerLabel(userEditItem?.provider) }} โดยตรง
+            </span>
+          </label>
+
+          <label class="booking-edit-field">
+            อีเมล
+            <input
+              v-model="userEditEmail"
+              type="email"
+              class="admin-input"
+              @input="userEditError = ''"
+            />
+          </label>
+
+          <label class="booking-edit-field">
+            แต้ม
+            <input
+              v-model.number="userEditPoints"
+              type="number"
+              min="0"
+              step="1"
+              class="admin-input"
+              @input="userEditError = ''"
+            />
+          </label>
+
+          <label class="admin-checkbox user-edit-admin-check">
+            <input
+              v-model="userEditIsAdmin"
+              type="checkbox"
+              :disabled="userEditItem?.id === auth.user?.id && userEditItem?.is_admin"
+              @change="userEditError = ''"
+            />
+            สิทธิ์แอดมิน
+          </label>
+
+          <label class="booking-edit-field">
+            หมายเหตุ
+            <textarea
+              v-model="userEditNote"
+              class="admin-input user-edit-note"
+              rows="4"
+              placeholder="บันทึกหมายเหตุเกี่ยวกับลูกค้า..."
+              @input="userEditError = ''"
+            />
+          </label>
+
+          <p v-if="userEditError" class="alert error">{{ userEditError }}</p>
+
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="userEditSaving" @click="closeUserEdit">
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              class="btn primary"
+              :disabled="userEditSaving"
+              @click="saveUserEdit"
+            >
+              {{ userEditSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -3289,6 +3495,46 @@ onMounted(loadUsers)
   background: #f1f5f9;
   color: #475569;
   vertical-align: middle;
+}
+
+.user-badge-admin {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fef3c7;
+  color: #b45309;
+  vertical-align: middle;
+}
+
+.user-admin-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.user-edit-note {
+  resize: vertical;
+  min-height: 96px;
+  font-family: inherit;
+}
+
+.user-edit-readonly-stats {
+  line-height: 1.5;
+}
+
+.user-edit-readonly-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.user-edit-admin-check {
+  margin-bottom: 14px;
 }
 
 @media (max-width: 820px) {
