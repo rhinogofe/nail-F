@@ -45,6 +45,13 @@ const bookings = ref([])
 const bookingMonth = ref(todayYm())
 const selectedBookingDate = ref('')
 const bookingDaySummary = ref({})
+const revenueMonth = ref(todayYm())
+const revenueDaySummary = ref({})
+const revenueMonthTotal = ref(0)
+const revenueMonthBookingCount = ref(0)
+const revenueMonthCancelledCount = ref(0)
+const revenueMonthDoneCount = ref(0)
+const revenueLoading = ref(false)
 const blockMonth = ref(todayYm())
 const selectedBlockDate = ref('')
 const blocks = ref([])
@@ -100,8 +107,28 @@ const message = ref('')
 const errorMessage = ref('')
 const activeTab = ref('bookings')
 
+const bookingEditOpen = ref(false)
+const bookingEditItem = ref(null)
+const bookingEditTotal = ref('')
+const bookingEditOptions = ref([])
+const bookingEditSelectedIds = ref([])
+const bookingEditLoading = ref(false)
+const bookingEditSaving = ref(false)
+const bookingEditError = ref('')
+
+const bookingEditOrphaned = computed(() => {
+  if (!bookingEditItem.value) return []
+  const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
+  return (bookingEditItem.value.nail_options || []).filter((o) => !availableIds.has(String(o.id)))
+})
+
+const bookingEditDate = computed(
+  () => bookingEditItem.value?.booking_date || selectedBookingDate.value || ''
+)
+
 const adminTabs = [
   { key: 'bookings', label: 'จัดการคิว', icon: 'ti-calendar' },
+  { key: 'revenue', label: 'สรุปยอด', icon: 'ti-report-money' },
   { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
   { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
   { key: 'blocks', label: 'ปิดร้าน', icon: 'ti-calendar-off' },
@@ -252,6 +279,7 @@ function switchTab(tab) {
   activeTab.value = tab
   message.value = ''
   errorMessage.value = ''
+  if (tab === 'revenue') loadRevenueSummary()
 }
 
 const filtered = computed(() => bookings.value)
@@ -318,6 +346,69 @@ function closeBookingDay() {
 
 async function reloadBookingViews() {
   await Promise.all([loadBookings(), loadBookingCalendarSummary()])
+  if (activeTab.value === 'revenue') await loadRevenueSummary()
+}
+
+const revenueMonthLabel = computed(() => {
+  const [y, m] = revenueMonth.value.split('-').map(Number)
+  return `${serviceThMonths[m - 1]} ${y + 543}`
+})
+
+const revenueCalendarWeeks = computed(() => buildCalendarWeeks(revenueMonth.value))
+
+function revenueDayStats(iso) {
+  return revenueDaySummary.value[iso] || {
+    total_amount: 0,
+    booking_count: 0,
+    booked_count: 0,
+    cancelled_count: 0,
+    done_count: 0,
+  }
+}
+
+function revenueDayHasData(iso) {
+  return revenueDayStats(iso).booked_count > 0 || revenueDayStats(iso).total_amount > 0
+}
+
+function revenueDayColor(iso) {
+  return colorForDate(nailOptions.value, iso)
+}
+
+function revenueDayStyle(iso) {
+  return dayTintStyle(revenueDayColor(iso))
+}
+
+function formatDayRevenue(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return n.toLocaleString('th-TH')
+}
+
+function shiftRevenueMonth(delta) {
+  const [y, m] = revenueMonth.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  revenueMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  loadRevenueSummary()
+}
+
+async function loadRevenueSummary() {
+  revenueLoading.value = true
+  try {
+    const { data } = await api.get('/api/admin/revenue/summary', {
+      params: { month: revenueMonth.value },
+    })
+    const map = {}
+    for (const row of data?.days || []) map[row.date] = row
+    revenueDaySummary.value = map
+    revenueMonthTotal.value = Number(data?.month_total) || 0
+    revenueMonthBookingCount.value = Number(data?.month_booking_count) || 0
+    revenueMonthCancelledCount.value = Number(data?.month_cancelled_count) || 0
+    revenueMonthDoneCount.value = Number(data?.month_done_count) || 0
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดสรุปยอดไม่สำเร็จ'
+  } finally {
+    revenueLoading.value = false
+  }
 }
 
 // ── รูปแบบแสดงเวลาหน้าจองลูกค้า ─────────────
@@ -604,25 +695,111 @@ async function removeBlock(id) {
   }
 }
 
+function formatBookingTotal(value) {
+  if (value == null || value === '') return '-'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '-'
+  return `${n.toLocaleString('th-TH')} บาท`
+}
+
 async function markDone(id) {
-  const ok = await Swal.fire({
-    title: 'ยืนยันทำคิวเสร็จ',
-    text: 'ต้องการปิดคิวนี้และให้แต้ม +10 ใช่ไหม',
-    icon: 'question',
+  const result = await Swal.fire({
+    title: 'ทำคิวเสร็จ',
+    text: 'กรอกยอดเงินแล้วยืนยัน — ลูกค้าจะได้รับ +10 แต้ม',
+    input: 'number',
+    inputLabel: 'ยอดเงิน (บาท)',
+    inputAttributes: { min: 0, step: 1 },
     showCancelButton: true,
-    confirmButtonText: 'ยืนยัน',
+    confirmButtonText: 'บันทึก',
     cancelButtonText: 'ยกเลิก',
+    inputValidator: (value) => {
+      const n = Number(value)
+      if (value === '' || !Number.isFinite(n) || n < 0) return 'กรุณากรอกยอดเงินที่ถูกต้อง'
+      return undefined
+    },
   })
-  if (!ok.isConfirmed) return
+  if (!result.isConfirmed) return
 
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch(`/api/admin/bookings/${id}/complete`)
+    const { data } = await api.patch(`/api/admin/bookings/${id}/complete`, {
+      total: Number(result.value),
+    })
     message.value = data?.message || 'อัปเดตสำเร็จ'
     await Promise.all([reloadBookingViews(), auth.fetchMe().catch(() => null)])
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'อัปเดตไม่สำเร็จ'
+  }
+}
+
+async function editBooking(item) {
+  bookingEditItem.value = item
+  bookingEditTotal.value = item.total != null ? String(Number(item.total)) : ''
+  bookingEditSelectedIds.value = []
+  bookingEditOptions.value = []
+  bookingEditError.value = ''
+  bookingEditLoading.value = true
+  bookingEditOpen.value = true
+
+  const bookingDate = item.booking_date || selectedBookingDate.value
+  try {
+    const { data } = await api.get('/api/bookings/options')
+    bookingEditOptions.value = data || []
+    const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
+    const selected = (item.nail_options || [])
+      .map((o) => String(o.id))
+      .filter((id) => availableIds.has(id))
+    for (const opt of bookingEditOptions.value) {
+      if (
+        opt.is_required
+        && optionBookableOnDate(opt, bookingDate)
+        && !selected.includes(String(opt.id))
+      ) {
+        selected.push(String(opt.id))
+      }
+    }
+    bookingEditSelectedIds.value = selected
+  } catch (error) {
+    bookingEditError.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
+  } finally {
+    bookingEditLoading.value = false
+  }
+}
+
+function closeBookingEdit() {
+  bookingEditOpen.value = false
+  bookingEditItem.value = null
+}
+
+async function saveBookingEdit() {
+  if (!bookingEditItem.value) return
+  const total = Number(bookingEditTotal.value)
+  if (bookingEditTotal.value === '' || !Number.isFinite(total) || total < 0) {
+    bookingEditError.value = 'กรุณากรอกยอดเงินที่ถูกต้อง'
+    return
+  }
+  if (!bookingEditSelectedIds.value.length) {
+    bookingEditError.value = 'กรุณาเลือกบริการอย่างน้อย 1 รายการ'
+    return
+  }
+
+  bookingEditSaving.value = true
+  bookingEditError.value = ''
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, {
+      total,
+      nailoption_ids: bookingEditSelectedIds.value,
+    })
+    message.value = data?.message || 'บันทึกแล้ว'
+    closeBookingEdit()
+    await reloadBookingViews()
+  } catch (error) {
+    bookingEditError.value = error?.response?.data?.error || 'บันทึกไม่สำเร็จ'
+  } finally {
+    bookingEditSaving.value = false
   }
 }
 
@@ -1336,8 +1513,19 @@ onMounted(loadUsers)
               }}
             </p>
             <p class="muted">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
+            <p v-if="item.total != null && item.total !== ''" class="muted">
+              ยอด {{ formatBookingTotal(item.total) }}
+            </p>
           </div>
           <div class="row">
+            <button
+              v-if="item.status !== 'cancelled'"
+              type="button"
+              class="btn"
+              @click="editBooking(item)"
+            >
+              แก้ไขข้อมูล
+            </button>
             <button
               v-if="item.status === 'awaiting_payment'"
               class="btn"
@@ -1373,6 +1561,91 @@ onMounted(loadUsers)
             >
               ลบ
             </button>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <section v-show="activeTab === 'revenue'" class="card admin-section">
+      <div class="service-cal-header">
+        <h3>สรุปยอดรายเดือน</h3>
+        <p class="muted">ยอดจากคิวที่ทำเสร็จแล้ว · แสดงจำนวนคิวต่อวัน · สีตามสถานที่ให้บริการ</p>
+      </div>
+
+      <div class="service-cal-nav">
+        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(-1)" aria-label="เดือนก่อน">
+          <i class="ti ti-chevron-left" aria-hidden="true"></i>
+        </button>
+        <span class="service-cal-month">{{ revenueMonthLabel }}</span>
+        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(1)" aria-label="เดือนถัดไป">
+          <i class="ti ti-chevron-right" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <p v-if="revenueLoading" class="muted">กำลังโหลด...</p>
+
+      <template v-else>
+        <div class="service-cal-weekdays">
+          <span v-for="wd in serviceWeekdays" :key="`rev-${wd}`" class="service-cal-wd">{{ wd }}</span>
+        </div>
+
+        <div class="service-cal-grid">
+          <div v-for="(week, wi) in revenueCalendarWeeks" :key="`rev-week-${wi}`" class="service-cal-week">
+            <div
+              v-for="(cell, ci) in week"
+              :key="`rev-${wi}-${ci}`"
+              class="service-cal-day revenue-cal-day"
+              :class="{
+                empty: !cell,
+                today: cell?.isToday && !revenueDayColor(cell.iso),
+                'has-revenue': cell && revenueDayHasData(cell.iso) && !revenueDayColor(cell.iso),
+              }"
+              :style="cell ? revenueDayStyle(cell.iso) : undefined"
+            >
+              <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
+              <div v-if="cell && revenueDayHasData(cell.iso)" class="revenue-cal-row">
+                <span class="revenue-cal-amount">
+                  {{
+                    revenueDayStats(cell.iso).total_amount > 0
+                      ? formatDayRevenue(revenueDayStats(cell.iso).total_amount)
+                      : ''
+                  }}
+                </span>
+                <span class="revenue-cal-count">
+                  <template v-if="revenueDayStats(cell.iso).done_count > 0">
+                    {{ revenueDayStats(cell.iso).done_count }} คิว
+                  </template>
+                  <span
+                    v-if="revenueDayStats(cell.iso).cancelled_count > 0"
+                    class="revenue-cal-cancelled"
+                  >
+                    {{ revenueDayStats(cell.iso).done_count > 0 ? ' ' : '' }}ยก.{{
+                      revenueDayStats(cell.iso).cancelled_count
+                    }}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="revenue-month-summary">
+          <div class="revenue-summary-main">
+            <span class="revenue-summary-label">ยอดรวมเดือนนี้</span>
+            <strong class="revenue-summary-total">{{ formatBookingTotal(revenueMonthTotal) }}</strong>
+          </div>
+          <div class="revenue-summary-stats">
+            <span class="revenue-stat-item">
+              <strong>{{ revenueMonthBookingCount.toLocaleString('th-TH') }}</strong> คิวจอง
+            </span>
+            <span class="revenue-stat-sep">·</span>
+            <span class="revenue-stat-item revenue-stat-cancelled">
+              <strong>{{ revenueMonthCancelledCount.toLocaleString('th-TH') }}</strong> ยกเลิก
+            </span>
+            <span class="revenue-stat-sep">·</span>
+            <span class="revenue-stat-item revenue-stat-done">
+              <strong>{{ revenueMonthDoneCount.toLocaleString('th-TH') }}</strong> ทำเสร็จ
+            </span>
           </div>
         </div>
       </template>
@@ -2018,6 +2291,98 @@ onMounted(loadUsers)
       </div>
     </section>
 
+    <Teleport to="body">
+      <div
+        v-if="bookingEditOpen"
+        class="booking-edit-backdrop"
+        @click.self="closeBookingEdit"
+      >
+        <div class="booking-edit-modal card" role="dialog" aria-labelledby="booking-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="booking-edit-title">แก้ไขข้อมูลคิว</h3>
+            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingEdit">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <p v-if="bookingEditItem" class="muted booking-edit-meta">
+            {{ bookingEditItem.user_name }}
+            · {{ bookingEditItem.start_hour }}:00 -
+            {{ bookingEditItem.end_hour ?? Number(bookingEditItem.start_hour) + 2 }}:00
+          </p>
+
+          <label class="booking-edit-field">
+            ยอดเงิน (บาท)
+            <input
+              v-model="bookingEditTotal"
+              type="number"
+              min="0"
+              step="1"
+              class="admin-input"
+              @input="bookingEditError = ''"
+            />
+          </label>
+
+          <div class="booking-edit-services">
+            <p class="booking-edit-label">บริการ</p>
+            <p class="muted booking-edit-hint">แสดงบริการที่เปิดใช้งานทั้งหมด · บริการบังคับยึดตามวันจอง</p>
+            <p v-if="bookingEditLoading" class="muted">กำลังโหลดรายการบริการ...</p>
+            <template v-else>
+              <p v-if="bookingEditOrphaned.length" class="booking-edit-orphaned">
+                บริการเดิมที่ถูกลบแล้ว (จะถูกเอาออกเมื่อบันทึก):
+                {{ bookingEditOrphaned.map((o) => o.option_name).join(', ') }}
+              </p>
+              <div v-if="bookingEditOptions.length" class="booking-edit-option-list">
+                <label
+                  v-for="opt in bookingEditOptions"
+                  :key="opt.id"
+                  class="booking-edit-option"
+                  :class="{
+                    selected: bookingEditSelectedIds.includes(String(opt.id)),
+                    required: opt.is_required && optionBookableOnDate(opt, bookingEditDate),
+                  }"
+                >
+                  <input
+                    v-model="bookingEditSelectedIds"
+                    type="checkbox"
+                    class="booking-edit-option-input"
+                    :value="String(opt.id)"
+                    :disabled="opt.is_required && optionBookableOnDate(opt, bookingEditDate)"
+                    @change="bookingEditError = ''"
+                  />
+                  <span class="booking-edit-option-name">
+                    {{ opt.option_name }}
+                    <span
+                      v-if="opt.is_required && optionBookableOnDate(opt, bookingEditDate)"
+                      class="booking-edit-required"
+                    >บังคับ</span>
+                  </span>
+                  <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
+                </label>
+              </div>
+              <p v-else class="muted">ไม่มีบริการให้เลือกในวันนี้</p>
+            </template>
+          </div>
+
+          <p v-if="bookingEditError" class="alert error">{{ bookingEditError }}</p>
+
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="bookingEditSaving" @click="closeBookingEdit">
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              class="btn primary"
+              :disabled="bookingEditSaving || bookingEditLoading"
+              @click="saveBookingEdit"
+            >
+              {{ bookingEditSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
   </main>
 </template>
 
@@ -2585,6 +2950,97 @@ onMounted(loadUsers)
   background: #f8fafc;
 }
 
+.revenue-cal-day {
+  cursor: default;
+}
+
+.revenue-cal-day.has-revenue {
+  background: #ecfdf5;
+}
+
+.revenue-cal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.revenue-cal-count {
+  flex-shrink: 0;
+  color: #475569;
+  text-align: right;
+}
+
+.revenue-cal-cancelled {
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+.revenue-cal-amount {
+  flex: 1;
+  min-width: 0;
+  color: #15803d;
+  word-break: break-word;
+}
+
+.revenue-month-summary {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+  border: 1px solid #bbf7d0;
+}
+
+.revenue-summary-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+
+.revenue-summary-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.revenue-summary-total {
+  font-size: 24px;
+  font-weight: 800;
+  color: #15803d;
+}
+
+.revenue-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 10px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.revenue-stat-item strong {
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.revenue-stat-cancelled strong {
+  color: #b91c1c;
+}
+
+.revenue-stat-done strong {
+  color: #15803d;
+}
+
+.revenue-stat-sep {
+  color: #94a3b8;
+}
+
 .service-cal-num {
   display: block;
   font-size: 14px;
@@ -2804,5 +3260,141 @@ onMounted(loadUsers)
   .admin-action-btn {
     width: 100%;
   }
+}
+
+.booking-edit-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.booking-edit-modal {
+  width: min(100%, 480px);
+  max-height: min(90vh, 720px);
+  overflow-y: auto;
+  padding: 20px;
+  margin: 0;
+}
+
+.booking-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.booking-edit-header h3 {
+  margin: 0;
+}
+
+.booking-edit-close {
+  padding: 6px 10px;
+  min-width: 0;
+}
+
+.booking-edit-meta {
+  margin: 0 0 16px;
+}
+
+.booking-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.booking-edit-services {
+  margin-bottom: 16px;
+}
+
+.booking-edit-label {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.booking-edit-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.booking-edit-orphaned {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.booking-edit-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.booking-edit-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.booking-edit-option.selected {
+  border-color: #fbcfe8;
+  background: #fdf2f8;
+}
+
+.booking-edit-option.required {
+  cursor: default;
+}
+
+.booking-edit-option-input {
+  margin-top: 3px;
+}
+
+.booking-edit-option-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.booking-edit-required {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.booking-edit-option-desc {
+  grid-column: 2;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.booking-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>
