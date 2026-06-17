@@ -1476,6 +1476,7 @@ onMounted(loadUsers)
           <span><span class="legend-paid">{{ bookingMonthPaidTotal }}</span> ชำระแล้ว</span>
           <span><span class="legend-unpaid">{{ bookingMonthUnpaidTotal }}</span> รอชำระ</span>
           <span><span class="legend-cancelled">{{ bookingMonthCancelledTotal }}</span> ยกเลิก</span>
+          <span>รวมทั้งหมด {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }}</span>
           <span v-if="bookingMonthUnpaidTotal > 0">
             <span class="booking-cal-alert inline">!</span> มีคิวยังไม่ชำระ
           </span>
@@ -1493,8 +1494,8 @@ onMounted(loadUsers)
             <p class="muted">
               ชำระแล้ว {{ bookingDayStats(selectedBookingDate).paid_count }} ·
               รอชำระ {{ bookingDayStats(selectedBookingDate).unpaid_count }} ·
-              ยกเลิก {{ bookingDayStats(selectedBookingDate).cancelled_count }} .
-              รวมทั้งหมด {{ bookingDayStats(selectedBookingDate).paid_count  + bookingDayStats(selectedBookingDate).cancelled_count }}
+              ยกเลิก {{ bookingDayStats(selectedBookingDate).cancelled_count }} 
+             
             </p>
           </div>
         </div>
