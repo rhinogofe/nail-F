@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
@@ -11,26 +11,22 @@ const { showMyCoupons } = useCoupons()
 const clips = ref([])
 const loading = ref(false)
 const errorMessage = ref('')
-const activeIndex = ref(0)
-
-const activeClip = computed(() => clips.value[activeIndex.value] || null)
+const viewerOpen = ref(false)
+const viewerIndex = ref(0)
+const viewerScrollRef = ref(null)
 
 function embedUrl(videoId) {
   if (!videoId) return ''
   return `https://www.tiktok.com/embed/v2/${videoId}`
 }
 
+function shouldRenderEmbed(index) {
+  return Math.abs(index - viewerIndex.value) <= 1
+}
+
 function openOnTikTok(url) {
   if (!url) return
   window.open(url, '_blank', 'noopener,noreferrer')
-}
-
-function goPrev() {
-  if (activeIndex.value > 0) activeIndex.value -= 1
-}
-
-function goNext() {
-  if (activeIndex.value < clips.value.length - 1) activeIndex.value += 1
 }
 
 async function loadClips() {
@@ -39,13 +35,39 @@ async function loadClips() {
   try {
     const { data } = await api.get('/api/reviews/clips')
     clips.value = data || []
-    if (activeIndex.value >= clips.value.length) {
-      activeIndex.value = Math.max(0, clips.value.length - 1)
-    }
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดคลิปไม่สำเร็จ'
   } finally {
     loading.value = false
+  }
+}
+
+function lockBodyScroll(lock) {
+  document.body.style.overflow = lock ? 'hidden' : ''
+}
+
+async function openViewer(index) {
+  viewerIndex.value = index
+  viewerOpen.value = true
+  lockBodyScroll(true)
+  await nextTick()
+  const el = viewerScrollRef.value
+  if (el) {
+    el.scrollTop = index * el.clientHeight
+  }
+}
+
+function closeViewer() {
+  viewerOpen.value = false
+  lockBodyScroll(false)
+}
+
+function onViewerScroll() {
+  const el = viewerScrollRef.value
+  if (!el || !el.clientHeight) return
+  const index = Math.round(el.scrollTop / el.clientHeight)
+  if (index >= 0 && index < clips.value.length && index !== viewerIndex.value) {
+    viewerIndex.value = index
   }
 }
 
@@ -55,6 +77,7 @@ const initials = computed(() => {
 })
 
 onMounted(loadClips)
+onUnmounted(() => lockBodyScroll(false))
 </script>
 
 <template>
@@ -67,7 +90,7 @@ onMounted(loadClips)
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
       <h1 class="page-title">รีวิว</h1>
-      <p class="page-sub">ผลงานจาก TikTok · เลื่อนดูคลิปถัดไป</p>
+      <p class="page-sub">ผลงานจาก TikTok · กดดูคลิป · เลื่อนขึ้นลงเปลี่ยนคลิป</p>
     </header>
 
     <main class="content">
@@ -80,60 +103,74 @@ onMounted(loadClips)
         <p class="muted">รอแอดมินเพิ่มลิงก์ TikTok</p>
       </div>
 
-      <template v-else>
-        <div class="carousel card">
-          <div class="clip-counter">
-            {{ activeIndex + 1 }} / {{ clips.length }}
+      <div v-else class="clip-grid" aria-label="คลิปรีวิว">
+        <button
+          v-for="(clip, index) in clips"
+          :key="clip.id"
+          type="button"
+          class="clip-cell"
+          @click="openViewer(index)"
+        >
+          <img
+            v-if="clip.thumbnail_url"
+            :src="clip.thumbnail_url"
+            :alt="clip.title || `คลิป ${index + 1}`"
+            class="clip-thumb"
+            loading="lazy"
+          />
+          <div v-else class="clip-thumb-fallback">
+            <i class="ti ti-brand-tiktok" aria-hidden="true"></i>
           </div>
+          <span class="clip-play" aria-hidden="true">
+            <i class="ti ti-player-play-filled"></i>
+          </span>
+        </button>
+      </div>
+    </main>
 
-          <div v-if="activeClip" class="embed-wrap">
-            <iframe
-              :key="activeClip.id"
-              :src="embedUrl(activeClip.video_id)"
-              class="tiktok-embed"
-              title="TikTok clip"
-              allow="encrypted-media; fullscreen; picture-in-picture"
-              allowfullscreen
-              scrolling="no"
-            />
-          </div>
+    <Teleport to="body">
+      <div v-if="viewerOpen" class="viewer" role="dialog" aria-modal="true" aria-label="ดูคลิป">
+        <button type="button" class="viewer-close" aria-label="ปิด" @click="closeViewer">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
 
-          <p v-if="activeClip?.title" class="clip-title">{{ activeClip.title }}</p>
-
-          <div class="clip-actions">
-            <button type="button" class="nav-btn" :disabled="activeIndex === 0" @click="goPrev">
-              <i class="ti ti-chevron-left" aria-hidden="true"></i>
-              ก่อนหน้า
-            </button>
-            <button type="button" class="link-btn" @click="openOnTikTok(activeClip?.tiktok_url)">
-              เปิดใน TikTok
-            </button>
-            <button
-              type="button"
-              class="nav-btn"
-              :disabled="activeIndex >= clips.length - 1"
-              @click="goNext"
-            >
-              ถัดไป
-              <i class="ti ti-chevron-right" aria-hidden="true"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="thumb-row" aria-label="เลือกคลิป">
-          <button
+        <div
+          ref="viewerScrollRef"
+          class="viewer-scroll"
+          @scroll.passive="onViewerScroll"
+        >
+          <section
             v-for="(clip, index) in clips"
             :key="clip.id"
-            type="button"
-            class="thumb"
-            :class="{ active: index === activeIndex }"
-            @click="activeIndex = index"
+            class="viewer-slide"
           >
-            {{ index + 1 }}
-          </button>
+            <div class="viewer-embed-wrap">
+              <iframe
+                v-if="shouldRenderEmbed(index)"
+                :src="embedUrl(clip.video_id)"
+                class="viewer-embed"
+                :title="clip.title || `TikTok clip ${index + 1}`"
+                allow="encrypted-media; fullscreen; picture-in-picture"
+                allowfullscreen
+                scrolling="no"
+              />
+              <div v-else class="viewer-embed-placeholder" />
+            </div>
+
+            <div class="viewer-meta">
+              <p v-if="clip.title" class="viewer-title">{{ clip.title }}</p>
+              <p class="viewer-hint">
+                {{ index + 1 }} / {{ clips.length }}
+                · เลื่อนลง = ถัดไป · เลื่อนขึ้น = ก่อนหน้า
+              </p>
+              <button type="button" class="viewer-tiktok-btn" @click="openOnTikTok(clip.tiktok_url)">
+                เปิดใน TikTok
+              </button>
+            </div>
+          </section>
         </div>
-      </template>
-    </main>
+      </div>
+    </Teleport>
 
     <BottomNav active="reviews" @coupons="showMyCoupons" />
   </div>
@@ -148,7 +185,7 @@ onMounted(loadClips)
 
 .page {
   font-family: 'Noto Sans Thai', sans-serif;
-  background: #f8fafc;
+  background: #fff;
   min-height: 100svh;
   max-width: 430px;
   margin: 0 auto;
@@ -159,7 +196,7 @@ onMounted(loadClips)
 .hdr {
   background: #fff;
   border-bottom: 0.5px solid #f1e8f0;
-  padding: 14px 18px 16px;
+  padding: 14px 18px 12px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -209,18 +246,12 @@ onMounted(loadClips)
 }
 
 .content {
-  padding: 14px 16px 20px;
-}
-
-.card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  padding: 2px 0 12px;
 }
 
 .center {
   text-align: center;
+  padding: 24px 16px;
 }
 
 .muted {
@@ -234,11 +265,16 @@ onMounted(loadClips)
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 13px;
+  margin: 14px 16px;
 }
 
 .empty {
   text-align: center;
   padding: 32px 16px;
+  margin: 14px 16px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 .empty-icon {
@@ -248,98 +284,150 @@ onMounted(loadClips)
   margin-bottom: 8px;
 }
 
-.carousel {
-  padding-bottom: 12px;
+.clip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
 }
 
-.clip-counter {
-  text-align: center;
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 10px;
-}
-
-.embed-wrap {
-  width: 100%;
-  min-height: 580px;
-  border-radius: 14px;
+.clip-cell {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: none;
+  background: #0f172a;
+  cursor: pointer;
   overflow: hidden;
+}
+
+.clip-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.clip-thumb-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #1e293b, #0f172a);
+  color: #fff;
+  font-size: 28px;
+}
+
+.clip-play {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.viewer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  z-index: 100;
   background: #000;
 }
 
-.tiktok-embed {
+.viewer-close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  z-index: 110;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-scroll {
+  height: 100dvh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.viewer-slide {
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+}
+
+.viewer-embed-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-embed {
   width: 100%;
-  height: 580px;
+  height: min(72dvh, 680px);
   border: 0;
   display: block;
 }
 
-.clip-title {
-  margin: 12px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
+.viewer-embed-placeholder {
+  width: 100%;
+  height: min(72dvh, 680px);
+}
+
+.viewer-meta {
+  flex-shrink: 0;
+  padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+  color: #fff;
   text-align: center;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
 }
 
-.clip-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.nav-btn,
-.link-btn {
-  border: none;
-  background: #f1f5f9;
-  color: #334155;
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 12px;
+.viewer-title {
+  margin: 0 0 6px;
+  font-size: 15px;
   font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
-.link-btn {
+.viewer-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.viewer-tiktok-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
   background: #ffe4e6;
   color: #e11d48;
-}
-
-.nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.thumb-row {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 12px 2px 0;
-}
-
-.thumb {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2px solid #e2e8f0;
-  background: #fff;
-  color: #64748b;
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-}
-
-.thumb.active {
-  border-color: #e11d48;
-  background: #ffe4e6;
-  color: #e11d48;
 }
 </style>
