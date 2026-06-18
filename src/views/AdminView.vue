@@ -84,6 +84,13 @@ const optionColorPresets = [
   { label: 'ส้ม', value: '#f97316' },
 ]
 const serviceLocations = ref([])
+const showcaseClips = ref([])
+const clipForm = ref({
+  id: null,
+  tiktok_url: '',
+  title: '',
+  is_active: true,
+})
 const locationForm = ref({
   id: null,
   name: '',
@@ -168,6 +175,7 @@ const adminTabs = [
   { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
   { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
   { key: 'blocks', label: 'ปิดร้าน', icon: 'ti-calendar-off' },
+  { key: 'reviews', label: 'รีวิว', icon: 'ti-star' },
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
 
@@ -399,6 +407,7 @@ function switchTab(tab) {
   message.value = ''
   errorMessage.value = ''
   if (tab === 'revenue') loadRevenueSummary()
+  if (tab === 'reviews') loadShowcaseClips()
 }
 
 const filtered = computed(() => bookings.value)
@@ -1472,6 +1481,113 @@ async function removeServiceLocation(item) {
   }
 }
 
+function resetClipForm() {
+  clipForm.value = {
+    id: null,
+    tiktok_url: '',
+    title: '',
+    is_active: true,
+  }
+}
+
+async function loadShowcaseClips() {
+  try {
+    const { data } = await api.get('/api/admin/showcase-clips')
+    showcaseClips.value = data || []
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดรายการคลิปไม่สำเร็จ'
+  }
+}
+
+function startEditClip(item) {
+  clipForm.value = {
+    id: item.id,
+    tiktok_url: item.tiktok_url,
+    title: item.title || '',
+    is_active: Boolean(item.is_active),
+  }
+}
+
+async function saveShowcaseClip() {
+  const tiktok_url = String(clipForm.value.tiktok_url || '').trim()
+  if (!tiktok_url) {
+    errorMessage.value = 'กรุณาวางลิงก์คลิป TikTok'
+    return
+  }
+
+  const isEdit = Boolean(clipForm.value.id)
+  message.value = ''
+  errorMessage.value = ''
+
+  const payload = {
+    tiktok_url,
+    title: String(clipForm.value.title || '').trim(),
+    is_active: Boolean(clipForm.value.is_active),
+  }
+
+  try {
+    if (isEdit) {
+      await api.patch(`/api/admin/showcase-clips/${clipForm.value.id}`, payload)
+      message.value = 'แก้ไขคลิปแล้ว'
+    } else {
+      await api.post('/api/admin/showcase-clips', payload)
+      message.value = 'เพิ่มคลิปแล้ว'
+    }
+    resetClipForm()
+    await loadShowcaseClips()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกคลิปไม่สำเร็จ'
+  }
+}
+
+async function removeShowcaseClip(item) {
+  const ok = await Swal.fire({
+    title: 'ลบคลิป',
+    text: 'ลบคลิปนี้ออกจากหน้ารีวิว ใช่ไหม',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.delete(`/api/admin/showcase-clips/${item.id}`)
+    message.value = 'ลบคลิปแล้ว'
+    if (clipForm.value.id === item.id) resetClipForm()
+    await loadShowcaseClips()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ลบคลิปไม่สำเร็จ'
+  }
+}
+
+async function moveShowcaseClip(item, direction) {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.patch(`/api/admin/showcase-clips/${item.id}/move`, { direction })
+    await loadShowcaseClips()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'จัดลำดับไม่สำเร็จ'
+  }
+}
+
+async function toggleShowcaseClip(item) {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.patch(`/api/admin/showcase-clips/${item.id}`, {
+      is_active: !item.is_active,
+    })
+    await loadShowcaseClips()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'อัปเดตสถานะไม่สำเร็จ'
+  }
+}
+
 async function loadNailOptions() {
   try {
     const { data } = await api.get('/api/admin/nailoptions')
@@ -1628,6 +1744,7 @@ onMounted(loadShopHours)
 onMounted(loadAdvanceDays)
 onMounted(loadBookingDisplay)
 onMounted(loadUsers)
+onMounted(loadShowcaseClips)
 </script>
 
 <template>
@@ -2518,6 +2635,81 @@ onMounted(loadUsers)
       </template>
     </section>
 
+    <!-- ── รีวิว TikTok ── -->
+    <section v-show="activeTab === 'reviews'" class="card admin-section">
+      <h3>จัดการคลิปรีวิว (TikTok)</h3>
+      <p class="muted">
+        วางลิงก์คลิปทีละคลิป เช่น .../video/123 หรือ .../photo/123
+        · ลิงก์สั้น vm.tiktok.com ใช้ได้
+      </p>
+
+      <div class="admin-form-row showcase-clip-form">
+        <label class="admin-label-grow">
+          ลิงก์ TikTok
+          <input
+            v-model="clipForm.tiktok_url"
+            type="url"
+            class="admin-input"
+            placeholder="https://www.tiktok.com/@.../video/..."
+          />
+        </label>
+        <label class="admin-label-grow">
+          ชื่อแสดง (ไม่บังคับ)
+          <input
+            v-model="clipForm.title"
+            type="text"
+            class="admin-input"
+            placeholder="เช่น เจล french"
+          />
+        </label>
+        <label class="admin-filter-item">
+          แสดง
+          <select v-model="clipForm.is_active" class="admin-input">
+            <option :value="true">เปิด</option>
+            <option :value="false">ปิด</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <button type="button" class="btn primary" @click="saveShowcaseClip">
+          {{ clipForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มคลิป' }}
+        </button>
+        <button v-if="clipForm.id" type="button" class="btn" @click="resetClipForm">
+          ยกเลิกแก้ไข
+        </button>
+      </div>
+
+      <p v-if="showcaseClips.length === 0" class="muted" style="margin-top:14px">ยังไม่มีคลิป</p>
+
+      <div v-for="(item, index) in showcaseClips" :key="item.id" class="admin-item">
+        <div>
+          <strong>{{ item.title || `คลิป #${index + 1}` }}</strong>
+          <span v-if="!item.is_active" class="user-badge-provider">ปิดแสดง</span>
+          <p class="muted clip-url">{{ item.tiktok_url }}</p>
+          <p class="muted">ลำดับ {{ index + 1 }}</p>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" :disabled="index === 0" @click="moveShowcaseClip(item, 'up')">
+            ↑
+          </button>
+          <button
+            type="button"
+            class="btn"
+            :disabled="index === showcaseClips.length - 1"
+            @click="moveShowcaseClip(item, 'down')"
+          >
+            ↓
+          </button>
+          <button type="button" class="btn" @click="startEditClip(item)">แก้ไข</button>
+          <button type="button" class="btn" @click="toggleShowcaseClip(item)">
+            {{ item.is_active ? 'ปิดแสดง' : 'เปิดแสดง' }}
+          </button>
+          <button type="button" class="btn danger" @click="removeShowcaseClip(item)">ลบ</button>
+        </div>
+      </div>
+    </section>
+
     <!-- ── ผู้ใช้ ── -->
     <section v-show="activeTab === 'users'" class="card admin-section">
       <h3>รายชื่อผู้ใช้</h3>
@@ -3094,6 +3286,14 @@ onMounted(loadUsers)
   color: #3730a3;
   font-size: 14px;
   font-weight: 600;
+}
+
+.showcase-clip-form {
+  margin-top: 12px;
+}
+
+.clip-url {
+  word-break: break-all;
 }
 
 .admin-bulk-settings {

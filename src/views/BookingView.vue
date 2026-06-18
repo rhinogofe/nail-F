@@ -4,12 +4,15 @@ import { useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
+import { useCoupons } from '../composables/useCoupons'
+import BottomNav from '../components/BottomNav.vue'
 import api from '../api/axios'
 import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
 
 const router = useRouter()
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
+const { loadMyCoupons, redeemCoupon, showMyCoupons } = useCoupons()
 
 const selectedDate = ref(toLocalYmd(new Date()))
 const busy = ref(false)
@@ -32,7 +35,6 @@ const slots = computed(() => {
 const bookings = computed(() => bookingStore.bookingsByDate[selectedDate.value] || [])
 const blockedSlots = computed(() => bookingStore.blocksByDate[selectedDate.value] || [])
 const nailOptions = computed(() => bookingStore.nailOptions || [])
-const myCoupons = ref([])
 const todayDate = startOfDay(new Date())
 // bookUntilDate = วันสิ้นสุดที่ล็อกตอนแอดมินกดบันทึก (ไม่เลื่อนตามวันนี้)
 const maxBookDate = computed(() => {
@@ -411,45 +413,6 @@ async function cancel(bookingId) {
   }
 }
 
-async function loadMyCoupons() {
-  try {
-    const { data } = await api.get('/api/coupons/my')
-    myCoupons.value = (data || []).filter(c => !c.is_used)
-  } catch { myCoupons.value = [] }
-}
-
-async function redeemCoupon() {
-  const result = await Swal.fire({
-    title: 'แลกคูปองลด 20%', text: 'ใช้ 100 แต้มเพื่อแลกคูปอง 1 ใบ ใช่หรือไม่?',
-    icon: 'question', showCancelButton: true,
-    confirmButtonText: 'แลกคูปอง', cancelButtonText: 'ยกเลิก',
-  })
-  if (!result.isConfirmed) return
-  try {
-    const { data } = await api.post('/api/coupons/redeem')
-    await auth.fetchMe()
-    await loadMyCoupons()
-    await Swal.fire({
-      title: 'แลกคูปองสำเร็จ',
-      html: `รหัสคูปองของคุณ:<br><strong style="font-size:22px">${data?.coupon?.coupon_code || '-'}</strong>`,
-      icon: 'success',
-    })
-  } catch (error) {
-    await Swal.fire({ title: 'แลกคูปองไม่สำเร็จ', text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
-  }
-}
-
-async function showMyCoupons() {
-  await loadMyCoupons()
-  const html = myCoupons.value.length
-    ? myCoupons.value.map(c =>
-        `<div style="padding:8px 0;border-bottom:1px solid #eee;text-align:left">
-          <strong>${c.coupon_code}</strong><br/>ส่วนลด ${c.discount_percent}%
-        </div>`).join('')
-    : '<p>ยังไม่มีคูปอง</p>'
-  await Swal.fire({ title: 'คูปองของฉัน', html: `<div style="max-height:240px;overflow:auto">${html}</div>`, confirmButtonText: 'ปิด' })
-}
-
 function selectDate(iso) {
   const picked = parseYmdLocal(iso)
   if (picked < todayDate || picked > maxBookDate.value) return
@@ -495,7 +458,6 @@ async function nextWeek() {
   await refreshBlocksAndEnsureSelection(); await loadDate()
 }
 
-function logout() { auth.logout(); router.push('/login') }
 function goToPayment(booking) {
   router.push({ path: `/payment/${booking.id}`, query: { date: selectedDate.value, start: String(booking.start_hour), end: String(booking.end_hour ?? Number(booking.start_hour) + 2) } })
 }
@@ -797,28 +759,7 @@ onUnmounted(() => {
     </Transition>
 
     <!-- ── BOTTOM NAV ── -->
-    <nav class="bottom-nav" aria-label="เมนูหลัก">
-      <button class="nav-item active" aria-current="page">
-        <i class="ti ti-calendar" aria-hidden="true"></i>
-        <span>จองคิว</span>
-      </button>
-      <!-- <button class="nav-item" @click="router.push('/history')">
-        <i class="ti ti-history" aria-hidden="true"></i>
-        <span>ประวัติ</span>
-      </button> -->
-      <button class="nav-item" @click="showMyCoupons">
-        <i class="ti ti-ticket" aria-hidden="true"></i>
-        <span>คูปอง</span>
-      </button>
-      <button v-if="auth.isAdmin" class="nav-item" @click="router.push('/admin')">
-        <i class="ti ti-shield" aria-hidden="true"></i>
-        <span>แอดมิน</span>
-      </button>
-      <button class="nav-item" @click="logout">
-        <i class="ti ti-logout" aria-hidden="true"></i>
-        <span>ออกจากระบบ</span>
-      </button>
-    </nav>
+    <BottomNav active="bookings" @coupons="showMyCoupons" />
 
   </div>
 </template>
@@ -1201,24 +1142,6 @@ onUnmounted(() => {
 .btn-confirm i { font-size: 14px; }
 .btn-confirm:hover:not(:disabled) { opacity: .88; }
 .btn-confirm:disabled { opacity: .4; cursor: not-allowed; }
-
-/* ── BOTTOM NAV ── */
-.bottom-nav {
-  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-  width: 100%; max-width: 430px;
-  background: #fff; border-top: 0.5px solid #f1e8f0;
-  display: flex; padding: 8px 0 max(14px, env(safe-area-inset-bottom));
-  z-index: 30;
-}
-.nav-item {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font-size: 10px; font-weight: 500; color: #94a3b8;
-  background: none; border: none; cursor: pointer; font-family: inherit;
-  transition: color .15s;
-}
-.nav-item i { font-size: 20px; }
-.nav-item.active { color: #e11d48; }
-.nav-item:hover:not(.active) { color: #475569; }
 
 /* ── Transitions ── */
 .fade-enter-active, .fade-leave-active { transition: opacity .2s; }
