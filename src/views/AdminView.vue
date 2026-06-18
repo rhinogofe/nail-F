@@ -130,8 +130,6 @@ const bookingAddSelectedIds = ref([])
 const bookingAddLoading = ref(false)
 const bookingAddSaving = ref(false)
 const bookingAddError = ref('')
-const shopOpenHour = ref(9)
-const shopLastBookingHour = ref(18)
 
 const bookingEditOrphaned = computed(() => {
   if (!bookingEditItem.value) return []
