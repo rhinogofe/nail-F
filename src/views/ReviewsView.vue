@@ -13,14 +13,18 @@ const errorMessage = ref('')
 const viewerOpen = ref(false)
 const viewerIndex = ref(0)
 const viewerScrollRef = ref(null)
+const playKey = ref(0)
 
-function embedUrl(videoId) {
+function embedUrl(videoId, autoplay = false) {
   if (!videoId) return ''
-  return `https://www.tiktok.com/embed/v2/${videoId}`
+  const params = new URLSearchParams()
+  if (autoplay) params.set('autoplay', '1')
+  const qs = params.toString()
+  return `https://www.tiktok.com/embed/v2/${videoId}${qs ? `?${qs}` : ''}`
 }
 
-function shouldRenderEmbed(index) {
-  return Math.abs(index - viewerIndex.value) <= 1
+function isActiveSlide(index) {
+  return index === viewerIndex.value
 }
 
 function showThumb(clip) {
@@ -56,6 +60,7 @@ function lockBodyScroll(lock) {
 
 async function openViewer(index) {
   viewerIndex.value = index
+  playKey.value += 1
   viewerOpen.value = true
   lockBodyScroll(true)
   await nextTick()
@@ -76,6 +81,7 @@ function onViewerScroll() {
   const index = Math.round(el.scrollTop / el.clientHeight)
   if (index >= 0 && index < clips.value.length && index !== viewerIndex.value) {
     viewerIndex.value = index
+    playKey.value += 1
   }
 }
 
@@ -158,15 +164,24 @@ onUnmounted(() => lockBodyScroll(false))
           >
             <div class="viewer-embed-wrap">
               <iframe
-                v-if="shouldRenderEmbed(index)"
-                :src="embedUrl(clip.video_id)"
+                v-if="isActiveSlide(index)"
+                :key="`${clip.video_id}-${viewerIndex}-${playKey}`"
+                :src="embedUrl(clip.video_id, true)"
                 class="viewer-embed"
                 :title="clip.title || `TikTok clip ${index + 1}`"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen
                 scrolling="no"
               />
-              <div v-else class="viewer-embed-placeholder" />
+              <div v-else class="viewer-embed-placeholder">
+                <img
+                  v-if="showThumb(clip)"
+                  :src="clip.thumbnail_url"
+                  alt=""
+                  class="viewer-embed-poster"
+                  referrerpolicy="no-referrer"
+                />
+              </div>
             </div>
 
             <div class="viewer-meta">
@@ -432,6 +447,17 @@ onUnmounted(() => lockBodyScroll(false))
 .viewer-embed-placeholder {
   width: 100%;
   height: 100%;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-embed-poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.45;
 }
 
 .viewer-meta {
