@@ -119,6 +119,20 @@ const bookingEditLoading = ref(false)
 const bookingEditSaving = ref(false)
 const bookingEditError = ref('')
 
+const bookingAddOpen = ref(false)
+const bookingAddUserId = ref('')
+const bookingAddUserQuery = ref('')
+const bookingAddStartHour = ref(10)
+const bookingAddStatus = ref('pending')
+const bookingAddTotal = ref('')
+const bookingAddOptions = ref([])
+const bookingAddSelectedIds = ref([])
+const bookingAddLoading = ref(false)
+const bookingAddSaving = ref(false)
+const bookingAddError = ref('')
+const shopOpenHour = ref(9)
+const shopLastBookingHour = ref(18)
+
 const bookingEditOrphaned = computed(() => {
   if (!bookingEditItem.value) return []
   const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
@@ -128,6 +142,27 @@ const bookingEditOrphaned = computed(() => {
 const bookingEditDate = computed(
   () => bookingEditItem.value?.booking_date || selectedBookingDate.value || ''
 )
+
+const bookingAddDate = computed(() => selectedBookingDate.value || '')
+
+const bookingAddUsers = computed(() => {
+  const q = bookingAddUserQuery.value.trim().toLowerCase()
+  if (!q) return users.value
+  return users.value.filter(
+    (u) =>
+      String(u.name || '').toLowerCase().includes(q)
+      || String(u.email || '').toLowerCase().includes(q)
+      || String(u.provider_id || '').includes(q)
+  )
+})
+
+const bookingAddHourOptions = computed(() => {
+  const hours = []
+  for (let h = shopOpenHour.value; h <= shopLastBookingHour.value; h += 1) {
+    hours.push(h)
+  }
+  return hours
+})
 
 const adminTabs = [
   { key: 'bookings', label: 'จัดการคิว', icon: 'ti-calendar' },
@@ -468,6 +503,17 @@ function revenueDayStyle(iso) {
 function formatDayRevenue(value) {
   const n = Number(value)
   if (!Number.isFinite(n) || n <= 0) return ''
+  return n.toLocaleString('th-TH')
+}
+
+function formatDayRevenueCell(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  if (n >= 10000) return `${Math.round(n / 1000)}k`
+  if (n >= 1000) {
+    const k = n / 1000
+    return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1).replace(/\.0$/, '')}k`
+  }
   return n.toLocaleString('th-TH')
 }
 
@@ -1004,6 +1050,120 @@ async function deleteBooking(id) {
     await reloadBookingViews()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ลบรายการจองไม่สำเร็จ'
+  }
+}
+
+async function restoreBooking(item) {
+  const result = await Swal.fire({
+    title: 'คืนสถานะจอง',
+    html: 'คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'รอชำระเงิน',
+    cancelButtonText: 'ปิด',
+    showDenyButton: true,
+    denyButtonText: 'ชำระแล้ว / รอให้บริการ',
+  })
+  if (!result.isConfirmed && !result.isDenied) return
+
+  const restoreStatus = result.isDenied ? 'pending' : 'awaiting_payment'
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(`/api/admin/bookings/${item.id}/restore`, {
+      status: restoreStatus,
+    })
+    message.value = data?.message || 'คืนสถานะจองแล้ว'
+    await reloadBookingViews()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'คืนสถานะจองไม่สำเร็จ'
+  }
+}
+
+async function openBookingAdd() {
+  if (!selectedBookingDate.value) return
+  bookingAddUserId.value = ''
+  bookingAddUserQuery.value = ''
+  bookingAddStartHour.value = shopOpenHour.value
+  bookingAddStatus.value = selectedBookingDate.value < todayYmd() ? 'done' : 'pending'
+  bookingAddTotal.value = ''
+  bookingAddSelectedIds.value = []
+  bookingAddOptions.value = []
+  bookingAddError.value = ''
+  bookingAddLoading.value = true
+  bookingAddOpen.value = true
+
+  try {
+    const [hoursRes, optionsRes] = await Promise.all([
+      api.get('/api/bookings/shop-hours'),
+      api.get('/api/bookings/options'),
+    ])
+    shopOpenHour.value = Number(hoursRes.data?.open_hour) || 9
+    shopLastBookingHour.value = Number(hoursRes.data?.last_booking_hour) || 18
+    if (bookingAddStartHour.value < shopOpenHour.value) {
+      bookingAddStartHour.value = shopOpenHour.value
+    }
+    bookingAddOptions.value = optionsRes.data || []
+    const selected = []
+    for (const opt of bookingAddOptions.value) {
+      if (opt.is_required && optionBookableOnDate(opt, selectedBookingDate.value)) {
+        selected.push(String(opt.id))
+      }
+    }
+    bookingAddSelectedIds.value = selected
+  } catch (error) {
+    bookingAddError.value = error?.response?.data?.error || 'โหลดข้อมูลไม่สำเร็จ'
+  } finally {
+    bookingAddLoading.value = false
+  }
+}
+
+function closeBookingAdd() {
+  bookingAddOpen.value = false
+}
+
+async function saveBookingAdd() {
+  if (!selectedBookingDate.value) return
+  if (!bookingAddUserId.value) {
+    bookingAddError.value = 'กรุณาเลือกลูกค้า'
+    return
+  }
+  if (!bookingAddSelectedIds.value.length) {
+    bookingAddError.value = 'กรุณาเลือกบริการอย่างน้อย 1 รายการ'
+    return
+  }
+  if (bookingAddStatus.value === 'done') {
+    const total = Number(bookingAddTotal.value)
+    if (bookingAddTotal.value === '' || !Number.isFinite(total) || total < 0) {
+      bookingAddError.value = 'สถานะทำเสร็จแล้วต้องระบุยอดเงิน'
+      return
+    }
+  }
+
+  bookingAddSaving.value = true
+  bookingAddError.value = ''
+  try {
+    const payload = {
+      user_id: bookingAddUserId.value,
+      booking_date: selectedBookingDate.value,
+      start_hour: bookingAddStartHour.value,
+      nailoption_ids: bookingAddSelectedIds.value,
+      status: bookingAddStatus.value,
+    }
+    if (bookingAddTotal.value !== '') {
+      payload.total = Number(bookingAddTotal.value)
+    }
+    const { data } = await api.post('/api/admin/bookings', payload)
+    message.value = data?.message || 'เพิ่มคิวแล้ว'
+    closeBookingAdd()
+    await reloadBookingViews()
+    if (bookingAddStatus.value === 'done') {
+      await auth.fetchMe().catch(() => null)
+    }
+  } catch (error) {
+    bookingAddError.value = error?.response?.data?.error || 'เพิ่มคิวไม่สำเร็จ'
+  } finally {
+    bookingAddSaving.value = false
   }
 }
 
@@ -1581,6 +1741,9 @@ onMounted(loadUsers)
              
             </p>
           </div>
+          <button type="button" class="btn primary booking-add-btn" @click="openBookingAdd">
+            เพิ่มคิว
+          </button>
         </div>
 
         <div class="admin-filter-row">
@@ -1656,6 +1819,14 @@ onMounted(loadUsers)
             </button>
             <button
               v-if="item.status === 'cancelled'"
+              type="button"
+              class="btn primary"
+              @click="restoreBooking(item)"
+            >
+              คืนสถานะจอง
+            </button>
+            <button
+              v-if="item.status === 'cancelled'"
               class="btn danger"
               @click="deleteBooking(item.id)"
             >
@@ -1666,7 +1837,7 @@ onMounted(loadUsers)
       </template>
     </section>
 
-    <section v-show="activeTab === 'revenue'" class="card admin-section">
+    <section v-show="activeTab === 'revenue'" class="card admin-section revenue-section">
       <div class="service-cal-header">
         <h3>สรุปยอดรายเดือน</h3>
         
@@ -1704,26 +1875,25 @@ onMounted(loadUsers)
             >
               <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
               <div v-if="cell && revenueDayHasData(cell.iso)" class="revenue-cal-body">
-                <div class="revenue-cal-amounts">
-                  <span
-                    v-if="revenueDayStats(cell.iso).deposit_amount > 0"
-                    class="revenue-cal-deposit"
-                    title="มัดจำ"
-                  >
-                    {{ formatDayRevenue(revenueDayStats(cell.iso).deposit_amount) }}
-                  </span>
-                  <span
-                    v-if="revenueDayStats(cell.iso).total_amount > 0"
-                    class="revenue-cal-total"
-                    title="ยอดบริการ"
-                  >
-                    {{ formatDayRevenue(revenueDayStats(cell.iso).total_amount) }}
-                  </span>
-                </div>
-                <span class="revenue-cal-count">
-                  <template v-if="revenueDayStats(cell.iso).done_count > 0">
-                    {{ revenueDayStats(cell.iso).done_count }} คิว
-                  </template>
+                <span
+                  v-if="revenueDayStats(cell.iso).deposit_amount > 0"
+                  class="revenue-cal-deposit"
+                  :title="`มัดจำ ${formatDayRevenue(revenueDayStats(cell.iso).deposit_amount)}`"
+                >
+                  ม.{{ formatDayRevenueCell(revenueDayStats(cell.iso).deposit_amount) }}
+                </span>
+                <span
+                  v-if="revenueDayStats(cell.iso).total_amount > 0"
+                  class="revenue-cal-total"
+                  :title="`ยอดบริการ ${formatDayRevenue(revenueDayStats(cell.iso).total_amount)}`"
+                >
+                  {{ formatDayRevenueCell(revenueDayStats(cell.iso).total_amount) }}
+                </span>
+                <span
+                  v-if="revenueDayStats(cell.iso).done_count > 0"
+                  class="revenue-cal-count"
+                >
+                  {{ revenueDayStats(cell.iso).done_count }} คิว
                 </span>
               </div>
             </div>
@@ -1736,7 +1906,7 @@ onMounted(loadUsers)
               <span class="revenue-summary-label">มัดจำรวม</span>
               <strong class="revenue-summary-deposit">{{ formatBookingTotal(revenueMonthDepositTotal) }}</strong>
               <span class="muted revenue-summary-sub">
-              
+                {{ revenueMonthDoneCount.toLocaleString('th-TH') }} คิว × คนละ
                 {{ revenueDepositRate.toLocaleString('th-TH') }} บาท
               </span>
             </div>
@@ -2517,6 +2687,133 @@ onMounted(loadUsers)
 
     <Teleport to="body">
       <div
+        v-if="bookingAddOpen"
+        class="booking-edit-backdrop"
+        @click.self="closeBookingAdd"
+      >
+        <div class="booking-edit-modal card" role="dialog" aria-labelledby="booking-add-title">
+          <div class="booking-edit-header">
+            <h3 id="booking-add-title">เพิ่มคิว</h3>
+            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingAdd">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <p class="muted booking-edit-meta">
+            วันที่ {{ formatServiceDateLabel(bookingAddDate) }}
+            <span v-if="bookingAddDate && bookingAddDate < todayYmd()"> · จองย้อนหลัง</span>
+          </p>
+
+          <label class="booking-edit-field">
+            ค้นหาลูกค้า
+            <input
+              v-model="bookingAddUserQuery"
+              type="search"
+              class="admin-input"
+              placeholder="ชื่อ อีเมล หรือเบอร์โทร"
+              @input="bookingAddError = ''"
+            />
+          </label>
+
+          <label class="booking-edit-field">
+            ลูกค้า
+            <select v-model="bookingAddUserId" class="admin-input" @change="bookingAddError = ''">
+              <option value="">-- เลือกลูกค้า --</option>
+              <option v-for="u in bookingAddUsers" :key="u.id" :value="u.id">
+                {{ u.name }} ({{ u.email }})
+              </option>
+            </select>
+          </label>
+
+          <label class="booking-edit-field">
+            เวลาเริ่ม
+            <select v-model.number="bookingAddStartHour" class="admin-input" @change="bookingAddError = ''">
+              <option v-for="h in bookingAddHourOptions" :key="h" :value="h">
+                {{ h }}:00 - {{ h + 2 }}:00
+              </option>
+            </select>
+          </label>
+
+          <label class="booking-edit-field">
+            สถานะ
+            <select v-model="bookingAddStatus" class="admin-input" @change="bookingAddError = ''">
+              <option value="awaiting_payment">รอชำระเงิน</option>
+              <option value="pending">ชำระแล้ว / รอให้บริการ</option>
+              <option value="done">ทำเสร็จแล้ว</option>
+            </select>
+          </label>
+
+          <label class="booking-edit-field">
+            ยอดเงิน (บาท)
+            <input
+              v-model="bookingAddTotal"
+              type="number"
+              min="0"
+              step="1"
+              class="admin-input"
+              :placeholder="bookingAddStatus === 'done' ? 'จำเป็นสำหรับสถานะทำเสร็จแล้ว' : 'ไม่บังคับ'"
+              @input="bookingAddError = ''"
+            />
+          </label>
+
+          <div class="booking-edit-services">
+            <p class="booking-edit-label">บริการ</p>
+            <p class="muted booking-edit-hint">แสดงบริการที่เปิดใช้งานทั้งหมด · บริการบังคับยึดตามวันจอง</p>
+            <p v-if="bookingAddLoading" class="muted">กำลังโหลดรายการบริการ...</p>
+            <template v-else>
+              <div v-if="bookingAddOptions.length" class="booking-edit-option-list">
+                <label
+                  v-for="opt in bookingAddOptions"
+                  :key="opt.id"
+                  class="booking-edit-option"
+                  :class="{
+                    selected: bookingAddSelectedIds.includes(String(opt.id)),
+                    required: opt.is_required && optionBookableOnDate(opt, bookingAddDate),
+                  }"
+                >
+                  <input
+                    v-model="bookingAddSelectedIds"
+                    type="checkbox"
+                    class="booking-edit-option-input"
+                    :value="String(opt.id)"
+                    :disabled="opt.is_required && optionBookableOnDate(opt, bookingAddDate)"
+                    @change="bookingAddError = ''"
+                  />
+                  <span class="booking-edit-option-name">
+                    {{ opt.option_name }}
+                    <span
+                      v-if="opt.is_required && optionBookableOnDate(opt, bookingAddDate)"
+                      class="booking-edit-required"
+                    >บังคับ</span>
+                  </span>
+                  <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
+                </label>
+              </div>
+              <p v-else class="muted">ไม่มีบริการให้เลือก</p>
+            </template>
+          </div>
+
+          <p v-if="bookingAddError" class="alert error">{{ bookingAddError }}</p>
+
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="bookingAddSaving" @click="closeBookingAdd">
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              class="btn primary"
+              :disabled="bookingAddSaving || bookingAddLoading"
+              @click="saveBookingAdd"
+            >
+              {{ bookingAddSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="bookingEditOpen"
         class="booking-edit-backdrop"
         @click.self="closeBookingEdit"
@@ -3184,42 +3481,50 @@ onMounted(loadUsers)
 
 .revenue-cal-day {
   cursor: default;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .revenue-cal-day.has-revenue {
   background: #ecfdf5;
 }
 
-.revenue-cal-body {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 4px;
-  margin-top: 4px;
+.revenue-cal-day .service-cal-num {
+  font-size: 12px;
+  line-height: 1.1;
 }
 
-.revenue-cal-amounts {
+.revenue-cal-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: stretch;
+  gap: 1px;
+  margin-top: auto;
+  padding-top: 2px;
   min-width: 0;
-  flex: 1;
 }
 
 .revenue-cal-deposit {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   color: #b45309;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .revenue-cal-total {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   color: #15803d;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .revenue-cal-row {
@@ -3234,9 +3539,11 @@ onMounted(loadUsers)
 }
 
 .revenue-cal-count {
-  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
   color: #475569;
-  text-align: right;
+  white-space: nowrap;
 }
 
 .revenue-cal-cancelled {
@@ -3279,6 +3586,44 @@ onMounted(loadUsers)
 
 .revenue-summary-sub {
   font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 520px) {
+  .revenue-section .service-cal-weekdays,
+  .revenue-section .service-cal-week {
+    gap: 2px;
+  }
+
+  .revenue-section .service-cal-wd {
+    font-size: 10px;
+    padding: 2px 0;
+  }
+
+  .revenue-section .service-cal-day {
+    min-height: 58px;
+    padding: 3px 2px;
+    border-radius: 8px;
+  }
+
+  .revenue-section .revenue-cal-day {
+    min-height: 58px;
+  }
+
+  .revenue-section .revenue-cal-deposit,
+  .revenue-section .revenue-cal-total,
+  .revenue-section .revenue-cal-count {
+    font-size: 8px;
+  }
+
+  .revenue-section .service-cal-num {
+    font-size: 11px;
+  }
+
+  .revenue-summary-deposit,
+  .revenue-summary-total {
+    font-size: 20px;
+  }
 }
 
 @media (max-width: 520px) {
@@ -3380,6 +3725,11 @@ onMounted(loadUsers)
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.booking-add-btn {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .service-day-header h3 {
