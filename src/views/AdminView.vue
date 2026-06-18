@@ -884,7 +884,9 @@ async function editBooking(item) {
 
   const bookingDate = item.booking_date || selectedBookingDate.value
   try {
-    const { data } = await api.get('/api/bookings/options')
+    const { data } = await api.get('/api/bookings/options', {
+      params: bookingDate ? { date: bookingDate } : {},
+    })
     bookingEditOptions.value = data || []
     const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
     const selected = (item.nail_options || [])
@@ -1103,7 +1105,9 @@ async function openBookingAdd() {
   try {
     const [hoursRes, optionsRes] = await Promise.all([
       api.get('/api/bookings/shop-hours'),
-      api.get('/api/bookings/options'),
+      api.get('/api/bookings/options', {
+        params: selectedBookingDate.value ? { date: selectedBookingDate.value } : {},
+      }),
     ])
     shopOpenHour.value = Number(hoursRes.data?.open_hour) || 9
     shopLastBookingHour.value = Number(hoursRes.data?.last_booking_hour) || 18
@@ -2969,7 +2973,7 @@ onMounted(loadShowcaseClips)
 
           <div class="booking-edit-services">
             <p class="booking-edit-label">บริการ</p>
-            <p class="muted booking-edit-hint">แสดงบริการที่เปิดใช้งานทั้งหมด · บริการบังคับยึดตามวันจอง</p>
+            <p class="muted booking-edit-hint">แสดงบริการของวันจอง · สถานที่แสดงเฉพาะวันนั้น</p>
             <p v-if="bookingAddLoading" class="muted">กำลังโหลดรายการบริการ...</p>
             <template v-else>
               <div v-if="bookingAddOptions.length" class="booking-edit-option-list">
@@ -3057,7 +3061,7 @@ onMounted(loadShowcaseClips)
 
           <div class="booking-edit-services">
             <p class="booking-edit-label">บริการ</p>
-            <p class="muted booking-edit-hint">แสดงบริการที่เปิดใช้งานทั้งหมด · บริการบังคับยึดตามวันจอง</p>
+            <p class="muted booking-edit-hint">แสดงบริการของวันจอง · สถานที่แสดงเฉพาะวันนั้น</p>
             <p v-if="bookingEditLoading" class="muted">กำลังโหลดรายการบริการ...</p>
             <template v-else>
               <p v-if="bookingEditOrphaned.length" class="booking-edit-orphaned">
