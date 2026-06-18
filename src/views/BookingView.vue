@@ -759,7 +759,7 @@ onUnmounted(() => {
     </Transition>
 
     <!-- ── BOTTOM NAV ── -->
-    <BottomNav active="bookings" @coupons="showMyCoupons" />
+    <BottomNav active="bookings" />
 
   </div>
 </template>

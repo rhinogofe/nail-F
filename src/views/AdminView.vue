@@ -2706,7 +2706,6 @@ onMounted(loadShowcaseClips)
           <div>
             <strong>{{ item.title || `คลิป #${index + 1}` }}</strong>
             <span v-if="!item.is_active" class="user-badge-provider">ปิดแสดง</span>
-            <p class="muted clip-url">{{ item.tiktok_url }}</p>
             <p class="muted">ลำดับ {{ index + 1 }}</p>
           </div>
         </div>
@@ -3312,10 +3311,6 @@ onMounted(loadShowcaseClips)
 
 .showcase-clip-form {
   margin-top: 12px;
-}
-
-.clip-url {
-  word-break: break-all;
 }
 
 .showcase-clip-info {

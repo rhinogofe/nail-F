@@ -3,10 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
-import { useCoupons } from '../composables/useCoupons'
 
 const auth = useAuthStore()
-const { showMyCoupons } = useCoupons()
 
 const clips = ref([])
 const failedThumbs = ref(new Set())
@@ -188,7 +186,7 @@ onUnmounted(() => lockBodyScroll(false))
 
   </div>
 
-  <BottomNav active="reviews" @coupons="showMyCoupons" />
+  <BottomNav active="reviews" />
 </template>
 
 <style scoped>

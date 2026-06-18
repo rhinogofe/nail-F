@@ -9,7 +9,6 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['coupons'])
 const router = useRouter()
 const auth = useAuthStore()
 
@@ -50,10 +49,6 @@ function logout() {
     >
       <i class="ti ti-user" aria-hidden="true"></i>
       <span>บัญชี</span>
-    </button>
-    <button type="button" class="nav-item" @click="emit('coupons')">
-      <i class="ti ti-ticket" aria-hidden="true"></i>
-      <span>คูปอง</span>
     </button>
     <button
       v-if="auth.isAdmin"

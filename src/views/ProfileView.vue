@@ -6,7 +6,7 @@ import BottomNav from '../components/BottomNav.vue'
 import { useCoupons } from '../composables/useCoupons'
 
 const auth = useAuthStore()
-const { showMyCoupons, loadMyCoupons } = useCoupons()
+const { showMyCoupons, loadMyCoupons, redeemCoupon, myCoupons } = useCoupons()
 
 const profileName = ref('')
 const profilePhone = ref('')
@@ -36,6 +36,7 @@ const initials = computed(() => {
 })
 
 const totalPoints = computed(() => auth.user?.total_points || 0)
+const canRedeemCoupon = computed(() => totalPoints.value >= 100)
 
 function formatDateLabel(iso) {
   if (!iso) return '-'
@@ -220,6 +221,29 @@ onMounted(async () => {
         </button>
       </section>
 
+      <section class="card coupon-card">
+        <h2 class="section-title">คูปอง</h2>
+        <p class="coupon-hint">
+          แลกคูปองลด 20% ใช้ 100 แต้ม · คุณมี {{ totalPoints.toLocaleString('th-TH') }} แต้ม
+        </p>
+        <div class="coupon-actions">
+          <button type="button" class="btn-coupon" @click="showMyCoupons">
+            <i class="ti ti-ticket" aria-hidden="true"></i>
+            <span>คูปองของฉัน</span>
+            <span v-if="myCoupons.length" class="coupon-badge">{{ myCoupons.length }}</span>
+          </button>
+          <button
+            v-if="canRedeemCoupon"
+            type="button"
+            class="btn-redeem"
+            @click="redeemCoupon"
+          >
+            <i class="ti ti-gift" aria-hidden="true"></i>
+            <span>แลกคูปอง</span>
+          </button>
+        </div>
+      </section>
+
       <section class="card history-card">
         <h2 class="section-title">ประวัติการจอง</h2>
         <p v-if="loadingHistory" class="muted">กำลังโหลด...</p>
@@ -250,7 +274,7 @@ onMounted(async () => {
       </section>
     </main>
 
-    <BottomNav active="profile" @coupons="showMyCoupons" />
+    <BottomNav active="profile" />
   </div>
 </template>
 
@@ -427,6 +451,65 @@ onMounted(async () => {
 .btn-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.coupon-hint {
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.coupon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn-coupon,
+.btn-redeem {
+  flex: 1;
+  min-width: 140px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn-coupon {
+  background: #fff1f2;
+  color: #e11d48;
+}
+
+.btn-redeem {
+  background: #e11d48;
+  color: #fff;
+}
+
+.btn-coupon i,
+.btn-redeem i {
+  font-size: 18px;
+}
+
+.coupon-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .muted {
