@@ -1588,6 +1588,18 @@ async function toggleShowcaseClip(item) {
   }
 }
 
+async function refreshShowcaseThumbnail(item) {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.post(`/api/admin/showcase-clips/${item.id}/refresh-thumbnail`)
+    message.value = data?.message || 'ดึงรูปปกแล้ว'
+    await loadShowcaseClips()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ดึงรูปปกไม่สำเร็จ'
+  }
+}
+
 async function loadNailOptions() {
   try {
     const { data } = await api.get('/api/admin/nailoptions')
@@ -2682,12 +2694,21 @@ onMounted(loadShowcaseClips)
 
       <p v-if="showcaseClips.length === 0" class="muted" style="margin-top:14px">ยังไม่มีคลิป</p>
 
-      <div v-for="(item, index) in showcaseClips" :key="item.id" class="admin-item">
-        <div>
-          <strong>{{ item.title || `คลิป #${index + 1}` }}</strong>
-          <span v-if="!item.is_active" class="user-badge-provider">ปิดแสดง</span>
-          <p class="muted clip-url">{{ item.tiktok_url }}</p>
-          <p class="muted">ลำดับ {{ index + 1 }}</p>
+      <div v-for="(item, index) in showcaseClips" :key="item.id" class="admin-item showcase-clip-item">
+        <div class="showcase-clip-info">
+          <img
+            v-if="item.thumbnail_url"
+            :src="item.thumbnail_url"
+            alt=""
+            class="showcase-clip-preview"
+          />
+          <div v-else class="showcase-clip-preview showcase-clip-preview-empty">ไม่มีปก</div>
+          <div>
+            <strong>{{ item.title || `คลิป #${index + 1}` }}</strong>
+            <span v-if="!item.is_active" class="user-badge-provider">ปิดแสดง</span>
+            <p class="muted clip-url">{{ item.tiktok_url }}</p>
+            <p class="muted">ลำดับ {{ index + 1 }}</p>
+          </div>
         </div>
         <div class="row">
           <button type="button" class="btn" :disabled="index === 0" @click="moveShowcaseClip(item, 'up')">
@@ -2701,6 +2722,7 @@ onMounted(loadShowcaseClips)
           >
             ↓
           </button>
+          <button type="button" class="btn" @click="refreshShowcaseThumbnail(item)">ดึงปก</button>
           <button type="button" class="btn" @click="startEditClip(item)">แก้ไข</button>
           <button type="button" class="btn" @click="toggleShowcaseClip(item)">
             {{ item.is_active ? 'ปิดแสดง' : 'เปิดแสดง' }}
@@ -3294,6 +3316,31 @@ onMounted(loadShowcaseClips)
 
 .clip-url {
   word-break: break-all;
+}
+
+.showcase-clip-info {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.showcase-clip-preview {
+  width: 54px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: #0f172a;
+}
+
+.showcase-clip-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 4px;
 }
 
 .admin-bulk-settings {

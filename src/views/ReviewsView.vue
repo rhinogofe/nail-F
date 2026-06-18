@@ -9,6 +9,7 @@ const auth = useAuthStore()
 const { showMyCoupons } = useCoupons()
 
 const clips = ref([])
+const failedThumbs = ref(new Set())
 const loading = ref(false)
 const errorMessage = ref('')
 const viewerOpen = ref(false)
@@ -24,6 +25,14 @@ function shouldRenderEmbed(index) {
   return Math.abs(index - viewerIndex.value) <= 1
 }
 
+function showThumb(clip) {
+  return Boolean(clip.thumbnail_url) && !failedThumbs.value.has(clip.id)
+}
+
+function onThumbError(clipId) {
+  failedThumbs.value = new Set([...failedThumbs.value, clipId])
+}
+
 function openOnTikTok(url) {
   if (!url) return
   window.open(url, '_blank', 'noopener,noreferrer')
@@ -35,6 +44,7 @@ async function loadClips() {
   try {
     const { data } = await api.get('/api/reviews/clips')
     clips.value = data || []
+    failedThumbs.value = new Set()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดคลิปไม่สำเร็จ'
   } finally {
@@ -84,17 +94,19 @@ onUnmounted(() => lockBodyScroll(false))
   <div class="page">
     <header class="hdr">
       <div class="hdr-top">
-        <div class="brand">
-          Nail<span class="brand-accent">Thuean</span>
+        <div class="hdr-title-wrap">
+          <div class="brand">
+            Nail<span class="brand-accent">Thuean</span>
+          </div>
+          <h1 class="page-title">รีวิว</h1>
+          <p class="page-sub">ผลงานจาก TikTok · กดดูคลิป · เลื่อนขึ้นลงเปลี่ยนคลิป</p>
         </div>
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
-      <h1 class="page-title">รีวิว</h1>
-      <p class="page-sub">ผลงานจาก TikTok · กดดูคลิป · เลื่อนขึ้นลงเปลี่ยนคลิป</p>
     </header>
 
     <main class="content">
-      <p v-if="loading" class="muted center">กำลังโหลด...</p>
+      <p v-if="loading" class="muted loading-hint">กำลังโหลด...</p>
       <p v-else-if="errorMessage" class="alert error">{{ errorMessage }}</p>
 
       <div v-else-if="clips.length === 0" class="empty card">
@@ -112,14 +124,16 @@ onUnmounted(() => lockBodyScroll(false))
           @click="openViewer(index)"
         >
           <img
-            v-if="clip.thumbnail_url"
+            v-if="showThumb(clip)"
             :src="clip.thumbnail_url"
             :alt="clip.title || `คลิป ${index + 1}`"
             class="clip-thumb"
-            loading="lazy"
+            referrerpolicy="no-referrer"
+            @error="onThumbError(clip.id)"
           />
           <div v-else class="clip-thumb-fallback">
             <i class="ti ti-brand-tiktok" aria-hidden="true"></i>
+            <span class="clip-fallback-title">{{ clip.title || `คลิป ${index + 1}` }}</span>
           </div>
           <span class="clip-play" aria-hidden="true">
             <i class="ti ti-player-play-filled"></i>
@@ -150,7 +164,7 @@ onUnmounted(() => lockBodyScroll(false))
                 :src="embedUrl(clip.video_id)"
                 class="viewer-embed"
                 :title="clip.title || `TikTok clip ${index + 1}`"
-                allow="encrypted-media; fullscreen; picture-in-picture"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen
                 scrolling="no"
               />
@@ -172,8 +186,9 @@ onUnmounted(() => lockBodyScroll(false))
       </div>
     </Teleport>
 
-    <BottomNav active="reviews" @coupons="showMyCoupons" />
   </div>
+
+  <BottomNav active="reviews" @coupons="showMyCoupons" />
 </template>
 
 <style scoped>
@@ -186,7 +201,9 @@ onUnmounted(() => lockBodyScroll(false))
 .page {
   font-family: 'Noto Sans Thai', sans-serif;
   background: #fff;
-  min-height: 100svh;
+  display: block;
+  padding: 0;
+  gap: 0;
   max-width: 430px;
   margin: 0 auto;
   position: relative;
@@ -196,7 +213,7 @@ onUnmounted(() => lockBodyScroll(false))
 .hdr {
   background: #fff;
   border-bottom: 0.5px solid #f1e8f0;
-  padding: 14px 18px 12px;
+  padding: 10px 16px 8px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -204,10 +221,13 @@ onUnmounted(() => lockBodyScroll(false))
 
 .hdr-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+}
+
+.hdr-title-wrap {
+  min-width: 0;
 }
 
 .brand {
@@ -234,24 +254,26 @@ onUnmounted(() => lockBodyScroll(false))
 }
 
 .page-title {
-  margin: 0 0 4px;
-  font-size: 20px;
+  margin: 2px 0 0;
+  font-size: 18px;
+  line-height: 1.2;
   color: #1e293b;
 }
 
 .page-sub {
-  margin: 0;
-  font-size: 13px;
+  margin: 2px 0 0;
+  font-size: 12px;
   color: #94a3b8;
+  line-height: 1.35;
 }
 
 .content {
-  padding: 2px 0 12px;
+  padding: 0;
 }
 
-.center {
+.loading-hint {
   text-align: center;
-  padding: 24px 16px;
+  padding: 16px;
 }
 
 .muted {
@@ -311,11 +333,22 @@ onUnmounted(() => lockBodyScroll(false))
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   background: linear-gradient(160deg, #1e293b, #0f172a);
   color: #fff;
   font-size: 28px;
+  padding: 8px;
+}
+
+.clip-fallback-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.3;
+  color: #e2e8f0;
 }
 
 .clip-play {
@@ -335,8 +368,7 @@ onUnmounted(() => lockBodyScroll(false))
 
 .viewer {
   position: fixed;
-  top: 0;
-  bottom: 0;
+  inset: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -354,7 +386,7 @@ onUnmounted(() => lockBodyScroll(false))
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(15, 23, 42, 0.65);
   color: #fff;
   font-size: 20px;
   cursor: pointer;
@@ -364,24 +396,28 @@ onUnmounted(() => lockBodyScroll(false))
 }
 
 .viewer-scroll {
-  height: 100dvh;
+  height: 100svh;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   scroll-snap-type: y mandatory;
   -webkit-overflow-scrolling: touch;
 }
 
 .viewer-slide {
-  height: 100dvh;
+  height: 100svh;
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  overflow: hidden;
   background: #000;
 }
 
 .viewer-embed-wrap {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top));
+  left: 0;
+  right: 0;
+  bottom: 130px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -389,22 +425,26 @@ onUnmounted(() => lockBodyScroll(false))
 
 .viewer-embed {
   width: 100%;
-  height: min(72dvh, 680px);
+  height: 100%;
+  max-width: 100%;
   border: 0;
   display: block;
 }
 
 .viewer-embed-placeholder {
   width: 100%;
-  height: min(72dvh, 680px);
+  height: 100%;
 }
 
 .viewer-meta {
-  flex-shrink: 0;
-  padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 16px max(18px, env(safe-area-inset-bottom));
   color: #fff;
   text-align: center;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
 }
 
 .viewer-title {
