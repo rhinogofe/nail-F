@@ -316,8 +316,8 @@ onUnmounted(() => lockBodyScroll(false))
 
 .clip-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
   padding: 8px var(--page-padding-x) 0;
 }
 
@@ -369,7 +369,7 @@ onUnmounted(() => lockBodyScroll(false))
   justify-content: center;
   background: linear-gradient(transparent 40%, rgba(45, 36, 36, 0.55));
   color: #fff;
-  font-size: 28px;
+  font-size: 22px;
   pointer-events: none;
 }
 

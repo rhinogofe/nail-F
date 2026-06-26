@@ -1764,7 +1764,7 @@ onMounted(loadShowcaseClips)
 </script>
 
 <template>
-  <main class="page admin-page">
+  <main class="admin-page">
     <header class="admin-top-bar">
       <div>
         <h2 class="admin-title">แอดมิน</h2>
@@ -3131,11 +3131,14 @@ onMounted(loadShowcaseClips)
 .admin-page {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   margin: 0 auto;
   padding: var(--page-padding-x);
   padding-bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
   background: var(--color-surface);
   min-height: 100svh;
+  overflow-x: clip;
+  box-sizing: border-box;
 }
 
 .admin-top-bar {
@@ -3170,6 +3173,10 @@ onMounted(loadShowcaseClips)
 .admin-tab-wrap {
   position: relative;
   margin-bottom: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .admin-tab-wrap::before,
@@ -3197,6 +3204,9 @@ onMounted(loadShowcaseClips)
   display: flex;
   gap: 8px;
   padding: 4px 0 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
@@ -3268,6 +3278,10 @@ onMounted(loadShowcaseClips)
 .admin-section {
   border-radius: 14px;
   padding: 18px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .admin-form-row {
@@ -3279,14 +3293,14 @@ onMounted(loadShowcaseClips)
 
 .admin-form-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   gap: 10px;
   margin-bottom: 10px;
 }
 
 .admin-filter-row {
   display: grid;
-  grid-template-columns: 220px 220px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 10px;
 }
@@ -3621,9 +3635,10 @@ onMounted(loadShowcaseClips)
 
 .service-cal-weekdays {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
   margin-bottom: 4px;
+  max-width: 100%;
 }
 
 .service-cal-wd {
@@ -3638,24 +3653,29 @@ onMounted(loadShowcaseClips)
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .service-cal-week {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
+  max-width: 100%;
 }
 
 .service-cal-day {
   position: relative;
   min-height: 52px;
+  min-width: 0;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #fff;
-  padding: 6px 4px;
+  padding: 6px 2px;
   cursor: pointer;
   font-family: inherit;
   transition: border-color .15s, background .15s;
+  overflow: hidden;
 }
 
 .service-cal-day:not(.empty):hover {
@@ -3731,9 +3751,10 @@ onMounted(loadShowcaseClips)
   justify-content: center;
   gap: 2px;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  flex-wrap: wrap;
 }
 
 .booking-stat-paid { color: #15803d; }
@@ -3905,6 +3926,73 @@ onMounted(loadShowcaseClips)
 }
 
 @media (max-width: 520px) {
+  .admin-page {
+    padding: 12px;
+  }
+
+  .admin-section {
+    padding: 14px 12px;
+  }
+
+  .admin-nav-item {
+    min-width: 64px;
+    padding: 8px 6px;
+    font-size: 10px;
+  }
+
+  .admin-nav-item i {
+    font-size: 15px;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .service-cal-weekdays,
+  .service-cal-week {
+    gap: 2px;
+  }
+
+  .service-cal-wd {
+    font-size: 10px;
+    padding: 2px 0;
+  }
+
+  .service-cal-day {
+    min-height: 48px;
+    padding: 3px 1px;
+    border-radius: 8px;
+  }
+
+  .booking-cal-day,
+  .block-cal-day {
+    min-height: 52px;
+  }
+
+  .service-cal-num {
+    font-size: 11px;
+  }
+
+  .booking-cal-stats {
+    font-size: 8px;
+    gap: 1px;
+  }
+
+  .block-cal-marker {
+    font-size: 11px;
+  }
+
+  .booking-cal-alert {
+    width: 14px;
+    height: 14px;
+    font-size: 9px;
+    line-height: 14px;
+  }
+
   .revenue-section .service-cal-weekdays,
   .revenue-section .service-cal-week {
     gap: 2px;
@@ -4136,6 +4224,8 @@ onMounted(loadShowcaseClips)
   border: 1px solid var(--color-border);
   font-size: 13px;
   color: var(--color-text-primary);
+  max-width: 100%;
+  flex-wrap: wrap;
 }
 
 .user-item {
@@ -4204,9 +4294,9 @@ onMounted(loadShowcaseClips)
 
 @media (max-width: 820px) {
   .admin-nav-item {
-    min-width: 76px;
-    padding: 8px 10px;
-    font-size: 11px;
+    min-width: 64px;
+    padding: 8px 8px;
+    font-size: 10px;
   }
 
   .admin-nav-item i {
@@ -4252,6 +4342,10 @@ onMounted(loadShowcaseClips)
 
   .admin-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-filter-row {
+    grid-template-columns: 1fr;
   }
 
   .admin-action-btn {

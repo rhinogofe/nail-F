@@ -24,6 +24,8 @@ const isAdminRoute = computed(() => route.path.startsWith('/admin'))
 .app-shell--admin {
   max-width: min(1200px, 100%);
   width: 100%;
+  overflow-x: clip;
+  box-sizing: border-box;
 }
 
 @media (min-width: 431px) {
