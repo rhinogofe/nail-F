@@ -78,7 +78,7 @@ const showEveryDayForm = ref(false)
 const serviceWeekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const serviceThMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 const optionColorPresets = [
-  { label: 'แดง', value: '#e11d48' },
+  { label: 'Rose Gold', value: '#C4847A' },
   { label: 'เขียว', value: '#22c55e' },
   { label: 'น้ำเงิน', value: '#3b82f6' },
   { label: 'ส้ม', value: '#f97316' },
@@ -107,7 +107,7 @@ const optionForm = ref({
   duration_min: 60,
   is_active: true,
   is_required: false,
-  color: '#e11d48',
+  color: '#C4847A',
   show_from_date: '',
   show_to_date: '',
 })
@@ -1265,7 +1265,7 @@ function resetOptionForm() {
     duration_min: 60,
     is_active: true,
     is_required: false,
-    color: '#e11d48',
+    color: '#C4847A',
     show_from_date: '',
     show_to_date: '',
   }
@@ -1281,7 +1281,7 @@ function resetOptionFormForDay() {
     duration_min: 60,
     is_active: true,
     is_required: false,
-    color: '#e11d48',
+    color: '#C4847A',
     show_from_date: selectedServiceDate.value,
     show_to_date: selectedServiceDate.value,
   }
@@ -1625,7 +1625,7 @@ function startEditOption(item) {
     duration_min: Number(item.duration_min),
     is_active: Boolean(item.is_active),
     is_required: Boolean(item.is_required),
-    color: item.color && isValidHexColor(item.color) ? item.color : '#e11d48',
+    color: item.color && isValidHexColor(item.color) ? item.color : '#C4847A',
     show_from_date: from || '',
     show_to_date: to || '',
   }
@@ -1764,16 +1764,20 @@ onMounted(loadShowcaseClips)
 </script>
 
 <template>
-  <main class="page">
-    <header class="topbar card">
+  <main class="page admin-page">
+    <header class="admin-top-bar">
       <div>
-        <h2>แอดมิน</h2>
-        <p class="muted">เข้าสู่ระบบโดย {{ auth.user?.name || '-' }}</p>
+        <h2 class="admin-title">แอดมิน</h2>
+        <p class="muted admin-sub">{{ auth.user?.name || '-' }}</p>
       </div>
-      <button class="btn" @click="backToBooking">กลับหน้าจอง</button>
+      <button type="button" class="btn admin-back-btn" @click="backToBooking">
+        <i class="ti ti-arrow-left" aria-hidden="true"></i>
+        กลับจอง
+      </button>
     </header>
 
-    <nav class="admin-nav card" aria-label="เมนูแอดมิน">
+    <div class="admin-tab-wrap">
+    <nav class="admin-nav" aria-label="เมนูแอดมิน">
       <button
         v-for="tab in adminTabs"
         :key="tab.key"
@@ -1787,6 +1791,7 @@ onMounted(loadShowcaseClips)
         <span>{{ tab.label }}</span>
       </button>
     </nav>
+    </div>
 
     <p v-if="message" class="alert success">{{ message }}</p>
     <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
@@ -2136,7 +2141,7 @@ onMounted(loadShowcaseClips)
                 <template v-if="optionFormUseColor">
                   <div class="color-picker-row">
                     <input v-model="optionForm.color" type="color" class="admin-color-input" />
-                    <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
+                    <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
                   </div>
                   <div class="color-preset-row">
                     <button
@@ -2258,7 +2263,7 @@ onMounted(loadShowcaseClips)
               <template v-if="optionFormUseColor">
                 <div class="color-picker-row">
                   <input v-model="optionForm.color" type="color" class="admin-color-input" />
-                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#e11d48" />
+                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
                 </div>
                 <div class="color-preset-row">
                   <button
@@ -2351,7 +2356,7 @@ onMounted(loadShowcaseClips)
         <button class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveShopHours">บันทึกเวลาร้าน</button>
       </div>
       <div class="shop-hours-preview">
-        <i class="ti ti-clock" style="font-size:16px;color:#e11d48"></i>
+        <i class="ti ti-clock" style="font-size:16px;color:var(--color-primary)"></i>
         ลูกค้าจะเห็นช่วงเวลา
         <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
         (ปิดรับ {{ String(shopLastBookingHour + 2).padStart(2,'0') }}:00)
@@ -2385,7 +2390,7 @@ onMounted(loadShowcaseClips)
         <button class="btn primary admin-action-btn" @click="saveBookingDisplay">บันทึกรูปแบบแสดงเวลา</button>
       </div>
       <div v-if="bookingDisplayMode === 'slots_2h'" class="shop-hours-preview">
-        <i class="ti ti-layout-list" style="font-size:16px;color:#e11d48"></i>
+        <i class="ti ti-layout-list" style="font-size:16px;color:var(--color-primary)"></i>
         ตัวอย่าง: {{ displaySlotPreview }}
       </div>
 
@@ -2471,7 +2476,7 @@ onMounted(loadShowcaseClips)
         <button class="btn primary admin-action-btn" @click="saveAdvanceDays">บันทึก</button>
       </div>
       <div class="shop-hours-preview">
-        <i class="ti ti-calendar-event" style="font-size:16px;color:#e11d48"></i>
+        <i class="ti ti-calendar-event" style="font-size:16px;color:var(--color-primary)"></i>
         เปิดจองถึง <strong>{{ formatBookUntilLabel(bookUntilDate) }}</strong>
         <span v-if="bookUntilDate" class="muted">({{ advanceDays }} วัน นับจากวันที่กดบันทึกล่าสุด)</span>
       </div>
@@ -3123,12 +3128,78 @@ onMounted(loadShowcaseClips)
 </template>
 
 <style scoped>
+.admin-page {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: var(--page-padding-x);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
+  background: var(--color-surface);
+  min-height: 100svh;
+}
+
+.admin-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.admin-title {
+  margin: 0;
+  font-size: var(--text-h2);
+  color: var(--color-text-primary);
+}
+
+.admin-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.admin-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: var(--btn-secondary-height);
+}
+
+.admin-tab-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.admin-tab-wrap::before,
+.admin-tab-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.admin-tab-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--color-surface), transparent);
+}
+
+.admin-tab-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--color-surface), transparent);
+}
+
 .admin-nav {
   display: flex;
   gap: 8px;
-  padding: 10px;
+  padding: 4px 0 10px;
   overflow-x: auto;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .admin-nav::-webkit-scrollbar {
@@ -3164,9 +3235,9 @@ onMounted(loadShowcaseClips)
 }
 
 .admin-nav-item.active {
-  border-color: #e11d48;
-  background: #fff1f2;
-  color: #e11d48;
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 .alert {
@@ -3252,9 +3323,9 @@ onMounted(loadShowcaseClips)
 }
 
 .view-toggle-btn.active {
-  border-color: #e11d48;
-  background: #fff1f2;
-  color: #e11d48;
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 .admin-filter-item {
@@ -3414,8 +3485,8 @@ onMounted(loadShowcaseClips)
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  background: #fff1f2;
-  color: #e11d48;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 .badge-location {
@@ -3600,8 +3671,8 @@ onMounted(loadShowcaseClips)
 }
 
 .service-cal-day.today {
-  border-color: #e11d48;
-  box-shadow: 0 0 0 1px rgba(225, 29, 72, .12);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px rgba(196, 132, 122, 0.2);
 }
 
 .service-cal-day.has-options {
@@ -3667,7 +3738,7 @@ onMounted(loadShowcaseClips)
 
 .booking-stat-paid { color: #15803d; }
 .booking-stat-sep { color: #94a3b8; }
-.booking-stat-unpaid { color: #e11d48; }
+.booking-stat-unpaid { color: var(--color-primary); }
 
 .booking-stat-cancelled {
   margin-left: 4px;
@@ -3716,7 +3787,7 @@ onMounted(loadShowcaseClips)
 }
 
 .legend-paid { color: #15803d; }
-.legend-unpaid { color: #e11d48; }
+.legend-unpaid { color: var(--color-primary); }
 .legend-cancelled { color: #64748b; }
 
 .service-cal-day.has-bookings {
@@ -3938,7 +4009,7 @@ onMounted(loadShowcaseClips)
   margin-top: 4px;
   padding: 0 5px;
   border-radius: 999px;
-  background: #e11d48;
+  background: var(--color-primary);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -4061,10 +4132,10 @@ onMounted(loadShowcaseClips)
   margin-top: 6px;
   padding: 8px 14px;
   border-radius: 10px;
-  background: #fff1f2;
-  border: 1px solid #fecdd3;
+  background: var(--color-primary-light);
+  border: 1px solid var(--color-border);
   font-size: 13px;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .user-item {
@@ -4185,6 +4256,119 @@ onMounted(loadShowcaseClips)
 
   .admin-action-btn {
     width: 100%;
+  }
+}
+
+@media (min-width: 600px) {
+  .admin-page {
+    padding: 20px 24px 28px;
+  }
+
+  .admin-top-bar {
+    padding: 16px 0 18px;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-option-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-filter-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-item {
+    gap: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .admin-page {
+    padding: 24px 28px 32px;
+  }
+
+  .admin-tab-wrap::before,
+  .admin-tab-wrap::after {
+    display: none;
+  }
+
+  .admin-nav {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    gap: 10px;
+  }
+
+  .admin-nav-item {
+    flex: 1 1 calc(25% - 10px);
+    min-width: 120px;
+    flex-direction: row;
+    justify-content: center;
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  .admin-nav-item i {
+    font-size: 17px;
+  }
+
+  .admin-section {
+    padding: 22px 24px;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .admin-option-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-bulk-settings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-bulk-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .service-cal-day {
+    min-height: 60px;
+  }
+
+  .booking-cal-day,
+  .block-cal-day {
+    min-height: 64px;
+  }
+
+  .revenue-cal-day {
+    min-height: 80px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .admin-page {
+    padding: 28px 32px 40px;
+  }
+
+  .admin-nav-item {
+    flex: 1 1 calc(14.28% - 10px);
+    min-width: 0;
+  }
+
+  .admin-form-row {
+    flex-wrap: wrap;
+  }
+
+  .admin-action-btn {
+    width: auto;
+    min-width: 140px;
+  }
+
+  .revenue-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

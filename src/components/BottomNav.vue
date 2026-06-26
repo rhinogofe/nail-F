@@ -11,11 +11,6 @@ defineProps({
 
 const router = useRouter()
 const auth = useAuthStore()
-
-function logout() {
-  auth.logout()
-  router.push('/login')
-}
 </script>
 
 <template>
@@ -27,8 +22,9 @@ function logout() {
       :aria-current="active === 'bookings' ? 'page' : undefined"
       @click="router.push('/bookings')"
     >
+      <span v-if="active === 'bookings'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-calendar" aria-hidden="true"></i>
-      <span>จองคิว</span>
+      <span>จอง</span>
     </button>
     <button
       type="button"
@@ -37,6 +33,7 @@ function logout() {
       :aria-current="active === 'reviews' ? 'page' : undefined"
       @click="router.push('/reviews')"
     >
+      <span v-if="active === 'reviews'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-star" aria-hidden="true"></i>
       <span>รีวิว</span>
     </button>
@@ -47,6 +44,7 @@ function logout() {
       :aria-current="active === 'profile' ? 'page' : undefined"
       @click="router.push('/profile')"
     >
+      <span v-if="active === 'profile'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-user" aria-hidden="true"></i>
       <span>บัญชี</span>
     </button>
@@ -54,14 +52,13 @@ function logout() {
       v-if="auth.isAdmin"
       type="button"
       class="nav-item"
+      :class="{ active: active === 'admin' }"
+      :aria-current="active === 'admin' ? 'page' : undefined"
       @click="router.push('/admin')"
     >
+      <span v-if="active === 'admin'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-shield" aria-hidden="true"></i>
       <span>แอดมิน</span>
-    </button>
-    <button type="button" class="nav-item" @click="logout">
-      <i class="ti ti-logout" aria-hidden="true"></i>
-      <span>ออกจากระบบ</span>
     </button>
   </nav>
 </template>
@@ -74,10 +71,11 @@ function logout() {
   transform: translateX(-50%);
   width: 100%;
   max-width: 430px;
-  background: #fff;
-  border-top: 0.5px solid #f1e8f0;
+  height: var(--bottom-nav-height);
+  background: var(--color-surface-elevated);
+  border-top: 1px solid var(--color-border);
   display: flex;
-  padding: 8px 0 max(14px, env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom, 0);
   z-index: 30;
 }
 
@@ -86,26 +84,42 @@ function logout() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  font-size: 9px;
+  justify-content: center;
+  gap: 3px;
+  font-size: var(--text-label);
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   background: none;
   border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: color 0.15s;
+  transition: color var(--transition);
+  position: relative;
+  min-height: var(--touch-min);
+  padding-top: 6px;
 }
 
 .nav-item i {
   font-size: 20px;
+  line-height: 1;
+}
+
+.nav-dot {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-primary);
 }
 
 .nav-item.active {
-  color: #e11d48;
+  color: var(--color-primary);
 }
 
 .nav-item:hover:not(.active) {
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 </style>

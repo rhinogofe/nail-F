@@ -22,6 +22,7 @@ const promptpayId = import.meta.env.VITE_PROMPTPAY_ID || ''
 const thaiQrLabel = import.meta.env.VITE_THAI_QR_LABEL || 'สแกน Thai QR เพื่อชำระมัดจำ'
 const qrCodeImage = ref('')
 const qrError = ref('')
+const copyHint = ref('')
 
 const lineMessage = computed(() => {
   return encodeURIComponent(
@@ -35,6 +36,16 @@ function openLine() {
 
 function backToBooking() {
   router.push('/bookings')
+}
+
+async function copyAccountNo() {
+  try {
+    await navigator.clipboard.writeText(bankAccountNo)
+    copyHint.value = 'คัดลอกแล้ว'
+    setTimeout(() => { copyHint.value = '' }, 2000)
+  } catch {
+    copyHint.value = 'คัดลอกไม่สำเร็จ'
+  }
 }
 
 async function generateThaiQr() {
@@ -51,7 +62,7 @@ async function generateThaiQr() {
     qrCodeImage.value = await QRCode.toDataURL(payload, {
       width: 320,
       margin: 2,
-      color: { dark: '#000000', light: '#FFFFFF' },
+      color: { dark: '#2D2424', light: '#FFFFFF' },
     })
   } catch {
     qrError.value = 'สร้าง QR ไม่สำเร็จ กรุณาตรวจสอบ PromptPay ID'
@@ -72,36 +83,316 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="page">
-    <section class="card">
-      <h2>ชำระเงินมัดจำ</h2>
-      <p class="muted">Booking ID: {{ bookingId }}</p>
-      <p class="muted">คิวเวลา {{ startHour }}:00 - {{ endHour }}:00 วันที่ {{ bookingDate }}</p>
-      <p class="success">ยอดมัดจำ {{ depositAmount }} บาท</p>
+  <div class="payment-page">
+    <header class="back-header">
+      <button type="button" class="back-btn" aria-label="กลับ" @click="backToBooking">
+        <i class="ti ti-arrow-left" aria-hidden="true"></i>
+      </button>
+      <h1 class="back-title">ชำระเงินมัดจำ</h1>
+    </header>
 
-      <div class="card payment-qr-card" style="margin-top: 12px">
-        <p><strong>{{ thaiQrLabel }}</strong></p>
-        <img v-if="qrCodeImage" :src="qrCodeImage" alt="Thai QR Code" class="payment-qr-image" />
-        <p v-else class="error">{{ qrError || 'กำลังสร้าง QR...' }}</p>
+    <main class="payment-content">
+      <section class="summary-card">
+        <div class="summary-row">
+          <span class="summary-label"><i class="ti ti-calendar" aria-hidden="true"></i> วันที่</span>
+          <span class="summary-val">{{ bookingDate }}</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label"><i class="ti ti-clock" aria-hidden="true"></i> เวลา</span>
+          <span class="summary-val">{{ startHour }}:00 – {{ endHour }}:00</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label"><i class="ti ti-hash" aria-hidden="true"></i> Booking ID</span>
+          <span class="summary-val">{{ bookingId }}</span>
+        </div>
+        <div class="summary-deposit">
+          <span class="deposit-label">ยอดมัดจำ</span>
+          <span class="deposit-amount">{{ depositAmount.toLocaleString('th-TH') }} บาท</span>
+        </div>
+      </section>
+
+      <section class="qr-panel">
+        <p class="qr-label">{{ thaiQrLabel }}</p>
+        <div class="qr-card">
+          <img v-if="qrCodeImage" :src="qrCodeImage" alt="Thai QR Code" class="qr-image" />
+          <p v-else class="qr-error">{{ qrError || 'กำลังสร้าง QR...' }}</p>
+        </div>
+      </section>
+
+      <button type="button" class="bank-card" @click="copyAccountNo">
+        <div class="bank-info">
+          <p class="bank-name"><i class="ti ti-building-bank" aria-hidden="true"></i> {{ bankName }}</p>
+          <p class="bank-detail">ชื่อบัญชี: {{ bankAccountName }}</p>
+          <p class="bank-account">เลขบัญชี: {{ bankAccountNo }}</p>
+        </div>
+        <span class="copy-action">
+          <i class="ti ti-copy" aria-hidden="true"></i>
+          {{ copyHint || 'แตะเพื่อคัดลอก' }}
+        </span>
+      </button>
+
+      <button type="button" class="line-cta" @click="openLine">
+        <i class="ti ti-brand-line" aria-hidden="true"></i>
+        ส่งสลิปทาง LINE
+      </button>
+
+      <div class="payment-notice">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <span>กรุณาชำระภายใน 1 วัน หากไม่ชำระคิวจะถูกยกเลิก</span>
       </div>
 
-      <div class="card" style="margin-top: 12px">
-        <p><strong>{{ bankName }}</strong></p>
-        <p>ชื่อบัญชี: {{ bankAccountName }}</p>
-        <p>เลขบัญชี: {{ bankAccountNo }}</p>
-      </div>
-
-      <div class="row" style="margin-top: 12px">
-        <button class="btn primary" @click="openLine">ส่งสลิปทาง LINE</button>
-        <button class="btn" @click="backToBooking">กลับหน้าจอง</button>
-      </div>
-
-      <p class="muted" style="margin-top: 12px">
-        หลังส่งสลิป แอดมินจะยืนยันการชำระเงิน และคิวจะเปลี่ยนเป็นพร้อมให้บริการ 
+      <p class="payment-hint muted">
+        หลังส่งสลิป แอดมินจะยืนยันการชำระเงิน และคิวจะเปลี่ยนเป็นพร้อมให้บริการ
       </p>
-      <p class="muted" style="margin-top: 12px">
-        หมายเหตุกรุณาชำระภายใน 1 วัน หากไม่ชำระภายใน 1 วัน คิวจะถูกยกเลิก
-      </p>
-    </section>
-  </main>
+
+      <button type="button" class="btn ghost back-link" @click="backToBooking">
+        กลับหน้าจอง
+      </button>
+    </main>
+  </div>
 </template>
+
+<style scoped>
+.payment-page {
+  min-height: 100svh;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--color-surface);
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.back-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px var(--page-padding-x);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(255, 251, 249, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.back-btn {
+  width: var(--touch-min);
+  height: var(--touch-min);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.back-title {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.payment-content {
+  padding: var(--page-padding-x);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.summary-card {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.summary-label {
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summary-val {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.summary-deposit {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.deposit-label {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.deposit-amount {
+  font-size: var(--text-number);
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.qr-panel {
+  text-align: center;
+}
+
+.qr-label {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.qr-card {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  display: grid;
+  place-items: center;
+}
+
+.qr-image {
+  width: 100%;
+  max-width: 260px;
+  border-radius: 8px;
+}
+
+.qr-error {
+  color: var(--color-error);
+  font-size: 13px;
+  margin: 0;
+}
+
+.bank-card {
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--transition);
+}
+
+.bank-card:active {
+  border-color: var(--color-primary);
+}
+
+.bank-name {
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bank-detail,
+.bank-account {
+  margin: 0 0 2px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.copy-action {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.copy-action i {
+  font-size: 18px;
+}
+
+.line-cta {
+  width: 100%;
+  min-height: var(--btn-primary-height);
+  border: none;
+  border-radius: 12px;
+  background: #06C755;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.line-cta i {
+  font-size: 22px;
+}
+
+.payment-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(196, 154, 60, 0.12);
+  border: 1px solid rgba(196, 154, 60, 0.35);
+  color: var(--color-warning);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.payment-notice i {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.payment-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.back-link {
+  width: 100%;
+  min-height: var(--btn-secondary-height);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+</style>

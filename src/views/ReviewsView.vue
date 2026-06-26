@@ -103,7 +103,7 @@ onUnmounted(() => lockBodyScroll(false))
             Nail<span class="brand-accent">Thuean</span>
           </div>
           <h1 class="page-title">รีวิว</h1>
-          <p class="page-sub">ผลงานจาก TikTok · กดดูคลิป · เลื่อนขึ้นลงเปลี่ยนคลิป</p>
+          <p class="page-sub">ผลงานจาก TikTok</p>
         </div>
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
@@ -199,34 +199,29 @@ onUnmounted(() => lockBodyScroll(false))
       </div>
     </Teleport>
 
+    <BottomNav active="reviews" />
   </div>
-
-  <BottomNav active="reviews" />
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600&display=swap');
-
-* {
-  box-sizing: border-box;
-}
-
 .page {
-  font-family: 'Noto Sans Thai', sans-serif;
-  background: #fff;
+  font-family: var(--font-body);
+  background: var(--color-surface);
   display: block;
   padding: 0;
   gap: 0;
   max-width: 430px;
   margin: 0 auto;
   position: relative;
-  padding-bottom: 72px;
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
 }
 
 .hdr {
-  background: #fff;
-  border-bottom: 0.5px solid #f1e8f0;
-  padding: 10px 16px 8px;
+  background: rgba(255, 251, 249, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px var(--page-padding-x) 8px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -250,15 +245,15 @@ onUnmounted(() => lockBodyScroll(false))
 }
 
 .brand-accent {
-  color: #e11d48;
+  color: var(--color-primary);
 }
 
 .avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #fce7f3;
-  color: #e11d48;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -321,16 +316,18 @@ onUnmounted(() => lockBodyScroll(false))
 
 .clip-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 8px var(--page-padding-x) 0;
 }
 
 .clip-cell {
   position: relative;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 9 / 16;
   padding: 0;
   border: none;
-  background: #0f172a;
+  border-radius: 12px;
+  background: #2D2424;
   cursor: pointer;
   overflow: hidden;
 }
@@ -366,17 +363,14 @@ onUnmounted(() => lockBodyScroll(false))
 
 .clip-play {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.55);
-  color: #fff;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  background: linear-gradient(transparent 40%, rgba(45, 36, 36, 0.55));
+  color: #fff;
+  font-size: 28px;
+  pointer-events: none;
 }
 
 .viewer {
@@ -487,8 +481,8 @@ onUnmounted(() => lockBodyScroll(false))
   border: none;
   border-radius: 999px;
   padding: 10px 18px;
-  background: #ffe4e6;
-  color: #e11d48;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;

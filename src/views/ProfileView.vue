@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
 import { useCoupons } from '../composables/useCoupons'
 
 const auth = useAuthStore()
+const router = useRouter()
 const { showMyCoupons, loadMyCoupons, redeemCoupon, myCoupons } = useCoupons()
 
 const profileName = ref('')
@@ -75,7 +77,7 @@ function statusLabel(status) {
 
 function statusClass(status) {
   return {
-    awaiting_payment: 'status-unpaid',
+    awaiting_payment: 'status-awaiting',
     pending: 'status-pending',
     done: 'status-done',
     cancelled: 'status-cancelled',
@@ -131,6 +133,11 @@ async function saveProfile() {
   } finally {
     saving.value = false
   }
+}
+
+function logout() {
+  auth.logout()
+  router.push('/login')
 }
 
 watch(
@@ -256,9 +263,9 @@ onMounted(async () => {
               {{ item.start_hour }}:00 - {{ item.end_hour ?? Number(item.start_hour) + 2 }}:00
             </span>
           </div>
-          <p class="history-status" :class="statusClass(item.status)">
+          <span class="status-pill" :class="statusClass(item.status)">
             {{ statusLabel(item.status) }}
-          </p>
+          </span>
           <p class="history-services">
             {{
               item.nail_options?.length
@@ -272,6 +279,11 @@ onMounted(async () => {
           <p class="history-meta">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
         </div>
       </section>
+
+      <button type="button" class="btn-logout" @click="logout">
+        <i class="ti ti-logout" aria-hidden="true"></i>
+        ออกจากระบบ
+      </button>
     </main>
 
     <BottomNav active="profile" />
@@ -279,26 +291,22 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600&display=swap');
-
-* {
-  box-sizing: border-box;
-}
-
 .page {
-  font-family: 'Noto Sans Thai', sans-serif;
-  background: #f8fafc;
+  font-family: var(--font-body);
+  background: var(--color-surface);
   min-height: 100svh;
   max-width: 430px;
   margin: 0 auto;
   position: relative;
-  padding-bottom: 72px;
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
 }
 
 .hdr {
-  background: #fff;
-  border-bottom: 0.5px solid #f1e8f0;
-  padding: 14px 18px 16px;
+  background: rgba(255, 251, 249, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  padding: 14px var(--page-padding-x) 16px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -319,15 +327,15 @@ onMounted(async () => {
 }
 
 .brand-accent {
-  color: #e11d48;
+  color: var(--color-primary);
 }
 
 .avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #fce7f3;
-  color: #e11d48;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -369,7 +377,8 @@ onMounted(async () => {
 }
 
 .stat-box {
-  background: #f8fafc;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 12px 8px;
   text-align: center;
@@ -378,7 +387,7 @@ onMounted(async () => {
 .stat-box strong {
   display: block;
   font-size: 18px;
-  color: #e11d48;
+  color: var(--color-primary);
   margin-bottom: 2px;
 }
 
@@ -414,8 +423,8 @@ onMounted(async () => {
 }
 
 .input.readonly {
-  background: #f8fafc;
-  color: #64748b;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
 .alert {
@@ -426,13 +435,13 @@ onMounted(async () => {
 }
 
 .alert.success {
-  background: #ecfdf5;
-  color: #047857;
+  background: rgba(91, 140, 106, 0.1);
+  color: var(--color-success);
 }
 
 .alert.error {
-  background: #fef2f2;
-  color: #b91c1c;
+  background: rgba(196, 92, 92, 0.08);
+  color: var(--color-error);
 }
 
 .btn-save {
@@ -440,7 +449,7 @@ onMounted(async () => {
   border: none;
   border-radius: 12px;
   padding: 13px;
-  background: #e11d48;
+  background: var(--color-primary);
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -484,12 +493,12 @@ onMounted(async () => {
 }
 
 .btn-coupon {
-  background: #fff1f2;
-  color: #e11d48;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
 }
 
 .btn-redeem {
-  background: #e11d48;
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -503,7 +512,7 @@ onMounted(async () => {
   height: 22px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #e11d48;
+  background: var(--color-primary);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -546,22 +555,65 @@ onMounted(async () => {
   color: #64748b;
 }
 
-.history-status {
-  margin: 0 0 4px;
-  font-size: 12px;
+.status-pill {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 600;
 }
 
-.status-unpaid { color: #ea580c; }
-.status-pending { color: #2563eb; }
-.status-done { color: #16a34a; }
-.status-cancelled { color: #64748b; }
+.status-awaiting {
+  background: rgba(196, 154, 60, 0.15);
+  color: var(--color-warning);
+}
+
+.status-pending {
+  background: rgba(107, 143, 163, 0.15);
+  color: var(--color-info);
+}
+
+.status-done {
+  background: rgba(91, 140, 106, 0.15);
+  color: var(--color-success);
+}
+
+.status-cancelled {
+  background: rgba(196, 92, 92, 0.1);
+  color: var(--color-error);
+}
 
 .history-services,
 .history-total,
 .history-meta {
   margin: 0 0 2px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary);
+}
+
+.btn-logout {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 14px;
+  min-height: var(--touch-min);
+}
+
+.btn-logout:hover {
+  color: var(--color-text-secondary);
+}
+
+.btn-logout i {
+  font-size: 18px;
 }
 </style>
