@@ -522,6 +522,9 @@ onUnmounted(() => {
           <span>{{ pointsLabel }}</span>
         </button>
       </div>
+      <p v-if="canGoNext" class="date-nav-hint">
+        กด <i class="ti ti-chevron-right" aria-hidden="true"></i> เพื่อดูวันถัดไป
+      </p>
 
       <div class="date-nav">
         <button class="nav-btn" :disabled="!canGoPrev" @click="prevWeek" aria-label="ก่อนหน้า">
@@ -532,6 +535,8 @@ onUnmounted(() => {
           <i class="ti ti-chevron-right" aria-hidden="true"></i>
         </button>
       </div>
+
+      
 
       <!-- Day strip -->
       <div ref="dayStripRef" class="day-strip">
@@ -870,6 +875,19 @@ onUnmounted(() => {
 .nav-btn i { font-size: 16px; line-height: 1; }
 .nav-btn:hover:not(:disabled) { background: var(--color-primary-light); }
 .nav-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.date-nav-hint {
+  margin: -4px 0 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.date-nav-hint i {
+  font-size: 12px;
+  vertical-align: -1px;
+}
 
 /* Day strip */
 .day-strip {
