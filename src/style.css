@@ -116,6 +116,7 @@ body {
   padding: var(--page-padding-x);
   display: grid;
   gap: 16px;
+  align-content: start;
 }
 
 .center {

@@ -766,12 +766,14 @@ onUnmounted(() => {
 
 <style scoped>
 .page {
+  display: block;
   font-family: var(--font-body);
   background: var(--color-surface);
   min-height: 100svh;
   max-width: 430px;
   margin: 0 auto;
   position: relative;
+  padding: 0;
   padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
 }
 
@@ -938,11 +940,11 @@ onUnmounted(() => {
 
 /* ── SLOTS ── */
 .slot-row {
-  display: flex; align-items: stretch; gap: 10px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
 }
 .slot-time {
   font-size: 11px; font-weight: 500; color: var(--color-text-muted);
-  width: 38px; flex-shrink: 0; text-align: right; padding-top: 16px;
+  width: 38px; flex-shrink: 0; text-align: right;
 }
 .slot-card {
   flex: 1; border-radius: var(--radius-card); border: 1px solid var(--color-border);
