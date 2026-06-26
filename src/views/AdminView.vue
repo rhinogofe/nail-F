@@ -4128,11 +4128,44 @@ onMounted(loadShowcaseClips)
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .booking-add-btn {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.service-day-header > div {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.admin-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.admin-item > div:first-child {
+  min-width: 0;
+}
+
+.admin-item .row {
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 8px;
+}
+
+.admin-item .row .btn {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+  font-size: 12px;
+  padding: 10px 8px;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
 }
 
 .service-day-header h3 {
@@ -4293,6 +4326,16 @@ onMounted(loadShowcaseClips)
 }
 
 @media (max-width: 820px) {
+  .service-day-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .booking-add-btn {
+    margin-left: 0;
+    width: 100%;
+  }
+
   .admin-nav-item {
     min-width: 64px;
     padding: 8px 8px;
@@ -4380,6 +4423,34 @@ onMounted(loadShowcaseClips)
 }
 
 @media (min-width: 768px) {
+  .admin-item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .admin-item .row {
+    width: auto;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  .admin-item .row .btn {
+    flex: 0 1 auto;
+    font-size: 14px;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .service-day-header {
+    flex-wrap: nowrap;
+  }
+
+  .booking-add-btn {
+    width: auto;
+    margin-left: auto;
+  }
+
   .admin-page {
     padding: 24px 28px 32px;
   }
