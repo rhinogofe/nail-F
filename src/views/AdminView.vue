@@ -74,6 +74,8 @@ const bulkBlockNote = ref('')
 const bulkStartDate = ref(todayYmd())
 const bulkDays = ref(7)
 const depositAmount = ref(300)
+const unpaidAutoCancelEnabled = ref(true)
+const unpaidExpireHours = ref(24)
 const useCouponCode = ref('')
 const nailOptions = ref([])
 const serviceMonth = ref(todayYm())
@@ -729,6 +731,52 @@ async function loadDepositSetting() {
     depositAmount.value = Number(data?.deposit_amount || 300)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดค่ายอดมัดจำไม่สำเร็จ'
+  }
+}
+
+async function loadUnpaidAutoCancelSetting() {
+  try {
+    const { data } = await api.get('/api/admin/settings/unpaid-auto-cancel')
+    unpaidAutoCancelEnabled.value = data.enabled !== false
+    unpaidExpireHours.value = Number(data.expire_hours) || 24
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่ายกเลิกอัตโนมัติไม่สำเร็จ'
+  }
+}
+
+async function saveUnpaidAutoCancelSetting() {
+  const hours = Number(unpaidExpireHours.value)
+  if (!Number.isInteger(hours) || hours < 1 || hours > 168) {
+    errorMessage.value = 'เวลายกเลิกต้องเป็นจำนวนเต็ม 1–168 ชั่วโมง'
+    return
+  }
+
+  const ok = await Swal.fire({
+    title: 'ยืนยันบันทึกตั้งค่า',
+    html: unpaidAutoCancelEnabled.value
+      ? `เปิดยกเลิกอัตโนมัติ — คิวรอชำระจะถูกยกเลิกหลัง <strong>${hours} ชม.</strong>`
+      : 'ปิดยกเลิกอัตโนมัติ — คิวรอชำระจะไม่ถูกยกเลิกเอง',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'บันทึก',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/unpaid-auto-cancel', {
+      enabled: unpaidAutoCancelEnabled.value,
+      expire_hours: hours,
+    })
+    unpaidAutoCancelEnabled.value = data.enabled !== false
+    unpaidExpireHours.value = Number(data.expire_hours) || hours
+    message.value = unpaidAutoCancelEnabled.value
+      ? `บันทึกแล้ว: ยกเลิกอัตโนมัติหลัง ${unpaidExpireHours.value} ชม.`
+      : 'บันทึกแล้ว: ปิดยกเลิกอัตโนมัติ'
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกตั้งค่าไม่สำเร็จ'
   }
 }
 
@@ -1862,6 +1910,7 @@ function backToBooking() {
 onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
+onMounted(loadUnpaidAutoCancelSetting)
 onMounted(loadNailOptions)
 onMounted(loadServiceLocations)
 onMounted(loadShopHours)
@@ -2443,6 +2492,41 @@ onMounted(loadShowcaseClips)
         <button class="btn primary admin-action-btn" @click="saveDepositSetting">บันทึกยอดมัดจำ</button>
       </div>
       <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
+
+      <hr class="admin-divider" />
+
+      <h3>ยกเลิกคิวรอชำระอัตโนมัติ</h3>
+      <p class="muted">
+        คิวสถานะรอชำระเงินที่ไม่ชำระภายในเวลาที่กำหนดจะถูกยกเลิกเอง และช่วงเวลานั้นจะว่างให้จองใหม่
+      </p>
+      <div class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end">
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="unpaidAutoCancelEnabled" type="checkbox" />
+          เปิดใช้งานยกเลิกอัตโนมัติ
+        </label>
+        <label class="admin-label-grow" :class="{ muted: !unpaidAutoCancelEnabled }">
+          ยกเลิกหลัง (ชั่วโมง)
+          <input
+            v-model.number="unpaidExpireHours"
+            type="number"
+            min="1"
+            max="168"
+            step="1"
+            class="admin-input"
+            :disabled="!unpaidAutoCancelEnabled"
+          />
+        </label>
+        <button class="btn primary admin-action-btn" @click="saveUnpaidAutoCancelSetting">บันทึก</button>
+      </div>
+      <div class="shop-hours-preview">
+        <i class="ti ti-clock-pause" style="font-size:16px;color:var(--color-primary)"></i>
+        <template v-if="unpaidAutoCancelEnabled">
+          ลูกค้าจะเห็นนับถอยหลัง · ยกเลิกอัตโนมัติหลัง
+          <strong>{{ unpaidExpireHours }} ชม.</strong>
+          นับจากเวลาจอง
+        </template>
+        <template v-else>ปิดอยู่ — คิวรอชำระจะไม่ถูกยกเลิกเอง</template>
+      </div>
 
       <hr class="admin-divider" />
 

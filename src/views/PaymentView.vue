@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api/axios'
 import QRCode from 'qrcode'
 import generatePayload from 'promptpay-qr'
+import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +24,35 @@ const thaiQrLabel = import.meta.env.VITE_THAI_QR_LABEL || 'สแกน Thai QR 
 const qrCodeImage = ref('')
 const qrError = ref('')
 const copyHint = ref('')
+const paymentLoading = ref(true)
+const paymentError = ref('')
+const bookingStatus = ref('')
+const bookingCreatedAt = ref('')
+const unpaidSettings = ref({ enabled: true, expireHours: 24 })
+
+const unpaidCountdown = useUnpaidCountdown(() => unpaidSettings.value)
+
+const isExpired = computed(() => {
+  if (bookingStatus.value === 'cancelled') return true
+  if (bookingStatus.value !== 'awaiting_payment') return false
+  return unpaidCountdown.isExpired(bookingCreatedAt.value)
+})
+
+const canPay = computed(() => bookingStatus.value === 'awaiting_payment' && !isExpired.value)
+
+const countdownText = computed(() => {
+  if (!unpaidSettings.value.enabled || bookingStatus.value !== 'awaiting_payment') return ''
+  const ms = unpaidCountdown.getRemainingMs(bookingCreatedAt.value)
+  if (ms == null) return ''
+  return unpaidCountdown.formatRemaining(ms)
+})
+
+const paymentNoticeText = computed(() => {
+  if (!unpaidSettings.value.enabled) {
+    return 'กรุณาชำระมัดจำและส่งสลิปให้แอดมินยืนยัน'
+  }
+  return `กรุณาชำระภายใน ${unpaidSettings.value.expireHours} ชม. นับจากเวลาจอง มิฉะนั้นคิวจะถูกยกเลิกอัตโนมัติ`
+})
 
 const lineMessage = computed(() => {
   return encodeURIComponent(
@@ -69,16 +99,55 @@ async function generateThaiQr() {
   }
 }
 
+let expiryTimer = null
+
 onMounted(async () => {
+  paymentLoading.value = true
+  paymentError.value = ''
   try {
-    const { data } = await api.get('/api/bookings/deposit-setting')
-    if (Number.isFinite(Number(data?.deposit_amount)) && Number(data.deposit_amount) > 0) {
-      depositAmount.value = Number(data.deposit_amount)
+    const [depositRes, infoRes] = await Promise.all([
+      api.get('/api/bookings/deposit-setting'),
+      api.get(`/api/bookings/${bookingId.value}/payment-info`),
+    ])
+    if (Number.isFinite(Number(depositRes.data?.deposit_amount)) && Number(depositRes.data.deposit_amount) > 0) {
+      depositAmount.value = Number(depositRes.data.deposit_amount)
     }
-  } catch {
-    // fallback to env default
+    const info = infoRes.data
+    bookingStatus.value = info?.booking?.status || ''
+    bookingCreatedAt.value = info?.booking?.created_at || ''
+    if (info?.unpaid_expire) {
+      unpaidSettings.value = {
+        enabled: info.unpaid_expire.enabled !== false,
+        expireHours: Number(info.unpaid_expire.expire_hours) || 24,
+      }
+    }
+    if (info?.is_expired || info?.booking?.status === 'cancelled') {
+      bookingStatus.value = 'cancelled'
+      paymentError.value = 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ'
+    } else if (info?.booking?.status !== 'awaiting_payment') {
+      paymentError.value = 'คิวนี้ไม่อยู่ในสถานะรอชำระเงินแล้ว'
+    }
+  } catch (err) {
+    paymentError.value = err?.response?.data?.error || 'โหลดข้อมูลคิวไม่สำเร็จ'
+  } finally {
+    paymentLoading.value = false
   }
-  await generateThaiQr()
+  if (canPay.value) await generateThaiQr()
+
+  expiryTimer = setInterval(async () => {
+    if (!canPay.value || !unpaidCountdown.isExpired(bookingCreatedAt.value)) return
+    bookingStatus.value = 'cancelled'
+    paymentError.value = 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ'
+    try {
+      await api.get(`/api/bookings/${bookingId.value}/payment-info`)
+    } catch {
+      // sync ฝั่ง server แล้วแสดงข้อความ
+    }
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (expiryTimer) clearInterval(expiryTimer)
 })
 </script>
 
@@ -92,6 +161,15 @@ onMounted(async () => {
     </header>
 
     <main class="payment-content">
+      <p v-if="paymentLoading" class="muted">กำลังโหลด...</p>
+
+      <div v-else-if="paymentError" class="payment-expired">
+        <i class="ti ti-clock-off" aria-hidden="true"></i>
+        <p>{{ paymentError }}</p>
+        <button type="button" class="btn ghost back-link" @click="backToBooking">กลับหน้าจอง</button>
+      </div>
+
+      <template v-else>
       <section class="summary-card">
         <div class="summary-row">
           <span class="summary-label"><i class="ti ti-calendar" aria-hidden="true"></i> วันที่</span>
@@ -109,6 +187,10 @@ onMounted(async () => {
           <span class="deposit-label">ยอดมัดจำ</span>
           <span class="deposit-amount">{{ depositAmount.toLocaleString('th-TH') }} บาท</span>
         </div>
+        <p v-if="countdownText" class="payment-countdown">
+          <i class="ti ti-hourglass-low" aria-hidden="true"></i>
+          ชำระภายใน {{ countdownText }}
+        </p>
       </section>
 
       <section class="qr-panel">
@@ -138,7 +220,7 @@ onMounted(async () => {
 
       <div class="payment-notice">
         <i class="ti ti-alert-triangle" aria-hidden="true"></i>
-        <span>กรุณาชำระภายใน 1 วัน หากไม่ชำระคิวจะถูกยกเลิก</span>
+        <span>{{ paymentNoticeText }}</span>
       </div>
 
       <p class="payment-hint muted">
@@ -148,6 +230,7 @@ onMounted(async () => {
       <button type="button" class="btn ghost back-link" @click="backToBooking">
         กลับหน้าจอง
       </button>
+      </template>
     </main>
   </div>
 </template>
@@ -252,6 +335,35 @@ onMounted(async () => {
   font-size: var(--text-number);
   font-weight: 700;
   color: var(--color-primary);
+}
+
+.payment-countdown {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #b45309;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.payment-expired {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--color-error);
+}
+
+.payment-expired i {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.payment-expired p {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .qr-panel {

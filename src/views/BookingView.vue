@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
 import { useAuthStore } from '../stores/auth'
@@ -8,10 +8,16 @@ import { useCoupons } from '../composables/useCoupons'
 import BottomNav from '../components/BottomNav.vue'
 import api from '../api/axios'
 import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
+import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 
 const router = useRouter()
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
+const unpaidCountdown = useUnpaidCountdown(() => ({
+  enabled: bookingStore.unpaidAutoCancelEnabled,
+  expireHours: bookingStore.unpaidExpireHours,
+}))
+let expiryRefreshPending = false
 const { loadMyCoupons, redeemCoupon, showMyCoupons } = useCoupons()
 
 const selectedDate = ref(toLocalYmd(new Date()))
@@ -385,6 +391,8 @@ function bookingSettingsSnapshot() {
     advanceDays: bookingStore.advanceDays,
     bookUntilDate: bookingStore.bookUntilDate,
     bookingDisplayMode: bookingStore.bookingDisplayMode,
+    unpaidAutoCancelEnabled: bookingStore.unpaidAutoCancelEnabled,
+    unpaidExpireHours: bookingStore.unpaidExpireHours,
   }
 }
 
@@ -394,7 +402,9 @@ function hasBookingSettingsChanged(before, after) {
     before.shopLastBookingHour !== after.shopLastBookingHour ||
     before.advanceDays !== after.advanceDays ||
     before.bookUntilDate !== after.bookUntilDate ||
-    before.bookingDisplayMode !== after.bookingDisplayMode
+    before.bookingDisplayMode !== after.bookingDisplayMode ||
+    before.unpaidAutoCancelEnabled !== after.unpaidAutoCancelEnabled ||
+    before.unpaidExpireHours !== after.unpaidExpireHours
   )
 }
 
@@ -618,6 +628,18 @@ const pointsLabel = computed(() => {
 })
 const canRedeemCoupon = computed(() => totalPoints.value >= 100)
 
+watch(unpaidCountdown.nowMs, () => {
+  if (!bookingStore.unpaidAutoCancelEnabled || busy.value || expiryRefreshPending) return
+  const hasExpired = activeBookings().some(
+    (b) => b.status === 'awaiting_payment' && unpaidCountdown.isExpired(b.created_at)
+  )
+  if (!hasExpired) return
+  expiryRefreshPending = true
+  refreshSlotData().finally(() => {
+    expiryRefreshPending = false
+  })
+})
+
 onMounted(async () => {
   window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
@@ -741,6 +763,10 @@ onUnmounted(() => {
             <div class="slot-left">
               <span class="slot-range">{{ toHourLabel(bookingForHour(hour).start_hour) }} – {{ toHourLabel(bookingForHour(hour).end_hour) }}</span>
               <span class="slot-status">นัดของคุณ</span>
+              <span
+                v-if="unpaidCountdown.countdownLabel(bookingForHour(hour))"
+                class="slot-countdown"
+              >{{ unpaidCountdown.countdownLabel(bookingForHour(hour)) }}</span>
             </div>
             <div class="slot-right">
               <span class="badge badge-mine">
@@ -766,6 +792,10 @@ onUnmounted(() => {
             <div class="slot-left">
               <span class="slot-range strike">{{ toHourLabel(bookingForHour(hour).start_hour) }} – {{ toHourLabel(bookingForHour(hour).end_hour) }}</span>
               <span class="slot-status" :class="occupiedSlotStatusClass(bookingForHour(hour).status)">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
+              <span
+                v-if="unpaidCountdown.countdownLabel(bookingForHour(hour))"
+                class="slot-countdown"
+              >{{ unpaidCountdown.countdownLabel(bookingForHour(hour)) }}</span>
             </div>
             <span class="badge badge-busy"><i class="ti ti-lock" aria-hidden="true"></i></span>
           </div>
@@ -1158,6 +1188,15 @@ onUnmounted(() => {
 .slot-status { font-size: 11px; color: var(--color-text-muted); }
 .slot-status.status-awaiting { color: var(--color-primary); font-weight: 500; }
 .slot-status.status-paid { color: var(--color-text-secondary); }
+.slot-countdown {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b45309;
+  font-variant-numeric: tabular-nums;
+}
+.slot-card.mine .slot-countdown {
+  color: var(--color-primary-dark);
+}
 .slot-card.mine .slot-range { color: var(--color-primary-dark); }
 .slot-card.mine .slot-status { color: var(--color-primary); }
 .slot-card.busy .slot-range,

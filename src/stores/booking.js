@@ -36,6 +36,8 @@ export const useBookingStore = defineStore('booking', {
     advanceDays: 30,
     bookUntilDate: '',
     bookingDisplayMode: 'normal',
+    unpaidAutoCancelEnabled: true,
+    unpaidExpireHours: 24,
   }),
   actions: {
     async fetchByDate(date) {
@@ -151,11 +153,21 @@ export const useBookingStore = defineStore('booking', {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }
     },
+    async fetchUnpaidExpireSetting() {
+      try {
+        const { data } = await api.get('/api/bookings/unpaid-expire-setting')
+        this.unpaidAutoCancelEnabled = data.enabled !== false
+        this.unpaidExpireHours = Number(data.expire_hours) || 24
+      } catch {
+        // ใช้ค่า default
+      }
+    },
     async fetchBookingSettings() {
       await Promise.all([
         this.fetchShopHours(),
         this.fetchAdvanceDays(),
         this.fetchBookingDisplay(),
+        this.fetchUnpaidExpireSetting(),
       ])
     },
   },
