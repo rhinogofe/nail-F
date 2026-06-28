@@ -26,12 +26,6 @@ const serviceError = ref('')
 
 const isSlots2hMode = computed(() => bookingStore.bookingDisplayMode === 'slots_2h')
 
-const slots = computed(() => {
-  const result = []
-  const step = isSlots2hMode.value ? 2 : 1
-  for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h += step) result.push(h)
-  return result
-})
 const bookings = computed(() => bookingStore.bookingsByDate[selectedDate.value] || [])
 const blockedSlots = computed(() => bookingStore.blocksByDate[selectedDate.value] || [])
 const nailOptions = computed(() => bookingStore.nailOptions || [])
@@ -104,8 +98,6 @@ function isSlotRangeBlocked(hour) {
   if (isSlots2hMode.value) return isHourBlocked(hour) || isHourBlocked(hour + 1)
   return isHourBlocked(hour)
 }
-
-const visibleSlots = computed(() => slots.value.filter(h => !isSlotRangeBlocked(h)))
 
 const selectedDateLabel = computed(() => {
   const d = parseYmdLocal(selectedDate.value)
@@ -208,6 +200,42 @@ function isSlotRangeBlockedForBooking(hour) {
   }
   return false
 }
+
+/** slots_2h: เลื่อนจุดเริ่มตามช่วงว่าง (เช่น block 11–12 → เริ่ม 12–14) */
+function buildSlots2h() {
+  const open = bookingStore.shopOpenHour
+  const last = bookingStore.shopLastBookingHour
+  const starts = new Set()
+  let h = open
+  while (h <= last) {
+    if (!isSlotRangeBlockedForBooking(h)) {
+      starts.add(h)
+      h += 2
+    } else {
+      h += 1
+    }
+  }
+  for (const b of activeBookings()) {
+    const start = Number(b.start_hour)
+    if (start >= open && start <= last) starts.add(start)
+  }
+  return [...starts].sort((a, b) => a - b)
+}
+
+const slots = computed(() => {
+  if (isSlots2hMode.value) return buildSlots2h()
+  const result = []
+  for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h += 1) {
+    result.push(h)
+  }
+  return result
+})
+
+const visibleSlots = computed(() => {
+  if (isSlots2hMode.value) return slots.value
+  return slots.value.filter(h => !isSlotRangeBlocked(h))
+})
+
 function canBook(hour) {
   if (hour > bookingStore.shopLastBookingHour) return false
   if (hour + 2 > bookingStore.shopLastBookingHour + 2) return false
