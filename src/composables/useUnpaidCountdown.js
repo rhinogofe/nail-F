@@ -67,7 +67,7 @@ export function useUnpaidCountdown(getSettings) {
     const ms = getRemainingMs(booking.created_at)
     if (ms == null) return ''
     const time = formatRemaining(ms)
-    return booking.is_mine ? `ชำระภายใน ${time}` : `ว่างใน ${time}`
+    return booking.is_mine ? `ชำระภายใน ${time}` : `คิวจะยกเลิกอัตโนมัติใน ${time}`
   }
 
   function isExpired(createdAt) {
