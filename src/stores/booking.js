@@ -26,6 +26,7 @@ export const useBookingStore = defineStore('booking', {
   state: () => ({
     bookingsByDate: {},
     blocksByDate: {},
+    extraHoursByDate: {},
     nailOptions: [],
     allNailOptions: [],
     myBookings: [],
@@ -72,6 +73,24 @@ export const useBookingStore = defineStore('booking', {
         const key = normalizeDateKey(item.block_date)
         if (!this.blocksByDate[key]) this.blocksByDate[key] = []
         this.blocksByDate[key].push({ ...item, block_date: key })
+      }
+      return data
+    },
+    async fetchExtraHoursRange(from, to) {
+      const { data } = await api.get('/api/bookings/extra-hours', { params: { from, to } })
+      const fromDate = parseYmd(from)
+      const toDate = parseYmd(to)
+      const dateCursor = new Date(fromDate)
+      while (dateCursor <= toDate) {
+        const key = toLocalYmd(dateCursor)
+        this.extraHoursByDate[key] = []
+        dateCursor.setDate(dateCursor.getDate() + 1)
+      }
+
+      for (const item of data || []) {
+        const key = normalizeDateKey(item.extra_date)
+        if (!this.extraHoursByDate[key]) this.extraHoursByDate[key] = []
+        this.extraHoursByDate[key].push({ ...item, extra_date: key })
       }
       return data
     },

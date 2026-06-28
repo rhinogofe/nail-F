@@ -58,6 +58,10 @@ const revenueLoading = ref(false)
 const blockMonth = ref(todayYm())
 const selectedBlockDate = ref('')
 const blocks = ref([])
+const extraHours = ref([])
+const extraStart = ref(19)
+const extraEnd = ref(21)
+const extraNote = ref('')
 const blockDate = ref(todayYmd())
 const blockType = ref('partial')
 const blockStart = ref(10)
@@ -604,8 +608,12 @@ async function loadBookings() {
 
 async function loadBlocks() {
   try {
-    const { data } = await api.get('/api/admin/blocks', { params: { month: blockMonth.value } })
-    blocks.value = data
+    const [blocksRes, extraRes] = await Promise.all([
+      api.get('/api/admin/blocks', { params: { month: blockMonth.value } }),
+      api.get('/api/admin/extra-hours', { params: { month: blockMonth.value } }),
+    ])
+    blocks.value = blocksRes.data
+    extraHours.value = extraRes.data
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดรายการปิดวันเวลาไม่สำเร็จ'
   }
@@ -631,6 +639,11 @@ const blockCalendarWeeks = computed(() => buildCalendarWeeks(blockMonth.value))
 const selectedDayBlocks = computed(() => {
   if (!selectedBlockDate.value) return []
   return blocks.value.filter((item) => formatDateKey(item.block_date) === selectedBlockDate.value)
+})
+
+const selectedDayExtraHours = computed(() => {
+  if (!selectedBlockDate.value) return []
+  return extraHours.value.filter((item) => formatDateKey(item.extra_date) === selectedBlockDate.value)
 })
 
 function blockDayMarker(iso) {
@@ -829,6 +842,57 @@ async function removeBlock(id) {
   try {
     await api.delete(`/api/admin/blocks/${id}`)
     message.value = 'ลบรายการปิดวันเวลาแล้ว'
+    await loadBlocks()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ลบรายการไม่สำเร็จ'
+  }
+}
+
+async function createExtraHour() {
+  const start = Number(extraStart.value)
+  const end = Number(extraEnd.value)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    errorMessage.value = 'ช่วงเวลาเปิดเพิ่มไม่ถูกต้อง (ชั่วโมงสิ้นสุดต้องมากกว่าเวลาเริ่ม)'
+    return
+  }
+  if (end - start < 2) {
+    errorMessage.value = 'ช่วงเปิดเพิ่มต้องยาวอย่างน้อย 2 ชั่วโมง (สำหรับคิว 2 ชม.)'
+    return
+  }
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.post('/api/admin/extra-hours', {
+      extra_date: selectedBlockDate.value,
+      start_hour: start,
+      end_hour: end,
+      note: extraNote.value || null,
+    })
+    message.value = 'เพิ่มช่วงเปิดรับพิเศษแล้ว'
+    extraNote.value = ''
+    await loadBlocks()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'เพิ่มช่วงเปิดรับพิเศษไม่สำเร็จ'
+  }
+}
+
+async function removeExtraHour(id) {
+  const ok = await Swal.fire({
+    title: 'ยืนยันลบรายการ',
+    text: 'ลบช่วงเปิดรับพิเศษนี้ใช่ไหม',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.delete(`/api/admin/extra-hours/${id}`)
+    message.value = 'ลบช่วงเปิดรับพิเศษแล้ว'
     await loadBlocks()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ลบรายการไม่สำเร็จ'
@@ -2653,6 +2717,38 @@ onMounted(loadShowcaseClips)
           </label>
           <button class="btn primary admin-action-btn" @click="createBlock">เพิ่มรายการปิด</button>
         </div>
+
+        <h4 class="admin-subtitle admin-extra-title">เปิดรับเพิ่ม (นอกเวลาปกติ)</h4>
+        <p class="muted admin-extra-hint">
+          เช่น เปิด 19:00–21:00 วันพิเศษ ทั้งที่ปกติปิดรับ 19:00
+        </p>
+
+        <div v-if="selectedDayExtraHours.length === 0" class="muted">ยังไม่มีช่วงเปิดเพิ่มในวันนี้</div>
+        <div v-for="item in selectedDayExtraHours" :key="item.id" class="admin-item admin-extra-item">
+          <div>
+            <strong>เปิดเพิ่ม {{ item.start_hour }}:00 – {{ item.end_hour }}:00</strong>
+            <p v-if="item.note" class="muted">{{ item.note }}</p>
+          </div>
+          <button class="btn danger" @click="removeExtraHour(item.id)">ลบ</button>
+        </div>
+
+        <div class="admin-form-grid">
+          <label>
+            เริ่ม (ชม.)
+            <input v-model="extraStart" type="number" min="0" max="23" class="admin-input" />
+          </label>
+          <label>
+            ถึง (ชม.)
+            <input v-model="extraEnd" type="number" min="1" max="24" class="admin-input" />
+          </label>
+        </div>
+        <div class="admin-form-row">
+          <label class="admin-label-grow">
+            หมายเหตุ
+            <input v-model="extraNote" type="text" placeholder="เช่น เปิดคิวพิเศษช่วงเย็น" class="admin-input" />
+          </label>
+          <button class="btn primary admin-action-btn" @click="createExtraHour">เพิ่มช่วงเปิดรับ</button>
+        </div>
       </template>
     </section>
 
@@ -3386,6 +3482,21 @@ onMounted(loadShowcaseClips)
 .admin-subtitle {
   margin: 0 0 8px;
   font-size: 15px;
+}
+
+.admin-extra-title {
+  margin-top: 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft, rgba(196, 132, 122, 0.15));
+}
+
+.admin-extra-hint {
+  margin: 0.35rem 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.admin-extra-item strong {
+  color: var(--accent, #C4847A);
 }
 
 .bulk-preview {

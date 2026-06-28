@@ -28,6 +28,7 @@ const isSlots2hMode = computed(() => bookingStore.bookingDisplayMode === 'slots_
 
 const bookings = computed(() => bookingStore.bookingsByDate[selectedDate.value] || [])
 const blockedSlots = computed(() => bookingStore.blocksByDate[selectedDate.value] || [])
+const extraHoursForDate = computed(() => bookingStore.extraHoursByDate[selectedDate.value] || [])
 const nailOptions = computed(() => bookingStore.nailOptions || [])
 const todayDate = startOfDay(new Date())
 // bookUntilDate = วันสิ้นสุดที่ล็อกตอนแอดมินกดบันทึก (ไม่เลื่อนตามวันนี้)
@@ -37,36 +38,88 @@ const maxBookDate = computed(() => {
   }
   return addDays(todayDate, Math.max(0, bookingStore.advanceDays - 1))
 })
-const windowStartDate = ref(startOfDay(new Date()))
 const dayStripRef = ref(null)
-const visibleDayCount = ref(7)
+const stripScroll = ref({ left: 0, width: 0, scrollWidth: 0 })
+const stripDragState = ref({ active: false, moved: false, startX: 0, startScrollLeft: 0, targetIso: null, pointerId: null })
 const POLL_INTERVAL_MS = 45_000
-const DAY_PILL_WIDTH = 46
-const DAY_STRIP_GAP = 6
 let pollTimer = null
 let stripResizeTimer = null
 
 const weekdayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const thMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 
-function measureVisibleDayCount() {
-  const width = dayStripRef.value?.clientWidth
-  if (!width) return
-  const perPill = DAY_PILL_WIDTH + DAY_STRIP_GAP
-  const count = Math.floor((width + DAY_STRIP_GAP) / perPill)
-  visibleDayCount.value = Math.max(3, Math.min(count, 14))
+function updateStripScroll() {
+  const el = dayStripRef.value
+  if (!el) return
+  stripScroll.value = {
+    left: el.scrollLeft,
+    width: el.clientWidth,
+    scrollWidth: el.scrollWidth,
+  }
 }
 
 function scheduleStripMeasure() {
   clearTimeout(stripResizeTimer)
-  stripResizeTimer = setTimeout(async () => {
-    const prev = visibleDayCount.value
-    measureVisibleDayCount()
-    if (prev !== visibleDayCount.value) {
-      await refreshBlocksAndEnsureSelection(false)
-      await loadDate()
-    }
+  stripResizeTimer = setTimeout(() => {
+    updateStripScroll()
   }, 150)
+}
+
+function scrollActiveDayIntoView(behavior = 'smooth') {
+  nextTick(() => {
+    const strip = dayStripRef.value
+    if (!strip) return
+    const active = strip.querySelector('.day-pill.active') || strip.querySelector('.day-pill.today')
+    active?.scrollIntoView({ inline: 'center', block: 'nearest', behavior })
+    updateStripScroll()
+  })
+}
+
+function scrollDayStrip(direction) {
+  const el = dayStripRef.value
+  if (!el) return
+  const step = Math.max(180, el.clientWidth * 0.85)
+  el.scrollBy({ left: direction * step, behavior: 'smooth' })
+}
+
+function onStripPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  const el = dayStripRef.value
+  if (!el) return
+  const pill = e.target.closest?.('.day-pill')
+  stripDragState.value = {
+    active: true,
+    moved: false,
+    startX: e.clientX,
+    startScrollLeft: el.scrollLeft,
+    targetIso: pill?.dataset?.iso || null,
+    pointerId: e.pointerId,
+  }
+}
+
+function onStripPointerMove(e) {
+  if (!stripDragState.value.active || e.pointerId !== stripDragState.value.pointerId) return
+  const el = dayStripRef.value
+  if (!el) return
+  const dx = e.clientX - stripDragState.value.startX
+  if (!stripDragState.value.moved && Math.abs(dx) > 10) {
+    stripDragState.value.moved = true
+    stripDragState.value.targetIso = null
+    el.setPointerCapture(e.pointerId)
+  }
+  if (!stripDragState.value.moved) return
+  e.preventDefault()
+  el.scrollLeft = stripDragState.value.startScrollLeft - dx
+}
+
+function onStripPointerUp(e) {
+  if (!stripDragState.value.active || e.pointerId !== stripDragState.value.pointerId) return
+  const el = dayStripRef.value
+  const { moved, targetIso } = stripDragState.value
+  stripDragState.value.active = false
+  if (moved) el?.releasePointerCapture(e.pointerId)
+  updateStripScroll()
+  if (!moved && targetIso) selectDate(targetIso)
 }
 
 function startOfDay(date) {
@@ -83,17 +136,25 @@ function parseYmdLocal(ymd) {
   return new Date(y, m - 1, d)
 }
 
-const weekDays = computed(() => {
-  const items = Array.from({ length: visibleDayCount.value }, (_, i) => {
-    const date = addDays(windowStartDate.value, i)
-    if (date > maxBookDate.value) return null
-    const iso = toLocalYmd(date)
-    const tintColor = colorForDate(bookingStore.allNailOptions, iso)
-    return { iso, day: date.getDate(), label: weekdayNames[date.getDay()], isToday: iso === toLocalYmd(todayDate), tintColor }
-  })
-  return items.filter(Boolean)
+const stripDays = computed(() => {
+  const items = []
+  let cursor = new Date(todayDate)
+  while (cursor <= maxBookDate.value) {
+    const iso = toLocalYmd(cursor)
+    if (!isClosedDay(iso)) {
+      const tintColor = colorForDate(bookingStore.allNailOptions, iso)
+      items.push({
+        iso,
+        day: cursor.getDate(),
+        label: weekdayNames[cursor.getDay()],
+        isToday: iso === toLocalYmd(todayDate),
+        tintColor,
+      })
+    }
+    cursor = addDays(cursor, 1)
+  }
+  return items
 })
-const visibleWeekDays = computed(() => weekDays.value.filter(d => !isClosedDay(d.iso)))
 function isSlotRangeBlocked(hour) {
   if (isSlots2hMode.value) return isHourBlocked(hour) || isHourBlocked(hour + 1)
   return isHourBlocked(hour)
@@ -147,8 +208,10 @@ function occupiedSlotLabel() {
   return 'ไม่ว่าง'
 }
 
-const canGoPrev = computed(() => windowStartDate.value > todayDate)
-const canGoNext = computed(() => addDays(windowStartDate.value, visibleDayCount.value) <= maxBookDate.value)
+const canGoPrev = computed(() => stripScroll.value.left > 4)
+const canGoNext = computed(() => (
+  stripScroll.value.left + stripScroll.value.width < stripScroll.value.scrollWidth - 4
+))
 
 function isClosedDay(date) {
   return (bookingStore.blocksByDate[date] || []).some(b => b.is_full_day)
@@ -163,8 +226,7 @@ function findFirstOpenDate(fromDate) {
   return null
 }
 function alignWindowToDate(iso) {
-  const target = parseYmdLocal(iso)
-  windowStartDate.value = startOfDay(target < todayDate ? todayDate : target)
+  scrollActiveDayIntoView()
 }
 function isHourBlocked(hour) {
   return blockedSlots.value.some(b => {
@@ -201,6 +263,30 @@ function isSlotRangeBlockedForBooking(hour) {
   return false
 }
 
+function isWithinExtraHours(hour) {
+  return extraHoursForDate.value.some(
+    (e) => hour >= Number(e.start_hour) && hour + 2 <= Number(e.end_hour)
+  )
+}
+
+function addExtraSlotStarts(starts) {
+  const open = bookingStore.shopOpenHour
+  const last = bookingStore.shopLastBookingHour
+  for (const extra of extraHoursForDate.value) {
+    let h = Number(extra.start_hour)
+    const winEnd = Number(extra.end_hour)
+    while (h + 2 <= winEnd) {
+      const outsideNormal = h < open || h > last
+      if (outsideNormal && !isSlotRangeBlockedForBooking(h)) {
+        starts.add(h)
+        h += isSlots2hMode.value ? 2 : 1
+      } else {
+        h += 1
+      }
+    }
+  }
+}
+
 /** slots_2h: เลื่อนจุดเริ่มตามช่วงว่าง (เช่น block 11–12 → เริ่ม 12–14) */
 function buildSlots2h() {
   const open = bookingStore.shopOpenHour
@@ -219,16 +305,31 @@ function buildSlots2h() {
     const start = Number(b.start_hour)
     if (start >= open && start <= last) starts.add(start)
   }
+  addExtraSlotStarts(starts)
+  for (const b of activeBookings()) {
+    const start = Number(b.start_hour)
+    if (isWithinExtraHours(start)) starts.add(start)
+  }
   return [...starts].sort((a, b) => a - b)
 }
 
 const slots = computed(() => {
   if (isSlots2hMode.value) return buildSlots2h()
   const result = []
+  const seen = new Set()
   for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h += 1) {
     result.push(h)
+    seen.add(h)
   }
-  return result
+  for (const extra of extraHoursForDate.value) {
+    for (let h = Number(extra.start_hour); h + 2 <= Number(extra.end_hour); h += 1) {
+      if (!seen.has(h)) {
+        result.push(h)
+        seen.add(h)
+      }
+    }
+  }
+  return result.sort((a, b) => a - b)
 })
 
 const visibleSlots = computed(() => {
@@ -237,8 +338,10 @@ const visibleSlots = computed(() => {
 })
 
 function canBook(hour) {
-  if (hour > bookingStore.shopLastBookingHour) return false
-  if (hour + 2 > bookingStore.shopLastBookingHour + 2) return false
+  const open = bookingStore.shopOpenHour
+  const last = bookingStore.shopLastBookingHour
+  const inNormal = hour >= open && hour <= last
+  if (!inNormal && !isWithinExtraHours(hour)) return false
   if (hasBookingOverlap(hour)) return false
   if (isSlotRangeBlockedForBooking(hour)) return false
   return true
@@ -443,9 +546,10 @@ async function cancel(bookingId) {
 
 function selectDate(iso) {
   const picked = parseYmdLocal(iso)
-  if (picked < todayDate || picked > maxBookDate.value) return
+  if (picked < todayDate || picked > maxBookDate.value || isClosedDay(iso)) return
   selectedDate.value = iso
   loadDate()
+  scrollActiveDayIntoView()
 }
 
 function dayPillStyle(day) {
@@ -453,37 +557,35 @@ function dayPillStyle(day) {
   return dayTintStyle(day.tintColor, { selected: selectedDate.value === day.iso })
 }
 
-async function refreshBlocksAndEnsureSelection(fullRange = false) {
-  const from = fullRange ? toLocalYmd(todayDate) : toLocalYmd(windowStartDate.value)
-  const to = fullRange
-    ? toLocalYmd(maxBookDate.value)
-    : toLocalYmd(addDays(windowStartDate.value, visibleDayCount.value - 1))
-  await bookingStore.fetchBlocksRange(from, to)
-  if (fullRange) {
-    const first = findFirstOpenDate(todayDate)
-    if (!first) { errorMessage.value = 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง'; return }
-    if (isClosedDay(selectedDate.value) || !visibleWeekDays.value.find(d => d.iso === selectedDate.value)) {
-      selectedDate.value = first
-      alignWindowToDate(first)
-    }
+async function refreshBlocksAndEnsureSelection(ensureSelection = false) {
+  const from = toLocalYmd(todayDate)
+  const to = toLocalYmd(maxBookDate.value)
+  await Promise.all([
+    bookingStore.fetchBlocksRange(from, to),
+    bookingStore.fetchExtraHoursRange(from, to),
+  ])
+  if (!ensureSelection) return
+
+  const first = findFirstOpenDate(todayDate)
+  if (!first) {
+    errorMessage.value = 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง'
     return
   }
-  if (!visibleWeekDays.value.find(d => d.iso === selectedDate.value)) {
-    if (visibleWeekDays.value[0]) selectedDate.value = visibleWeekDays.value[0].iso
+  const picked = parseYmdLocal(selectedDate.value)
+  if (picked > maxBookDate.value || isClosedDay(selectedDate.value)) {
+    selectedDate.value = first
+    scrollActiveDayIntoView('auto')
   }
 }
 
 async function prevWeek() {
   if (!canGoPrev.value) return
-  windowStartDate.value = addDays(windowStartDate.value, -visibleDayCount.value)
-  if (windowStartDate.value < todayDate) windowStartDate.value = new Date(todayDate)
-  await refreshBlocksAndEnsureSelection(); await loadDate()
+  scrollDayStrip(-1)
 }
+
 async function nextWeek() {
   if (!canGoNext.value) return
-  windowStartDate.value = addDays(windowStartDate.value, visibleDayCount.value)
-  if (windowStartDate.value > maxBookDate.value) windowStartDate.value = new Date(maxBookDate.value)
-  await refreshBlocksAndEnsureSelection(); await loadDate()
+  scrollDayStrip(1)
 }
 
 function goToPayment(booking) {
@@ -517,7 +619,8 @@ onMounted(async () => {
   await refreshBlocksAndEnsureSelection(true)
   await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons()])
   await nextTick()
-  measureVisibleDayCount()
+  updateStripScroll()
+  scrollActiveDayIntoView('auto')
 })
 onUnmounted(() => {
   window.removeEventListener('resize', scheduleStripMeasure)
@@ -551,7 +654,7 @@ onUnmounted(() => {
         </button>
       </div>
       <p v-if="canGoNext" class="date-nav-hint">
-        กด <i class="ti ti-chevron-right" aria-hidden="true"></i> เพื่อดูวันถัดไป
+        ลากเลื่อนหรือกด <i class="ti ti-chevron-right" aria-hidden="true"></i> เพื่อดูวันถัดไป
       </p>
 
       <div class="date-nav">
@@ -567,11 +670,22 @@ onUnmounted(() => {
       
 
       <!-- Day strip -->
-      <div ref="dayStripRef" class="day-strip">
+      <div
+        ref="dayStripRef"
+        class="day-strip"
+        :class="{ 'is-dragging': stripDragState.active && stripDragState.moved }"
+        @scroll="updateStripScroll"
+        @pointerdown="onStripPointerDown"
+        @pointermove="onStripPointerMove"
+        @pointerup="onStripPointerUp"
+        @pointercancel="onStripPointerUp"
+      >
         <button
-          v-for="day in visibleWeekDays"
+          v-for="day in stripDays"
           :key="day.iso"
+          type="button"
           class="day-pill"
+          :data-iso="day.iso"
           :class="{
             active: selectedDate === day.iso && !day.tintColor,
             today: day.isToday && selectedDate !== day.iso && !day.tintColor,
@@ -579,7 +693,6 @@ onUnmounted(() => {
             'has-tint': Boolean(day.tintColor),
           }"
           :style="dayPillStyle(day)"
-          @click="selectDate(day.iso)"
         >
           <span class="day-name">{{ day.label }}</span>
           <strong class="day-num">{{ day.day }}</strong>
@@ -587,9 +700,8 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <p v-if="visibleWeekDays.length === 0" class="strip-hint">
-        <template v-if="canGoNext">ร้านปิดช่วงนี้ กด <strong>ถัดไป</strong> เพื่อดูวันอื่น</template>
-        <template v-else>ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง</template>
+      <p v-if="stripDays.length === 0" class="strip-hint">
+        ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง
       </p>
     </header>
 
@@ -919,12 +1031,34 @@ onUnmounted(() => {
 
 /* Day strip */
 .day-strip {
-  display: flex; gap: 6px; padding-bottom: 12px;
-  overflow: hidden;
+  display: flex;
+  gap: 6px;
+  padding-bottom: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  cursor: grab;
+}
+.day-strip.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+  scroll-snap-type: none;
+}
+.day-strip.is-dragging .day-pill {
+  pointer-events: none;
+}
+.day-strip::-webkit-scrollbar {
+  display: none;
 }
 .day-pill {
-  flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  width: 46px; min-height: 58px; padding: 8px 0; border-radius: 12px;
+  flex: 0 0 clamp(42px, 12vw, 52px);
+  scroll-snap-align: start;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  min-height: 58px; padding: 8px 0; border-radius: 12px;
   border: 1px solid var(--color-border); background: var(--color-surface-elevated);
   cursor: pointer; transition: all var(--transition); font-family: inherit;
 }
