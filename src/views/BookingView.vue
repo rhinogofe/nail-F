@@ -205,7 +205,7 @@ function slotTimeLabel(hour) {
 }
 
 function occupiedSlotLabel(status) {
-  if (status === 'awaiting_payment') return 'ไม่ว่าง/ชำระ'
+  if (status === 'awaiting_payment') return 'ไม่ว่าง/ยังไม่ชำระ'
   if (status === 'pending' || status === 'done') return 'ไม่ว่าง/ชำระแล้ว'
   return 'ไม่ว่าง'
 }
