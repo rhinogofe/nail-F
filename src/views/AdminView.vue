@@ -1358,13 +1358,25 @@ const serviceMonthLabel = computed(() => {
 
 const serviceCalendarWeeks = computed(() => buildCalendarWeeks(serviceMonth.value))
 
+function sortByDisplayOrder(items) {
+  return [...items].sort((a, b) => {
+    const orderDiff = (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)
+    if (orderDiff !== 0) return orderDiff
+    return String(a.option_name || '').localeCompare(String(b.option_name || ''), 'th')
+  })
+}
+
 const selectedDayOptions = computed(() => {
   if (!selectedServiceDate.value) return []
-  return nailOptions.value.filter(item => optionVisibleOnDate(item, selectedServiceDate.value))
+  return sortByDisplayOrder(
+    nailOptions.value.filter((item) => optionVisibleOnDate(item, selectedServiceDate.value))
+  )
 })
 
 const everyDayOptions = computed(() =>
-  nailOptions.value.filter(item => !formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date))
+  sortByDisplayOrder(
+    nailOptions.value.filter((item) => !formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date))
+  )
 )
 
 const activeLocationPresets = computed(() =>
@@ -1766,6 +1778,20 @@ async function loadNailOptions() {
     nailOptions.value = data
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
+  }
+}
+
+async function moveNailOption(item, direction, { date = '', everyday = false } = {}) {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const payload = { direction }
+    if (everyday) payload.scope = 'everyday'
+    else if (date) payload.date = date
+    await api.patch(`/api/admin/nailoptions/${item.id}/move`, payload)
+    await loadNailOptions()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'จัดลำดับไม่สำเร็จ'
   }
 }
 
@@ -2334,7 +2360,7 @@ onMounted(loadShowcaseClips)
           </div>
 
           <div v-if="everyDayOptions.length === 0 && !showEveryDayForm" class="muted">ยังไม่มีบริการทุกวัน</div>
-          <div v-for="item in everyDayOptions" :key="item.id" class="admin-item">
+          <div v-for="(item, index) in everyDayOptions" :key="item.id" class="admin-item">
             <div>
               <strong>{{ item.option_name }}</strong>
               <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
@@ -2346,8 +2372,27 @@ onMounted(loadShowcaseClips)
               <span class="badge-everyday">ทุกวัน</span>
               <p class="muted">{{ item.description || '-' }}</p>
               <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
+              <p class="muted">ลำดับแสดง {{ index + 1 }}</p>
             </div>
             <div class="row">
+              <button
+                type="button"
+                class="btn service-order-btn"
+                :disabled="index === 0"
+                aria-label="เลื่อนขึ้น"
+                @click="moveNailOption(item, 'up', { everyday: true })"
+              >
+                <i class="ti ti-chevron-up" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="btn service-order-btn"
+                :disabled="index === everyDayOptions.length - 1"
+                aria-label="เลื่อนลง"
+                @click="moveNailOption(item, 'down', { everyday: true })"
+              >
+                <i class="ti ti-chevron-down" aria-hidden="true"></i>
+              </button>
               <button class="btn" @click="startEditOption(item)">แก้ไข</button>
               <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
             </div>
@@ -2457,7 +2502,7 @@ onMounted(loadShowcaseClips)
 
         <h4 class="admin-subtitle">รายการในวันนี้ ({{ selectedDayOptions.length }})</h4>
         <div v-if="selectedDayOptions.length === 0" class="muted">ยังไม่มีบริการในวันนี้</div>
-        <div v-for="item in selectedDayOptions" :key="item.id" class="admin-item">
+        <div v-for="(item, index) in selectedDayOptions" :key="item.id" class="admin-item">
           <div>
             <strong>{{ item.option_name }}</strong>
             <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
@@ -2473,8 +2518,27 @@ onMounted(loadShowcaseClips)
             <p v-if="formatDateKey(item.show_from_date) || formatDateKey(item.show_to_date)" class="muted">
               {{ optionShowRangeText(item) }}
             </p>
+            <p class="muted">ลำดับแสดงในวันนี้ {{ index + 1 }}</p>
           </div>
           <div class="row">
+            <button
+              type="button"
+              class="btn service-order-btn"
+              :disabled="index === 0"
+              aria-label="เลื่อนขึ้น"
+              @click="moveNailOption(item, 'up', { date: selectedServiceDate })"
+            >
+              <i class="ti ti-chevron-up" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="btn service-order-btn"
+              :disabled="index === selectedDayOptions.length - 1"
+              aria-label="เลื่อนลง"
+              @click="moveNailOption(item, 'down', { date: selectedServiceDate })"
+            >
+              <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            </button>
             <button class="btn" @click="startEditOption(item)">แก้ไข</button>
             <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
           </div>
@@ -4698,6 +4762,16 @@ onMounted(loadShowcaseClips)
 
 .user-item .btn.primary {
   white-space: nowrap;
+}
+
+.service-order-btn {
+  min-width: 36px;
+  padding: 6px 8px;
+}
+
+.service-order-btn i {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .user-edit-admin-check {
