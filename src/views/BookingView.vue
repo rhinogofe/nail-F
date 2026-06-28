@@ -204,8 +204,16 @@ function slotTimeLabel(hour) {
   return toHourLabel(hour)
 }
 
-function occupiedSlotLabel() {
+function occupiedSlotLabel(status) {
+  if (status === 'awaiting_payment') return 'ไม่ว่าง/ชำระ'
+  if (status === 'pending' || status === 'done') return 'ไม่ว่าง/ชำระแล้ว'
   return 'ไม่ว่าง'
+}
+
+function occupiedSlotStatusClass(status) {
+  if (status === 'awaiting_payment') return 'status-awaiting'
+  if (status === 'pending' || status === 'done') return 'status-paid'
+  return ''
 }
 
 const canGoPrev = computed(() => stripScroll.value.left > 4)
@@ -757,14 +765,14 @@ onUnmounted(() => {
           <div v-else-if="bookingForHour(hour) && isStartSlot(hour)" class="slot-card busy">
             <div class="slot-left">
               <span class="slot-range strike">{{ toHourLabel(bookingForHour(hour).start_hour) }} – {{ toHourLabel(bookingForHour(hour).end_hour) }}</span>
-              <span class="slot-status">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
+              <span class="slot-status" :class="occupiedSlotStatusClass(bookingForHour(hour).status)">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
             </div>
             <span class="badge badge-busy"><i class="ti ti-lock" aria-hidden="true"></i></span>
           </div>
 
           <!-- ── Continuation row ── -->
           <div v-else-if="bookingForHour(hour) && !isStartSlot(hour)" class="slot-card continuation">
-            <span class="slot-status">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
+            <span class="slot-status" :class="occupiedSlotStatusClass(bookingForHour(hour).status)">{{ occupiedSlotLabel(bookingForHour(hour).status) }}</span>
           </div>
 
           <!-- ── จองไม่ได้ (ทับคิว / ปิดช่วงเวลา / เลยเวลา) ── -->
@@ -1148,6 +1156,8 @@ onUnmounted(() => {
 .slot-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .slot-range { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
 .slot-status { font-size: 11px; color: var(--color-text-muted); }
+.slot-status.status-awaiting { color: var(--color-primary); font-weight: 500; }
+.slot-status.status-paid { color: var(--color-text-secondary); }
 .slot-card.mine .slot-range { color: var(--color-primary-dark); }
 .slot-card.mine .slot-status { color: var(--color-primary); }
 .slot-card.busy .slot-range,

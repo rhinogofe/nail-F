@@ -266,6 +266,11 @@ const userEditNote = ref('')
 const userEditIsAdmin = ref(false)
 const userEditSaving = ref(false)
 const userEditError = ref('')
+const userHistoryOpen = ref(false)
+const userHistoryUser = ref(null)
+const userHistoryBookings = ref([])
+const userHistoryLoading = ref(false)
+const userHistoryError = ref('')
 
 const filteredUsers = computed(() => {
   const q = userSearch.value.trim().toLowerCase()
@@ -340,6 +345,45 @@ function editUser(user) {
 function closeUserEdit() {
   userEditOpen.value = false
   userEditItem.value = null
+}
+
+async function openUserHistory(user) {
+  userHistoryUser.value = user
+  userHistoryOpen.value = true
+  userHistoryBookings.value = []
+  userHistoryError.value = ''
+  userHistoryLoading.value = true
+  try {
+    const { data } = await api.get(`/api/admin/users/${user.id}/bookings`)
+    userHistoryUser.value = data.user || user
+    userHistoryBookings.value = data.bookings || []
+  } catch (err) {
+    userHistoryError.value = err?.response?.data?.error || 'โหลดประวัติจองไม่สำเร็จ'
+  } finally {
+    userHistoryLoading.value = false
+  }
+}
+
+function closeUserHistory() {
+  userHistoryOpen.value = false
+  userHistoryUser.value = null
+  userHistoryBookings.value = []
+  userHistoryError.value = ''
+}
+
+function bookingTimeRange(booking) {
+  const start = Number(booking.start_hour)
+  const end = Number(booking.end_hour ?? start + 2)
+  return `${start}:00 – ${end}:00`
+}
+
+function statusBadgeClass(status) {
+  return {
+    'user-history-status--awaiting': status === 'awaiting_payment',
+    'user-history-status--pending': status === 'pending',
+    'user-history-status--done': status === 'done',
+    'user-history-status--cancelled': status === 'cancelled',
+  }
 }
 
 async function saveUserEdit() {
@@ -2870,6 +2914,7 @@ onMounted(loadShowcaseClips)
           <p v-if="u.admin_note" class="user-admin-note">หมายเหตุ: {{ u.admin_note }}</p>
         </div>
         <div class="row" style="flex-shrink:0">
+          <button type="button" class="btn primary" @click="openUserHistory(u)">ประวัติจอง</button>
           <button type="button" class="btn" @click="editUser(u)">แก้ไขข้อมูล</button>
           <button
             class="btn"
@@ -2883,6 +2928,61 @@ onMounted(loadShowcaseClips)
         </div>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="userHistoryOpen"
+        class="booking-edit-backdrop"
+        @click.self="closeUserHistory"
+      >
+        <div class="booking-edit-modal card user-history-modal" role="dialog" aria-labelledby="user-history-title">
+          <div class="booking-edit-header">
+            <h3 id="user-history-title">ประวัติการจอง</h3>
+            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserHistory">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <template v-if="userHistoryUser">
+            <p class="muted booking-edit-meta">
+              <strong>{{ userHistoryUser.name }}</strong>
+              · {{ userHistoryUser.email || '-' }}
+            </p>
+            <p class="muted booking-edit-meta">
+              {{ providerLabel(userHistoryUser.provider) }}
+              <template v-if="userHistoryUser.provider === 'phone'"> · {{ userHistoryUser.provider_id }}</template>
+              · แต้ม {{ userHistoryUser.total_points ?? 0 }}
+            </p>
+          </template>
+
+          <p v-if="userHistoryLoading" class="muted user-history-empty">กำลังโหลด...</p>
+          <p v-else-if="userHistoryError" class="user-history-error">{{ userHistoryError }}</p>
+          <p v-else-if="userHistoryBookings.length === 0" class="muted user-history-empty">ยังไม่มีประวัติการจอง</p>
+
+          <div v-else class="user-history-list">
+            <div v-for="item in userHistoryBookings" :key="item.id" class="user-history-item">
+              <div class="user-history-item-main">
+                <strong>{{ formatServiceDateLabel(formatDateKey(item.booking_date)) }}</strong>
+                <span class="user-history-time">{{ bookingTimeRange(item) }}</span>
+                <span class="user-history-status" :class="statusBadgeClass(item.status)">
+                  {{ statusLabel(item.status) }}
+                </span>
+              </div>
+              <p v-if="item.nail_options?.length" class="muted user-history-services">
+                {{ item.nail_options.map((o) => o.option_name).join(', ') }}
+              </p>
+              <p class="muted user-history-meta">
+                จองเมื่อ {{ formatCreatedAt(item.created_at) }}
+                <template v-if="item.status === 'done'">
+                  · ยอด {{ formatBookingTotal(item.total) }}
+                  <template v-if="item.completed_at"> · เสร็จ {{ formatCreatedAt(item.completed_at) }}</template>
+                </template>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -4432,11 +4532,105 @@ onMounted(loadShowcaseClips)
   color: #94a3b8;
 }
 
+.user-history-modal {
+  width: min(100%, 520px);
+}
+
+.user-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.user-history-item {
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.user-history-item-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-history-time {
+  font-size: 13px;
+  color: #475569;
+}
+
+.user-history-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 99px;
+}
+
+.user-history-status--awaiting {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.user-history-status--pending {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.user-history-status--done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.user-history-status--cancelled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.user-history-services {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.user-history-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.user-history-empty {
+  margin: 12px 0 0;
+  text-align: center;
+}
+
+.user-history-error {
+  margin: 12px 0 0;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.user-item .btn.primary {
+  white-space: nowrap;
+}
+
 .user-edit-admin-check {
   margin-bottom: 14px;
 }
 
 @media (max-width: 820px) {
+  .user-item .row {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .user-item .row .btn {
+    width: 100%;
+  }
+
   .service-day-header {
     flex-direction: column;
     align-items: stretch;
