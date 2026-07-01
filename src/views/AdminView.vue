@@ -135,6 +135,7 @@ const bookingEditError = ref('')
 const bookingEditUserId = ref('')
 const bookingEditUserQuery = ref('')
 const bookingEditStartHour = ref(10)
+const bookingEditDate = ref('')
 const bookingEditExtraHours = ref([])
 const bookingEditSlotBookings = ref([])
 const bookingEditSlotBlocks = ref([])
@@ -159,10 +160,6 @@ const bookingEditOrphaned = computed(() => {
   const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
   return (bookingEditItem.value.nail_options || []).filter((o) => !availableIds.has(String(o.id)))
 })
-
-const bookingEditDate = computed(
-  () => bookingEditItem.value?.booking_date || selectedBookingDate.value || ''
-)
 
 const bookingAddDate = computed(() => selectedBookingDate.value || '')
 
@@ -1068,55 +1065,82 @@ async function markDone(id) {
   }
 }
 
-async function editBooking(item) {
-  bookingEditItem.value = item
-  bookingEditTotal.value = item.total != null ? String(Number(item.total)) : ''
-  bookingEditUserId.value = item.user_id ? String(item.user_id) : ''
-  bookingEditUserQuery.value = ''
-  bookingEditStartHour.value = Number(item.start_hour)
-  bookingEditExtraHours.value = []
-  bookingEditSlotBookings.value = []
-  bookingEditSlotBlocks.value = []
-  bookingEditSelectedIds.value = []
-  bookingEditOptions.value = []
-  bookingEditError.value = ''
+async function loadBookingEditDayData(date) {
+  if (!date) return
   bookingEditLoading.value = true
-  bookingEditOpen.value = true
-
-  const bookingDate = item.booking_date || selectedBookingDate.value
+  bookingEditError.value = ''
   try {
-    const [hoursRes, optionsRes, extraRes, dayRes] = await Promise.all([
-      api.get('/api/bookings/shop-hours'),
-      api.get('/api/bookings/options', {
-        params: bookingDate ? { date: bookingDate } : {},
-      }),
-      bookingDate
-        ? api.get('/api/bookings/extra-hours', { params: { from: bookingDate, to: bookingDate } })
-        : Promise.resolve({ data: [] }),
-      bookingDate
-        ? api.get('/api/bookings', { params: { date: bookingDate } })
-        : Promise.resolve({ data: { bookings: [], blocks: [] } }),
+    const [optionsRes, extraRes, dayRes] = await Promise.all([
+      api.get('/api/bookings/options', { params: { date } }),
+      api.get('/api/bookings/extra-hours', { params: { from: date, to: date } }),
+      api.get('/api/bookings', { params: { date } }),
     ])
-    shopOpenHour.value = Number(hoursRes.data?.open_hour) || 9
-    shopLastBookingHour.value = Number(hoursRes.data?.last_booking_hour) || 18
     bookingEditExtraHours.value = extraRes.data || []
     bookingEditSlotBookings.value = dayRes.data?.bookings || []
     bookingEditSlotBlocks.value = dayRes.data?.blocks || []
     bookingEditOptions.value = optionsRes.data || []
+
     const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
-    const selected = (item.nail_options || [])
-      .map((o) => String(o.id))
-      .filter((id) => availableIds.has(id))
+    let selected = bookingEditSelectedIds.value.filter((id) => availableIds.has(String(id)))
     for (const opt of bookingEditOptions.value) {
       if (
         opt.is_required
-        && optionBookableOnDate(opt, bookingDate)
+        && optionBookableOnDate(opt, date)
         && !selected.includes(String(opt.id))
       ) {
         selected.push(String(opt.id))
       }
     }
     bookingEditSelectedIds.value = selected
+
+    const hourOpts = buildBookingHourSelectOptions(
+      {
+        openHour: shopOpenHour.value,
+        lastBookingHour: shopLastBookingHour.value,
+        extras: bookingEditExtraHours.value,
+        blocks: bookingEditSlotBlocks.value,
+        bookings: bookingEditSlotBookings.value,
+        displayMode: bookingDisplayMode.value,
+        excludeBookingId: bookingEditItem.value?.id,
+      },
+      { includeHour: bookingEditStartHour.value }
+    )
+    if (hourOpts.length && !hourOpts.some((o) => o.hour === bookingEditStartHour.value)) {
+      bookingEditStartHour.value = hourOpts[0].hour
+    }
+  } catch (error) {
+    bookingEditError.value = error?.response?.data?.error || 'โหลดข้อมูลวันจองไม่สำเร็จ'
+  } finally {
+    bookingEditLoading.value = false
+  }
+}
+
+async function onBookingEditDateChange() {
+  bookingEditError.value = ''
+  await loadBookingEditDayData(bookingEditDate.value)
+}
+
+async function editBooking(item) {
+  bookingEditItem.value = item
+  bookingEditTotal.value = item.total != null ? String(Number(item.total)) : ''
+  bookingEditUserId.value = item.user_id ? String(item.user_id) : ''
+  bookingEditUserQuery.value = ''
+  bookingEditDate.value = item.booking_date || selectedBookingDate.value || ''
+  bookingEditStartHour.value = Number(item.start_hour)
+  bookingEditExtraHours.value = []
+  bookingEditSlotBookings.value = []
+  bookingEditSlotBlocks.value = []
+  bookingEditSelectedIds.value = (item.nail_options || []).map((o) => String(o.id))
+  bookingEditOptions.value = []
+  bookingEditError.value = ''
+  bookingEditLoading.value = true
+  bookingEditOpen.value = true
+
+  try {
+    const { data: hoursData } = await api.get('/api/bookings/shop-hours')
+    shopOpenHour.value = Number(hoursData?.open_hour) || 9
+    shopLastBookingHour.value = Number(hoursData?.last_booking_hour) || 18
+    await loadBookingEditDayData(bookingEditDate.value)
   } catch (error) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
   } finally {
@@ -1144,6 +1168,14 @@ async function saveBookingEdit() {
     bookingEditError.value = 'กรุณาเลือกบริการอย่างน้อย 1 รายการ'
     return
   }
+  if (!bookingEditDate.value) {
+    bookingEditError.value = 'กรุณาเลือกวันจอง'
+    return
+  }
+  if (!Number.isInteger(bookingEditStartHour.value)) {
+    bookingEditError.value = 'กรุณาเลือกเวลา'
+    return
+  }
 
   bookingEditSaving.value = true
   bookingEditError.value = ''
@@ -1153,11 +1185,17 @@ async function saveBookingEdit() {
     const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, {
       total,
       user_id: bookingEditUserId.value,
+      booking_date: bookingEditDate.value,
       start_hour: bookingEditStartHour.value,
       nailoption_ids: bookingEditSelectedIds.value,
     })
     message.value = data?.message || 'บันทึกแล้ว'
+    const movedDate = bookingEditDate.value
     closeBookingEdit()
+    if (movedDate) {
+      selectedBookingDate.value = movedDate
+      date.value = movedDate
+    }
     await reloadBookingViews()
   } catch (error) {
     bookingEditError.value = error?.response?.data?.error || 'บันทึกไม่สำเร็จ'
@@ -3506,6 +3544,17 @@ onMounted(loadShowcaseClips)
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
+
+          <label class="booking-edit-field">
+            วันจอง
+            <input
+              v-model="bookingEditDate"
+              type="date"
+              class="admin-input"
+              :disabled="bookingEditLoading"
+              @change="onBookingEditDateChange"
+            />
+          </label>
 
           <label class="booking-edit-field">
             เวลาเริ่ม
