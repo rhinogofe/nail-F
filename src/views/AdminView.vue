@@ -5,6 +5,7 @@ import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
+import { buildBookingHourSelectOptions } from '../utils/bookingSlots'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -131,6 +132,12 @@ const bookingEditSelectedIds = ref([])
 const bookingEditLoading = ref(false)
 const bookingEditSaving = ref(false)
 const bookingEditError = ref('')
+const bookingEditUserId = ref('')
+const bookingEditUserQuery = ref('')
+const bookingEditStartHour = ref(10)
+const bookingEditExtraHours = ref([])
+const bookingEditSlotBookings = ref([])
+const bookingEditSlotBlocks = ref([])
 
 const bookingAddOpen = ref(false)
 const bookingAddUserId = ref('')
@@ -143,6 +150,9 @@ const bookingAddSelectedIds = ref([])
 const bookingAddLoading = ref(false)
 const bookingAddSaving = ref(false)
 const bookingAddError = ref('')
+const bookingAddExtraHours = ref([])
+const bookingAddSlotBookings = ref([])
+const bookingAddSlotBlocks = ref([])
 
 const bookingEditOrphaned = computed(() => {
   if (!bookingEditItem.value) return []
@@ -156,6 +166,32 @@ const bookingEditDate = computed(
 
 const bookingAddDate = computed(() => selectedBookingDate.value || '')
 
+const bookingAddHourOptions = computed(() =>
+  buildBookingHourSelectOptions({
+    openHour: shopOpenHour.value,
+    lastBookingHour: shopLastBookingHour.value,
+    extras: bookingAddExtraHours.value,
+    blocks: bookingAddSlotBlocks.value,
+    bookings: bookingAddSlotBookings.value,
+    displayMode: bookingDisplayMode.value,
+  })
+)
+
+const bookingEditHourOptions = computed(() =>
+  buildBookingHourSelectOptions(
+    {
+      openHour: shopOpenHour.value,
+      lastBookingHour: shopLastBookingHour.value,
+      extras: bookingEditExtraHours.value,
+      blocks: bookingEditSlotBlocks.value,
+      bookings: bookingEditSlotBookings.value,
+      displayMode: bookingDisplayMode.value,
+      excludeBookingId: bookingEditItem.value?.id,
+    },
+    { includeHour: bookingEditStartHour.value }
+  )
+)
+
 const bookingAddUsers = computed(() => {
   const q = bookingAddUserQuery.value.trim().toLowerCase()
   if (!q) return users.value
@@ -167,12 +203,15 @@ const bookingAddUsers = computed(() => {
   )
 })
 
-const bookingAddHourOptions = computed(() => {
-  const hours = []
-  for (let h = shopOpenHour.value; h <= shopLastBookingHour.value; h += 1) {
-    hours.push(h)
-  }
-  return hours
+const bookingEditUsers = computed(() => {
+  const q = bookingEditUserQuery.value.trim().toLowerCase()
+  if (!q) return users.value
+  return users.value.filter(
+    (u) =>
+      String(u.name || '').toLowerCase().includes(q)
+      || String(u.email || '').toLowerCase().includes(q)
+      || String(u.provider_id || '').includes(q)
+  )
 })
 
 const adminTabs = [
@@ -1032,6 +1071,12 @@ async function markDone(id) {
 async function editBooking(item) {
   bookingEditItem.value = item
   bookingEditTotal.value = item.total != null ? String(Number(item.total)) : ''
+  bookingEditUserId.value = item.user_id ? String(item.user_id) : ''
+  bookingEditUserQuery.value = ''
+  bookingEditStartHour.value = Number(item.start_hour)
+  bookingEditExtraHours.value = []
+  bookingEditSlotBookings.value = []
+  bookingEditSlotBlocks.value = []
   bookingEditSelectedIds.value = []
   bookingEditOptions.value = []
   bookingEditError.value = ''
@@ -1040,10 +1085,24 @@ async function editBooking(item) {
 
   const bookingDate = item.booking_date || selectedBookingDate.value
   try {
-    const { data } = await api.get('/api/bookings/options', {
-      params: bookingDate ? { date: bookingDate } : {},
-    })
-    bookingEditOptions.value = data || []
+    const [hoursRes, optionsRes, extraRes, dayRes] = await Promise.all([
+      api.get('/api/bookings/shop-hours'),
+      api.get('/api/bookings/options', {
+        params: bookingDate ? { date: bookingDate } : {},
+      }),
+      bookingDate
+        ? api.get('/api/bookings/extra-hours', { params: { from: bookingDate, to: bookingDate } })
+        : Promise.resolve({ data: [] }),
+      bookingDate
+        ? api.get('/api/bookings', { params: { date: bookingDate } })
+        : Promise.resolve({ data: { bookings: [], blocks: [] } }),
+    ])
+    shopOpenHour.value = Number(hoursRes.data?.open_hour) || 9
+    shopLastBookingHour.value = Number(hoursRes.data?.last_booking_hour) || 18
+    bookingEditExtraHours.value = extraRes.data || []
+    bookingEditSlotBookings.value = dayRes.data?.bookings || []
+    bookingEditSlotBlocks.value = dayRes.data?.blocks || []
+    bookingEditOptions.value = optionsRes.data || []
     const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
     const selected = (item.nail_options || [])
       .map((o) => String(o.id))
@@ -1072,6 +1131,10 @@ function closeBookingEdit() {
 
 async function saveBookingEdit() {
   if (!bookingEditItem.value) return
+  if (!bookingEditUserId.value) {
+    bookingEditError.value = 'กรุณาเลือกลูกค้า'
+    return
+  }
   const total = Number(bookingEditTotal.value)
   if (bookingEditTotal.value === '' || !Number.isFinite(total) || total < 0) {
     bookingEditError.value = 'กรุณากรอกยอดเงินที่ถูกต้อง'
@@ -1089,6 +1152,8 @@ async function saveBookingEdit() {
   try {
     const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, {
       total,
+      user_id: bookingEditUserId.value,
+      start_hour: bookingEditStartHour.value,
       nailoption_ids: bookingEditSelectedIds.value,
     })
     message.value = data?.message || 'บันทึกแล้ว'
@@ -1120,6 +1185,28 @@ async function confirmPayment(id) {
     await reloadBookingViews()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ยืนยันชำระเงินไม่สำเร็จ'
+  }
+}
+
+async function revertPayment(id) {
+  const ok = await Swal.fire({
+    title: 'เปลี่ยนเป็นรอชำระเงิน',
+    text: 'คิวจะกลับไปสถานะยังไม่ชำระ และเริ่มนับเวลาชำระใหม่',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยัน',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(`/api/admin/bookings/${id}/revert-payment`)
+    message.value = data?.message || 'เปลี่ยนเป็นรอชำระเงินแล้ว'
+    await reloadBookingViews()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'เปลี่ยนสถานะไม่สำเร็จ'
   }
 }
 
@@ -1221,7 +1308,7 @@ async function deleteBooking(id) {
 async function restoreBooking(item) {
   const result = await Swal.fire({
     title: 'คืนสถานะจอง',
-    html: 'คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน',
+    html: 'คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน<br><small class="muted">ถ้าเลือกรอชำระเงิน ระบบจะเริ่มนับเวลาชำระใหม่</small>',
     icon: 'question',
     showCancelButton: true,
     confirmButtonText: 'รอชำระเงิน',
@@ -1254,21 +1341,43 @@ async function openBookingAdd() {
   bookingAddTotal.value = ''
   bookingAddSelectedIds.value = []
   bookingAddOptions.value = []
+  bookingAddExtraHours.value = []
+  bookingAddSlotBookings.value = []
+  bookingAddSlotBlocks.value = []
   bookingAddError.value = ''
   bookingAddLoading.value = true
   bookingAddOpen.value = true
 
   try {
-    const [hoursRes, optionsRes] = await Promise.all([
+    const [hoursRes, optionsRes, extraRes, dayRes] = await Promise.all([
       api.get('/api/bookings/shop-hours'),
       api.get('/api/bookings/options', {
         params: selectedBookingDate.value ? { date: selectedBookingDate.value } : {},
       }),
+      selectedBookingDate.value
+        ? api.get('/api/bookings/extra-hours', {
+            params: { from: selectedBookingDate.value, to: selectedBookingDate.value },
+          })
+        : Promise.resolve({ data: [] }),
+      selectedBookingDate.value
+        ? api.get('/api/bookings', { params: { date: selectedBookingDate.value } })
+        : Promise.resolve({ data: { bookings: [], blocks: [] } }),
     ])
     shopOpenHour.value = Number(hoursRes.data?.open_hour) || 9
     shopLastBookingHour.value = Number(hoursRes.data?.last_booking_hour) || 18
-    if (bookingAddStartHour.value < shopOpenHour.value) {
-      bookingAddStartHour.value = shopOpenHour.value
+    bookingAddExtraHours.value = extraRes.data || []
+    bookingAddSlotBookings.value = dayRes.data?.bookings || []
+    bookingAddSlotBlocks.value = dayRes.data?.blocks || []
+    const hourOpts = buildBookingHourSelectOptions({
+      openHour: shopOpenHour.value,
+      lastBookingHour: shopLastBookingHour.value,
+      extras: bookingAddExtraHours.value,
+      blocks: bookingAddSlotBlocks.value,
+      bookings: bookingAddSlotBookings.value,
+      displayMode: bookingDisplayMode.value,
+    })
+    if (hourOpts.length && !hourOpts.some((o) => o.hour === bookingAddStartHour.value)) {
+      bookingAddStartHour.value = hourOpts[0].hour
     }
     bookingAddOptions.value = optionsRes.data || []
     const selected = []
@@ -2121,6 +2230,13 @@ onMounted(loadShowcaseClips)
               @click="cancelUnpaid(item.id)"
             >
               ยกเลิกคิวไม่ชำระ
+            </button>
+            <button
+              v-if="item.status === 'pending'"
+              class="btn"
+              @click="revertPayment(item.id)"
+            >
+              เปลี่ยนเป็นรอชำระ
             </button>
             <button
               v-if="item.status === 'pending'"
@@ -3292,8 +3408,9 @@ onMounted(loadShowcaseClips)
           <label class="booking-edit-field">
             เวลาเริ่ม
             <select v-model.number="bookingAddStartHour" class="admin-input" @change="bookingAddError = ''">
-              <option v-for="h in bookingAddHourOptions" :key="h" :value="h">
-                {{ h }}:00 - {{ h + 2 }}:00
+              <option v-if="!bookingAddHourOptions.length" value="" disabled>ไม่มีช่วงเวลาว่าง</option>
+              <option v-for="opt in bookingAddHourOptions" :key="opt.hour" :value="opt.hour">
+                {{ opt.label }}
               </option>
             </select>
           </label>
@@ -3390,11 +3507,41 @@ onMounted(loadShowcaseClips)
             </button>
           </div>
 
-          <p v-if="bookingEditItem" class="muted booking-edit-meta">
-            {{ bookingEditItem.user_name }}
-            · {{ bookingEditItem.start_hour }}:00 -
-            {{ bookingEditItem.end_hour ?? Number(bookingEditItem.start_hour) + 2 }}:00
-          </p>
+          <label class="booking-edit-field">
+            เวลาเริ่ม
+            <select
+              v-model.number="bookingEditStartHour"
+              class="admin-input"
+              :disabled="bookingEditLoading"
+              @change="bookingEditError = ''"
+            >
+              <option v-if="!bookingEditHourOptions.length" value="" disabled>ไม่มีช่วงเวลาว่าง</option>
+              <option v-for="opt in bookingEditHourOptions" :key="opt.hour" :value="opt.hour">
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
+
+          <label class="booking-edit-field">
+            ค้นหาลูกค้า
+            <input
+              v-model="bookingEditUserQuery"
+              type="search"
+              class="admin-input"
+              placeholder="ชื่อ / อีเมล"
+              @input="bookingEditError = ''"
+            />
+          </label>
+
+          <label class="booking-edit-field">
+            ลูกค้า
+            <select v-model="bookingEditUserId" class="admin-input" @change="bookingEditError = ''">
+              <option value="">-- เลือกลูกค้า --</option>
+              <option v-for="u in bookingEditUsers" :key="u.id" :value="u.id">
+                {{ u.name }} ({{ u.email }})
+              </option>
+            </select>
+          </label>
 
           <label class="booking-edit-field">
             ยอดเงิน (บาท)

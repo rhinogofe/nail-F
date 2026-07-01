@@ -8,6 +8,12 @@ import { useCoupons } from '../composables/useCoupons'
 import BottomNav from '../components/BottomNav.vue'
 import api from '../api/axios'
 import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
+import {
+  buildVisibleSlots,
+  canBookSlot,
+  slotTimeLabel as formatSlotTimeLabel,
+  toHourLabel,
+} from '../utils/bookingSlots'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 
 const router = useRouter()
@@ -161,10 +167,15 @@ const stripDays = computed(() => {
   }
   return items
 })
-function isSlotRangeBlocked(hour) {
-  if (isSlots2hMode.value) return isHourBlocked(hour) || isHourBlocked(hour + 1)
-  return isHourBlocked(hour)
-}
+
+const slotBuildParams = computed(() => ({
+  openHour: bookingStore.shopOpenHour,
+  lastBookingHour: bookingStore.shopLastBookingHour,
+  extras: extraHoursForDate.value,
+  blocks: blockedSlots.value,
+  bookings: bookings.value,
+  displayMode: bookingStore.bookingDisplayMode,
+}))
 
 const selectedDateLabel = computed(() => {
   const d = parseYmdLocal(selectedDate.value)
@@ -203,11 +214,8 @@ function missingRequiredOptionNames() {
     .map(opt => opt.option_name)
 }
 
-function toHourLabel(hour) { return `${hour}:00` }
-
 function slotTimeLabel(hour) {
-  if (isSlots2hMode.value) return `${toHourLabel(hour)} – ${toHourLabel(hour + 2)}`
-  return toHourLabel(hour)
+  return formatSlotTimeLabel(hour, isSlots2hMode.value)
 }
 
 function occupiedSlotLabel(status) {
@@ -242,12 +250,6 @@ function findFirstOpenDate(fromDate) {
 function alignWindowToDate(iso) {
   scrollActiveDayIntoView()
 }
-function isHourBlocked(hour) {
-  return blockedSlots.value.some(b => {
-    if (b.is_full_day) return true
-    return hour >= Number(b.start_hour) && hour < Number(b.end_hour)
-  })
-}
 function activeBookings() {
   return bookings.value.filter(b => b.status !== 'cancelled')
 }
@@ -262,103 +264,11 @@ function isStartSlot(hour) {
   const b = bookingForHour(hour)
   return b && Number(b.start_hour) === hour
 }
-function hasBookingOverlap(hour) {
-  const slotEnd = hour + 2
-  return activeBookings().some(b => {
-    const start = Number(b.start_hour)
-    const end = Number(b.end_hour ?? start + 2)
-    return start < slotEnd && end > hour
-  })
-}
-function isSlotRangeBlockedForBooking(hour) {
-  for (let h = hour; h < hour + 2; h++) {
-    if (isHourBlocked(h)) return true
-  }
-  return false
-}
 
-function isWithinExtraHours(hour) {
-  return extraHoursForDate.value.some(
-    (e) => hour >= Number(e.start_hour) && hour + 2 <= Number(e.end_hour)
-  )
-}
-
-function addExtraSlotStarts(starts) {
-  const open = bookingStore.shopOpenHour
-  const last = bookingStore.shopLastBookingHour
-  for (const extra of extraHoursForDate.value) {
-    let h = Number(extra.start_hour)
-    const winEnd = Number(extra.end_hour)
-    while (h + 2 <= winEnd) {
-      const outsideNormal = h < open || h > last
-      if (outsideNormal && !isSlotRangeBlockedForBooking(h)) {
-        starts.add(h)
-        h += isSlots2hMode.value ? 2 : 1
-      } else {
-        h += 1
-      }
-    }
-  }
-}
-
-/** slots_2h: เลื่อนจุดเริ่มตามช่วงว่าง (เช่น block 11–12 → เริ่ม 12–14) */
-function buildSlots2h() {
-  const open = bookingStore.shopOpenHour
-  const last = bookingStore.shopLastBookingHour
-  const starts = new Set()
-  let h = open
-  while (h <= last) {
-    if (!isSlotRangeBlockedForBooking(h)) {
-      starts.add(h)
-      h += 2
-    } else {
-      h += 1
-    }
-  }
-  for (const b of activeBookings()) {
-    const start = Number(b.start_hour)
-    if (start >= open && start <= last) starts.add(start)
-  }
-  addExtraSlotStarts(starts)
-  for (const b of activeBookings()) {
-    const start = Number(b.start_hour)
-    if (isWithinExtraHours(start)) starts.add(start)
-  }
-  return [...starts].sort((a, b) => a - b)
-}
-
-const slots = computed(() => {
-  if (isSlots2hMode.value) return buildSlots2h()
-  const result = []
-  const seen = new Set()
-  for (let h = bookingStore.shopOpenHour; h <= bookingStore.shopLastBookingHour; h += 1) {
-    result.push(h)
-    seen.add(h)
-  }
-  for (const extra of extraHoursForDate.value) {
-    for (let h = Number(extra.start_hour); h + 2 <= Number(extra.end_hour); h += 1) {
-      if (!seen.has(h)) {
-        result.push(h)
-        seen.add(h)
-      }
-    }
-  }
-  return result.sort((a, b) => a - b)
-})
-
-const visibleSlots = computed(() => {
-  if (isSlots2hMode.value) return slots.value
-  return slots.value.filter(h => !isSlotRangeBlocked(h))
-})
+const visibleSlots = computed(() => buildVisibleSlots(slotBuildParams.value))
 
 function canBook(hour) {
-  const open = bookingStore.shopOpenHour
-  const last = bookingStore.shopLastBookingHour
-  const inNormal = hour >= open && hour <= last
-  if (!inNormal && !isWithinExtraHours(hour)) return false
-  if (hasBookingOverlap(hour)) return false
-  if (isSlotRangeBlockedForBooking(hour)) return false
-  return true
+  return canBookSlot(hour, slotBuildParams.value)
 }
 function hasBookingOnDay(iso) {
   return (bookingStore.bookingsByDate[iso] || []).length > 0
