@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
+import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
 const auth = useAuthStore()
 
@@ -55,7 +56,7 @@ function isActiveSlide(index) {
 }
 
 function showThumb(clip) {
-  return Boolean(clip.thumbnail_url) && !failedThumbs.value.has(clip.id)
+  return Boolean(clip?.id) && !failedThumbs.value.has(clip.id)
 }
 
 function onThumbError(clipId) {
@@ -151,7 +152,7 @@ onUnmounted(() => lockBodyScroll(false))
         >
           <img
             v-if="showThumb(clip)"
-            :src="clip.thumbnail_url"
+            :src="clipThumbnailSrc(clip.id)"
             :alt="clip.title || `คลิป ${index + 1}`"
             class="clip-thumb"
             referrerpolicy="no-referrer"
@@ -199,7 +200,7 @@ onUnmounted(() => lockBodyScroll(false))
               <div v-else class="viewer-embed-placeholder">
                 <img
                   v-if="showThumb(clip)"
-                  :src="clip.thumbnail_url"
+                  :src="clipThumbnailSrc(clip.id)"
                   alt=""
                   class="viewer-embed-poster"
                   referrerpolicy="no-referrer"

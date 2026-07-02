@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 import { buildBookingHourSelectOptions } from '../utils/bookingSlots'
+import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -92,6 +93,7 @@ const optionColorPresets = [
 ]
 const serviceLocations = ref([])
 const showcaseClips = ref([])
+const showcaseThumbFailed = ref(new Set())
 const clipForm = ref({
   id: null,
   tiktok_url: '',
@@ -1809,10 +1811,15 @@ function resetClipForm() {
   }
 }
 
+function onShowcaseThumbError(id) {
+  showcaseThumbFailed.value = new Set([...showcaseThumbFailed.value, id])
+}
+
 async function loadShowcaseClips() {
   try {
     const { data } = await api.get('/api/admin/showcase-clips')
     showcaseClips.value = data || []
+    showcaseThumbFailed.value = new Set()
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรายการคลิปไม่สำเร็จ'
   }
@@ -3149,10 +3156,11 @@ onMounted(loadShowcaseClips)
       <div v-for="(item, index) in showcaseClips" :key="item.id" class="admin-item showcase-clip-item">
         <div class="showcase-clip-info">
           <img
-            v-if="item.thumbnail_url"
-            :src="item.thumbnail_url"
+            v-if="item.id && !showcaseThumbFailed.has(item.id)"
+            :src="clipThumbnailSrc(item.id)"
             alt=""
             class="showcase-clip-preview"
+            @error="onShowcaseThumbError(item.id)"
           />
           <div v-else class="showcase-clip-preview showcase-clip-preview-empty">ไม่มีปก</div>
           <div>
