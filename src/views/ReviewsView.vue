@@ -15,12 +15,39 @@ const viewerIndex = ref(0)
 const viewerScrollRef = ref(null)
 const playKey = ref(0)
 
-function embedUrl(videoId, autoplay = false) {
+function embedUrl(clip, autoplay = false) {
+  if (!clip) return ''
+  const source = clip.source || 'tiktok'
+  if (source === 'instagram') {
+    const url = clip.tiktok_url || ''
+    const reelMatch = url.match(/\/reel\/([^/?]+)/i)
+    if (reelMatch?.[1]) {
+      return `https://www.instagram.com/reel/${reelMatch[1]}/embed`
+    }
+    const postId = clip.video_id || url.match(/\/p\/([^/?]+)/i)?.[1]
+    if (!postId) return ''
+    return `https://www.instagram.com/p/${postId}/embed`
+  }
+
+  const videoId = clip.video_id
   if (!videoId) return ''
   const params = new URLSearchParams()
   if (autoplay) params.set('autoplay', '1')
   const qs = params.toString()
   return `https://www.tiktok.com/embed/v2/${videoId}${qs ? `?${qs}` : ''}`
+}
+
+function clipSourceLabel(clip) {
+  return (clip?.source || 'tiktok') === 'instagram' ? 'Instagram' : 'TikTok'
+}
+
+function clipFallbackIcon(clip) {
+  return (clip?.source || 'tiktok') === 'instagram' ? 'ti ti-brand-instagram' : 'ti ti-brand-tiktok'
+}
+
+function openClipExternally(clip) {
+  if (!clip?.tiktok_url) return
+  window.open(clip.tiktok_url, '_blank', 'noopener,noreferrer')
 }
 
 function isActiveSlide(index) {
@@ -33,11 +60,6 @@ function showThumb(clip) {
 
 function onThumbError(clipId) {
   failedThumbs.value = new Set([...failedThumbs.value, clipId])
-}
-
-function openOnTikTok(url) {
-  if (!url) return
-  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 async function loadClips() {
@@ -103,7 +125,7 @@ onUnmounted(() => lockBodyScroll(false))
             Nail<span class="brand-accent">Thuean</span>
           </div>
           <h1 class="page-title">รีวิว</h1>
-          <p class="page-sub">ผลงานจาก TikTok</p>
+          <p class="page-sub">ผลงานจาก TikTok และ Instagram</p>
         </div>
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
@@ -116,7 +138,7 @@ onUnmounted(() => lockBodyScroll(false))
       <div v-else-if="clips.length === 0" class="empty card">
         <i class="ti ti-video-off empty-icon" aria-hidden="true"></i>
         <p>ยังไม่มีคลิปรีวิว</p>
-        <p class="muted">รอแอดมินเพิ่มลิงก์ TikTok</p>
+        <p class="muted">รอแอดมินเพิ่มลิงก์ TikTok หรือ Instagram</p>
       </div>
 
       <div v-else class="clip-grid" aria-label="คลิปรีวิว">
@@ -136,7 +158,7 @@ onUnmounted(() => lockBodyScroll(false))
             @error="onThumbError(clip.id)"
           />
           <div v-else class="clip-thumb-fallback">
-            <i class="ti ti-brand-tiktok" aria-hidden="true"></i>
+            <i :class="clipFallbackIcon(clip)" aria-hidden="true"></i>
             <span class="clip-fallback-title">{{ clip.title || `คลิป ${index + 1}` }}</span>
           </div>
           <span class="clip-play" aria-hidden="true">
@@ -165,10 +187,11 @@ onUnmounted(() => lockBodyScroll(false))
             <div class="viewer-embed-wrap">
               <iframe
                 v-if="isActiveSlide(index)"
-                :key="`${clip.video_id}-${viewerIndex}-${playKey}`"
-                :src="embedUrl(clip.video_id, true)"
+                :key="`${clip.id}-${viewerIndex}-${playKey}`"
+                :src="embedUrl(clip, clip.source !== 'instagram')"
                 class="viewer-embed"
-                :title="clip.title || `TikTok clip ${index + 1}`"
+                :class="{ 'viewer-embed-instagram': clip.source === 'instagram' }"
+                :title="clip.title || `${clipSourceLabel(clip)} clip ${index + 1}`"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen
                 scrolling="no"
@@ -190,8 +213,8 @@ onUnmounted(() => lockBodyScroll(false))
                 {{ index + 1 }} / {{ clips.length }}
                 · เลื่อนลง = ถัดไป · เลื่อนขึ้น = ก่อนหน้า
               </p>
-              <button type="button" class="viewer-tiktok-btn" @click="openOnTikTok(clip.tiktok_url)">
-                เปิดใน TikTok
+              <button type="button" class="viewer-tiktok-btn" @click="openClipExternally(clip)">
+                เปิดใน {{ clipSourceLabel(clip) }}
               </button>
             </div>
           </section>
@@ -475,6 +498,13 @@ onUnmounted(() => lockBodyScroll(false))
   margin: 0 0 10px;
   font-size: 12px;
   color: #cbd5e1;
+}
+
+.viewer-embed-instagram {
+  max-width: 540px;
+  margin: 0 auto;
+  border-radius: 12px;
+  background: #fff;
 }
 
 .viewer-tiktok-btn {

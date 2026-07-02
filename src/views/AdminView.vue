@@ -1830,7 +1830,7 @@ function startEditClip(item) {
 async function saveShowcaseClip() {
   const tiktok_url = String(clipForm.value.tiktok_url || '').trim()
   if (!tiktok_url) {
-    errorMessage.value = 'กรุณาวางลิงก์คลิป TikTok'
+    errorMessage.value = 'กรุณาวางลิงก์ TikTok หรือ Instagram'
     return
   }
 
@@ -3098,22 +3098,23 @@ onMounted(loadShowcaseClips)
       </template>
     </section>
 
-    <!-- ── รีวิว TikTok ── -->
+    <!-- ── รีวิว TikTok / Instagram ── -->
     <section v-show="activeTab === 'reviews'" class="card admin-section">
-      <h3>จัดการคลิปรีวิว (TikTok)</h3>
+      <h3>จัดการคลิปรีวิว (TikTok / Instagram)</h3>
       <p class="muted">
-        วางลิงก์คลิปทีละคลิป เช่น .../video/123 หรือ .../photo/123
-        · ลิงก์สั้น vm.tiktok.com ใช้ได้
+        วางลิงก์ทีละคลิป
+        · TikTok: .../video/123 หรือ .../photo/123 · vm.tiktok.com
+        · Instagram: .../p/... หรือ .../reel/...
       </p>
 
       <div class="admin-form-row showcase-clip-form">
         <label class="admin-label-grow">
-          ลิงก์ TikTok
+          ลิงก์ TikTok / Instagram
           <input
             v-model="clipForm.tiktok_url"
             type="url"
             class="admin-input"
-            placeholder="https://www.tiktok.com/@.../video/..."
+            placeholder="https://www.tiktok.com/... หรือ https://www.instagram.com/p/..."
           />
         </label>
         <label class="admin-label-grow">
@@ -3156,6 +3157,7 @@ onMounted(loadShowcaseClips)
           <div v-else class="showcase-clip-preview showcase-clip-preview-empty">ไม่มีปก</div>
           <div>
             <strong>{{ item.title || `คลิป #${index + 1}` }}</strong>
+            <span class="user-badge-provider">{{ item.source === 'instagram' ? 'Instagram' : 'TikTok' }}</span>
             <span v-if="!item.is_active" class="user-badge-provider">ปิดแสดง</span>
             <p class="muted">ลำดับ {{ index + 1 }}</p>
           </div>
