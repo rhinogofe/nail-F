@@ -14,18 +14,32 @@ function isHourBlocked(hour, blocks) {
   })
 }
 
+function normalizeStartHour(value) {
+  const hour = Number(value)
+  if (!Number.isInteger(hour) || hour < 0 || hour > 22) return null
+  return hour
+}
+
+function isAllowedBookableHour(hour, openHour, lastBookingHour, extras) {
+  const inNormal = hour >= openHour && hour <= lastBookingHour
+  if (inNormal) return true
+  return isWithinExtraHours(hour, extras)
+}
+
 function activeBookings(bookings, excludeBookingId) {
   return (bookings || []).filter(
     (b) =>
       b.status !== 'cancelled'
       && String(b.id) !== String(excludeBookingId ?? '')
+      && normalizeStartHour(b.start_hour) != null
   )
 }
 
 function hasBookingOverlap(hour, bookings, excludeBookingId) {
   const slotEnd = hour + 2
   return activeBookings(bookings, excludeBookingId).some((b) => {
-    const start = Number(b.start_hour)
+    const start = normalizeStartHour(b.start_hour)
+    if (start == null) return false
     const end = Number(b.end_hour ?? start + 2)
     return start < slotEnd && end > hour
   })
@@ -48,6 +62,7 @@ function addExtraSlotStarts(starts, { openHour, lastBookingHour, extras, blocks,
   for (const extra of extras || []) {
     let h = Number(extra.start_hour)
     const winEnd = Number(extra.end_hour)
+    if (!Number.isInteger(h) || !Number.isInteger(winEnd) || winEnd - h < 2) continue
     while (h + 2 <= winEnd) {
       const outsideNormal = h < openHour || h > lastBookingHour
       if (outsideNormal && !isSlotRangeBlockedForBooking(h, blocks)) {
@@ -72,8 +87,8 @@ function buildSlots2h({ openHour, lastBookingHour, extras, blocks, bookings, exc
     }
   }
   for (const b of activeBookings(bookings, excludeBookingId)) {
-    const start = Number(b.start_hour)
-    if (start >= openHour && start <= lastBookingHour) starts.add(start)
+    const start = normalizeStartHour(b.start_hour)
+    if (start != null && start >= openHour && start <= lastBookingHour) starts.add(start)
   }
   addExtraSlotStarts(starts, {
     openHour,
@@ -83,8 +98,8 @@ function buildSlots2h({ openHour, lastBookingHour, extras, blocks, bookings, exc
     isSlots2hMode: true,
   })
   for (const b of activeBookings(bookings, excludeBookingId)) {
-    const start = Number(b.start_hour)
-    if (isWithinExtraHours(start, extras)) starts.add(start)
+    const start = normalizeStartHour(b.start_hour)
+    if (start != null && isWithinExtraHours(start, extras)) starts.add(start)
   }
   return [...starts].sort((a, b) => a - b)
 }
@@ -116,7 +131,10 @@ export function buildAllSlots({
     seen.add(h)
   }
   for (const extra of extras) {
-    for (let h = Number(extra.start_hour); h + 2 <= Number(extra.end_hour); h += 1) {
+    const winStart = Number(extra.start_hour)
+    const winEnd = Number(extra.end_hour)
+    if (!Number.isInteger(winStart) || !Number.isInteger(winEnd) || winEnd - winStart < 2) continue
+    for (let h = winStart; h + 2 <= winEnd; h += 1) {
       if (!seen.has(h)) {
         result.push(h)
         seen.add(h)
@@ -134,8 +152,8 @@ export function buildVisibleSlots(params) {
 
 export function canBookSlot(hour, params) {
   const { openHour, lastBookingHour, extras, blocks, bookings, excludeBookingId } = params
-  const inNormal = hour >= openHour && hour <= lastBookingHour
-  if (!inNormal && !isWithinExtraHours(hour, extras)) return false
+  if (!Number.isInteger(hour) || hour < 0 || hour > 22) return false
+  if (!isAllowedBookableHour(hour, openHour, lastBookingHour, extras)) return false
   if (hasBookingOverlap(hour, bookings, excludeBookingId)) return false
   if (isSlotRangeBlockedForBooking(hour, blocks)) return false
   return true
