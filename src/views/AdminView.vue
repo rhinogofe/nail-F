@@ -5,7 +5,7 @@ import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
-import { buildBookingHourSelectOptions } from '../utils/bookingSlots'
+import { buildBookingHourSelectOptions, slotTimeLabel } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
 const router = useRouter()
@@ -136,7 +136,9 @@ const bookingEditSaving = ref(false)
 const bookingEditError = ref('')
 const bookingEditUserId = ref('')
 const bookingEditUserQuery = ref('')
-const bookingEditStartHour = ref(10)
+const bookingEditOriginalStartHour = ref(10)
+const bookingEditOriginalDate = ref('')
+const bookingEditMoveToHour = ref('')
 const bookingEditDate = ref('')
 const bookingEditExtraHours = ref([])
 const bookingEditSlotBookings = ref([])
@@ -176,20 +178,28 @@ const bookingAddHourOptions = computed(() =>
   })
 )
 
-const bookingEditHourOptions = computed(() =>
-  buildBookingHourSelectOptions(
-    {
-      openHour: shopOpenHour.value,
-      lastBookingHour: shopLastBookingHour.value,
-      extras: bookingEditExtraHours.value,
-      blocks: bookingEditSlotBlocks.value,
-      bookings: bookingEditSlotBookings.value,
-      displayMode: bookingDisplayMode.value,
-      excludeBookingId: bookingEditItem.value?.id,
-    },
-    { includeHour: bookingEditStartHour.value }
-  )
-)
+const bookingEditHourOptions = computed(() => {
+  let opts = buildBookingHourSelectOptions({
+    openHour: shopOpenHour.value,
+    lastBookingHour: shopLastBookingHour.value,
+    extras: bookingEditExtraHours.value,
+    blocks: bookingEditSlotBlocks.value,
+    bookings: bookingEditSlotBookings.value,
+    displayMode: bookingDisplayMode.value,
+    excludeBookingId: bookingEditItem.value?.id,
+  })
+  const sameDay = bookingEditDate.value === bookingEditOriginalDate.value
+  if (sameDay && Number.isFinite(bookingEditOriginalStartHour.value)) {
+    opts = opts.filter((o) => o.hour !== bookingEditOriginalStartHour.value)
+  }
+  return opts
+})
+
+const bookingEditCurrentHourLabel = computed(() => {
+  const hour = bookingEditOriginalStartHour.value
+  if (!Number.isFinite(hour)) return '-'
+  return slotTimeLabel(hour, bookingDisplayMode.value === 'slots_2h')
+})
 
 const bookingAddUsers = computed(() => {
   const q = bookingAddUserQuery.value.trim().toLowerCase()
@@ -1094,22 +1104,7 @@ async function loadBookingEditDayData(date) {
       }
     }
     bookingEditSelectedIds.value = selected
-
-    const hourOpts = buildBookingHourSelectOptions(
-      {
-        openHour: shopOpenHour.value,
-        lastBookingHour: shopLastBookingHour.value,
-        extras: bookingEditExtraHours.value,
-        blocks: bookingEditSlotBlocks.value,
-        bookings: bookingEditSlotBookings.value,
-        displayMode: bookingDisplayMode.value,
-        excludeBookingId: bookingEditItem.value?.id,
-      },
-      { includeHour: bookingEditStartHour.value }
-    )
-    if (hourOpts.length && !hourOpts.some((o) => o.hour === bookingEditStartHour.value)) {
-      bookingEditStartHour.value = hourOpts[0].hour
-    }
+    bookingEditMoveToHour.value = ''
   } catch (error) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดข้อมูลวันจองไม่สำเร็จ'
   } finally {
@@ -1128,7 +1123,9 @@ async function editBooking(item) {
   bookingEditUserId.value = item.user_id ? String(item.user_id) : ''
   bookingEditUserQuery.value = ''
   bookingEditDate.value = item.booking_date || selectedBookingDate.value || ''
-  bookingEditStartHour.value = Number(item.start_hour)
+  bookingEditOriginalDate.value = bookingEditDate.value
+  bookingEditOriginalStartHour.value = Number(item.start_hour)
+  bookingEditMoveToHour.value = ''
   bookingEditExtraHours.value = []
   bookingEditSlotBookings.value = []
   bookingEditSlotBlocks.value = []
@@ -1174,7 +1171,11 @@ async function saveBookingEdit() {
     bookingEditError.value = 'กรุณาเลือกวันจอง'
     return
   }
-  if (!Number.isInteger(bookingEditStartHour.value)) {
+  const startHour =
+    bookingEditMoveToHour.value !== ''
+      ? Number(bookingEditMoveToHour.value)
+      : bookingEditOriginalStartHour.value
+  if (!Number.isInteger(startHour)) {
     bookingEditError.value = 'กรุณาเลือกเวลา'
     return
   }
@@ -1188,7 +1189,7 @@ async function saveBookingEdit() {
       total,
       user_id: bookingEditUserId.value,
       booking_date: bookingEditDate.value,
-      start_hour: bookingEditStartHour.value,
+      start_hour: startHour,
       nailoption_ids: bookingEditSelectedIds.value,
     })
     message.value = data?.message || 'บันทึกแล้ว'
@@ -3566,16 +3567,21 @@ onMounted(loadShowcaseClips)
             />
           </label>
 
+          <p v-if="bookingEditOriginalStartHour != null" class="muted booking-edit-current-hour">
+            เวลาปัจจุบัน: {{ bookingEditCurrentHourLabel }}
+          </p>
+
           <label class="booking-edit-field">
-            เวลาเริ่ม
+            ย้ายไปเวลา
             <select
-              v-model.number="bookingEditStartHour"
+              v-model="bookingEditMoveToHour"
               class="admin-input"
               :disabled="bookingEditLoading"
               @change="bookingEditError = ''"
             >
-              <option v-if="!bookingEditHourOptions.length" value="" disabled>ไม่มีช่วงเวลาว่าง</option>
-              <option v-for="opt in bookingEditHourOptions" :key="opt.hour" :value="opt.hour">
+              <option value="">— คงเวลาเดิม —</option>
+              <option v-if="!bookingEditHourOptions.length" value="" disabled>ไม่มีช่วงว่างอื่น</option>
+              <option v-for="opt in bookingEditHourOptions" :key="opt.hour" :value="String(opt.hour)">
                 {{ opt.label }}
               </option>
             </select>
