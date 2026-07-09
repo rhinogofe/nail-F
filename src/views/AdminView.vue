@@ -5,7 +5,7 @@ import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
-import { buildBookingHourSelectOptions, slotTimeLabel } from '../utils/bookingSlots'
+import { buildBookingHourSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
 const router = useRouter()
@@ -278,8 +278,8 @@ async function saveAdvanceDays() {
 async function loadShopHours() {
   try {
     const { data } = await api.get('/api/admin/settings/shop-hours')
-    shopOpenHour.value = data.open_hour ?? 9
-    shopLastBookingHour.value = data.last_booking_hour ?? 18
+    shopOpenHour.value = normalizeShopOpenHour(data.open_hour)
+    shopLastBookingHour.value = normalizeShopLastBookingHour(data.last_booking_hour, shopOpenHour.value)
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดเวลาร้านไม่สำเร็จ'
   }
@@ -1137,8 +1137,8 @@ async function editBooking(item) {
 
   try {
     const { data: hoursData } = await api.get('/api/bookings/shop-hours')
-    shopOpenHour.value = Number(hoursData?.open_hour) || 9
-    shopLastBookingHour.value = Number(hoursData?.last_booking_hour) || 18
+    shopOpenHour.value = normalizeShopOpenHour(hoursData?.open_hour)
+    shopLastBookingHour.value = normalizeShopLastBookingHour(hoursData?.last_booking_hour, shopOpenHour.value)
     await loadBookingEditDayData(bookingEditDate.value)
   } catch (error) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
@@ -1404,8 +1404,8 @@ async function openBookingAdd() {
         ? api.get('/api/bookings', { params: { date: selectedBookingDate.value } })
         : Promise.resolve({ data: { bookings: [], blocks: [] } }),
     ])
-    shopOpenHour.value = Number(hoursRes.data?.open_hour) || 9
-    shopLastBookingHour.value = Number(hoursRes.data?.last_booking_hour) || 18
+    shopOpenHour.value = normalizeShopOpenHour(hoursRes.data?.open_hour)
+    shopLastBookingHour.value = normalizeShopLastBookingHour(hoursRes.data?.last_booking_hour, shopOpenHour.value)
     bookingAddExtraHours.value = extraRes.data || []
     bookingAddSlotBookings.value = dayRes.data?.bookings || []
     bookingAddSlotBlocks.value = dayRes.data?.blocks || []
