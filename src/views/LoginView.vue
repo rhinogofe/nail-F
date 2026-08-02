@@ -115,6 +115,7 @@ async function loginWithPhone() {
             <i class="ti ti-phone field-icon" aria-hidden="true"></i>
             <input v-model="phone" type="tel" placeholder="เบอร์โทร" />
           </label>
+          <p class="login-hint">ชื่อและเบอร์ตรงกับที่เคยใช้ = เข้าบัญชีเดิม · ไม่ตรง = บัญชีใหม่</p>
           <button class="btn primary login-submit" :disabled="submitting" @click="loginWithPhone">
             {{ submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบด้วยชื่อและเบอร์' }}
           </button>
@@ -132,5 +133,12 @@ async function loginWithPhone() {
   place-content: center;
   padding: var(--page-padding-x);
   background: var(--color-surface);
+}
+
+.login-hint {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.4;
 }
 </style>
