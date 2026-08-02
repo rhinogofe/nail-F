@@ -80,15 +80,7 @@ router.beforeEach(async (to) => {
     if (shopSlug) return shopPath(shopSlug, '/login')
     return '/'
   }
-  if (to.meta.requiresAdmin && !auth.isAdmin) {
-    if (shopSlug) return shopPath(shopSlug, '/bookings')
-    return '/'
-  }
-  if (to.meta.requiresAdmin && auth.isAdmin && shopSlug && !auth.canAccessShopAdmin(shopSlug)) {
-    const redirectSlug = auth.primaryAdminShopSlug
-    if (redirectSlug && redirectSlug !== shopSlug) {
-      return shopPath(redirectSlug, '/admin')
-    }
+  if (to.meta.requiresAdmin && !auth.canAccessShopAdmin(shopSlug)) {
     if (shopSlug) return shopPath(shopSlug, '/bookings')
     return '/'
   }

@@ -13,9 +13,7 @@ const auth = useAuthStore()
 const route = useRoute()
 const { shopSlug } = useShopRoute()
 
-const isAdminMode = computed(
-  () => auth.isAdmin && auth.canAccessShopAdmin(shopSlug.value)
-)
+const isAdminMode = computed(() => auth.canAccessShopAdmin(shopSlug.value))
 
 const messages = ref([])
 const draft = ref('')
@@ -347,11 +345,14 @@ watch(
 .chat-page {
   min-height: 100dvh;
   max-width: 430px;
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
   padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
   background: var(--color-bg);
+  box-sizing: border-box;
 }
 
 .chat-page--admin {
@@ -401,11 +402,12 @@ watch(
 
 .chat-search {
   width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 8px 10px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 16px;
   background: var(--color-bg);
   color: var(--color-text);
 }
@@ -481,6 +483,7 @@ watch(
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .chat-placeholder {
@@ -550,7 +553,11 @@ watch(
   display: flex;
   gap: 8px;
   align-items: flex-end;
-  padding: 12px 16px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom, 0));
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-elevated);
   flex-shrink: 0;
@@ -558,20 +565,27 @@ watch(
 
 .chat-input {
   flex: 1;
+  min-width: 0;
+  width: 0;
   resize: none;
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 10px 12px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1.4;
   background: var(--color-bg);
   color: var(--color-text);
+  box-sizing: border-box;
+  -webkit-text-size-adjust: 100%;
 }
 
 .chat-send {
   flex-shrink: 0;
-  min-width: 56px;
-  min-height: 42px;
+  min-width: 52px;
+  width: 52px;
+  min-height: 44px;
+  padding: 0 8px;
 }
 
 .alert.error {

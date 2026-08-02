@@ -17,6 +17,7 @@ const auth = useAuthStore()
 const { unreadCount } = useChatUnread()
 
 const shopSlug = computed(() => route.params.shopSlug || localStorage.getItem('shopSlug') || 'default')
+const showAdminNav = computed(() => auth.canAccessShopAdmin(shopSlug.value))
 
 function go(path) {
   router.push(`/${shopSlug.value}${path}`)
@@ -71,7 +72,7 @@ function go(path) {
       <span>บัญชี</span>
     </button>
     <button
-      v-if="auth.isAdmin"
+      v-if="showAdminNav"
       type="button"
       class="nav-item"
       :class="{ active: active === 'admin' }"

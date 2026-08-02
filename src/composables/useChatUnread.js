@@ -13,9 +13,7 @@ export function useChatUnread() {
     () => route.params.shopSlug || localStorage.getItem('shopSlug') || 'default'
   )
 
-  const isAdminForShop = computed(
-    () => auth.isAdmin && auth.canAccessShopAdmin(shopSlug.value)
-  )
+  const isAdminForShop = computed(() => auth.canAccessShopAdmin(shopSlug.value))
 
   async function refresh() {
     if (!auth.isLoggedIn) {
