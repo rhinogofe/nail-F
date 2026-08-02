@@ -197,6 +197,7 @@ const pendingTimeLabel = computed(() => {
   if (h == null) return ''
   return `${toHourLabel(h)} – ${toHourLabel(bookingEndHour(h, bookingStore.bookingSlotHours))} น.`
 })
+const slotDurationLabel = computed(() => `${bookingStore.bookingSlotHours} ชั่วโมง`)
 const requiredLocationLabel = computed(() =>
   nailOptions.value
     .filter(opt => opt.is_required)
@@ -773,7 +774,7 @@ onUnmounted(() => {
               </div>
               <div class="info-row">
                 <span class="info-label"><i class="ti ti-hourglass info-ic" aria-hidden="true"></i>ระยะเวลา</span>
-                <span class="info-val">2 ชั่วโมง</span>
+                <span class="info-val">{{ slotDurationLabel }}</span>
               </div>
               <div v-if="requiredLocationLabel" class="info-row">
                 <span class="info-label"><i class="ti ti-map-pin info-ic" aria-hidden="true"></i>สถานที่</span>

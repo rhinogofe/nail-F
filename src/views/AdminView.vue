@@ -3290,7 +3290,7 @@ watch(shopSlug, () => {
 
       <div id="settings-shop-hours" class="admin-settings-section">
       <h3>เวลาเปิด-ปิดร้าน</h3>
-      <p class="muted">กำหนดช่วงเวลาที่ลูกค้าสามารถเลือกจองได้ในหน้าจอง (ทุกคิวใช้เวลา 2 ชั่วโมง)</p>
+      <p class="muted">กำหนดช่วงเวลาที่ลูกค้าสามารถเลือกจองได้ในหน้าจอง (ความยาวคิวตามที่ตั้งด้านล่าง)</p>
       <div class="admin-form-row" style="flex-wrap:wrap">
         <label class="admin-label-grow">
           เวลาเปิดร้าน
