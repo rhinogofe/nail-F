@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useChatUnread } from '../composables/useChatUnread'
 
 defineProps({
   active: {
@@ -13,6 +14,7 @@ defineProps({
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const { unreadCount } = useChatUnread()
 
 const shopSlug = computed(() => route.params.shopSlug || localStorage.getItem('shopSlug') || 'default')
 
@@ -44,6 +46,18 @@ function go(path) {
       <span v-if="active === 'reviews'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-star" aria-hidden="true"></i>
       <span>รีวิว</span>
+    </button>
+    <button
+      type="button"
+      class="nav-item"
+      :class="{ active: active === 'chat' }"
+      :aria-current="active === 'chat' ? 'page' : undefined"
+      @click="go('/chat')"
+    >
+      <span v-if="active === 'chat'" class="nav-dot" aria-hidden="true"></span>
+      <i class="ti ti-message-circle" aria-hidden="true"></i>
+      <span>แชท</span>
+      <span v-if="unreadCount > 0" class="nav-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
     </button>
     <button
       type="button"
@@ -125,6 +139,22 @@ function go(path) {
 
 .nav-item.active {
   color: var(--color-primary);
+}
+
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: calc(50% - 22px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
 }
 
 .nav-item:hover:not(.active) {

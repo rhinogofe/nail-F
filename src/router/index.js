@@ -10,11 +10,13 @@ import ProfileView from '../views/ProfileView.vue'
 import ReviewsView from '../views/ReviewsView.vue'
 import AdminView from '../views/AdminView.vue'
 import PaymentView from '../views/PaymentView.vue'
+import ChatView from '../views/ChatView.vue'
 
 const shopChildren = [
   { path: 'login', component: LoginView, meta: { guest: true } },
   { path: 'bookings', component: BookingView, meta: { requiresAuth: true } },
   { path: 'reviews', component: ReviewsView, meta: { requiresAuth: true } },
+  { path: 'chat', component: ChatView, meta: { requiresAuth: true } },
   { path: 'profile', component: ProfileView, meta: { requiresAuth: true } },
   { path: 'payment/:bookingId', component: PaymentView, meta: { requiresAuth: true } },
   { path: 'admin', component: AdminView, meta: { requiresAuth: true, requiresAdmin: true } },
@@ -34,6 +36,7 @@ const router = createRouter({
     { path: '/login', redirect: '/default/login' },
     { path: '/bookings', redirect: '/default/bookings' },
     { path: '/reviews', redirect: '/default/reviews' },
+    { path: '/chat', redirect: '/default/chat' },
     { path: '/profile', redirect: '/default/profile' },
     { path: '/admin', redirect: '/default/admin' },
     { path: '/auth/callback', redirect: '/default/auth/callback' },

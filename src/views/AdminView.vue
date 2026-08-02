@@ -571,6 +571,50 @@ const userHistoryBookings = ref([])
 const userHistoryLoading = ref(false)
 const userHistoryError = ref('')
 
+const chatSendOpen = ref(false)
+const chatSendUser = ref(null)
+const chatSendBody = ref('')
+const chatSendSaving = ref(false)
+const chatSendError = ref('')
+
+function openSendMessageModal(user) {
+  chatSendUser.value = user
+  chatSendBody.value = ''
+  chatSendError.value = ''
+  chatSendOpen.value = true
+  focusAdminModal('admin-chat-send-modal', '#admin-chat-send-input')
+}
+
+function closeSendMessageModal() {
+  chatSendOpen.value = false
+  chatSendUser.value = null
+  chatSendBody.value = ''
+  chatSendError.value = ''
+}
+
+async function submitSendMessageModal() {
+  const user = chatSendUser.value
+  const body = chatSendBody.value.trim()
+  if (!user?.id || !body || chatSendSaving.value) return
+
+  chatSendSaving.value = true
+  chatSendError.value = ''
+  try {
+    await api.post(`/api/admin/chat/conversations/${user.id}/messages`, { body })
+    message.value = `ส่งข้อความถึง ${user.name} แล้ว`
+    closeSendMessageModal()
+  } catch (err) {
+    chatSendError.value = err?.response?.data?.error || 'ส่งข้อความไม่สำเร็จ'
+  } finally {
+    chatSendSaving.value = false
+  }
+}
+
+function openAdminChat(userId) {
+  if (!userId) return
+  router.push(shopPath(`/chat?userId=${userId}`))
+}
+
 const filteredUsers = computed(() => {
   const q = userSearch.value.trim().toLowerCase()
   if (!q) return users.value
@@ -2655,6 +2699,16 @@ watch(shopSlug, () => {
           </div>
           <div class="row">
             <button
+              type="button"
+              class="btn"
+              @click="openSendMessageModal({ id: item.user_id, name: item.user_name, email: item.user_email })"
+            >
+              ส่งข้อความ
+            </button>
+            <button type="button" class="btn primary" @click="openAdminChat(item.user_id)">
+              ไปแชท
+            </button>
+            <button
               v-if="item.status !== 'cancelled'"
               type="button"
               class="btn"
@@ -3818,6 +3872,8 @@ watch(shopSlug, () => {
     <!-- ── ผู้ใช้ ── -->
     <section v-show="activeTab === 'users'" class="card admin-section">
       <h3>รายชื่อผู้ใช้</h3>
+      <p v-if="shopSlug === 'default'" class="muted">แสดงผู้ใช้ทั้งหมดในระบบ (สาขาหลัก)</p>
+      <p v-else class="muted">แสดงเฉพาะลูกค้าที่เคยจองที่สาขา <strong>/{{ shopSlug }}</strong></p>
       <div class="admin-form-row" style="margin-bottom:14px">
         <label class="admin-label-grow">
           ค้นหา
@@ -3851,6 +3907,8 @@ watch(shopSlug, () => {
           <p v-if="u.admin_note" class="user-admin-note">หมายเหตุ: {{ u.admin_note }}</p>
         </div>
         <div class="row" style="flex-shrink:0">
+          <button type="button" class="btn" @click="openSendMessageModal(u)">ส่งข้อความ</button>
+          <button type="button" class="btn primary" @click="openAdminChat(u.id)">ไปแชท</button>
           <button type="button" class="btn primary" @click="openUserHistory(u)">ประวัติจอง</button>
           <button type="button" class="btn" @click="editUser(u)">แก้ไขข้อมูล</button>
           <button
@@ -3892,6 +3950,42 @@ watch(shopSlug, () => {
             <button type="button" class="btn" :disabled="shopEditSaving" @click="closeShopEdit">ยกเลิก</button>
             <button type="button" class="btn primary" :disabled="shopEditSaving" @click="saveShopEdit">
               {{ shopEditSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="chatSendOpen"
+        class="booking-edit-backdrop"
+        @click.self="closeSendMessageModal"
+      >
+        <div id="admin-chat-send-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="chat-send-title">
+          <div class="booking-edit-header">
+            <h3 id="chat-send-title">ส่งข้อความ</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeSendMessageModal">×</button>
+          </div>
+          <p v-if="chatSendUser" class="muted booking-edit-meta">
+            ถึง <strong>{{ chatSendUser.name }}</strong>
+            · {{ chatSendUser.email || '-' }}
+          </p>
+          <label class="booking-edit-field">
+            ข้อความ
+            <textarea
+              id="admin-chat-send-input"
+              v-model="chatSendBody"
+              rows="4"
+              class="admin-input"
+              placeholder="พิมพ์ข้อความ..."
+              maxlength="2000"
+              @input="chatSendError = ''"
+            />
+          </label>
+          <p v-if="chatSendError" class="alert error">{{ chatSendError }}</p>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="chatSendSaving" @click="closeSendMessageModal">ยกเลิก</button>
+            <button type="button" class="btn primary" :disabled="chatSendSaving || !chatSendBody.trim()" @click="submitSendMessageModal">
+              {{ chatSendSaving ? 'กำลังส่ง...' : 'ส่งข้อความ' }}
             </button>
           </div>
         </div>
