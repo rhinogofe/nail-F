@@ -4,14 +4,18 @@ import { useRoute } from 'vue-router'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
 import BrandMark from '../components/BrandMark.vue'
+import ChatImage from '../components/ChatImage.vue'
 import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { compressChatImage } from '../utils/compressChatImage'
 
 const ui = useUiSettingsStore()
 const auth = useAuthStore()
 const route = useRoute()
 const { shopSlug } = useShopRoute()
+
+const MAX_CHAT_IMAGES = 5
 
 const isAdminMode = computed(() => auth.canAccessShopAdmin(shopSlug.value))
 
@@ -19,8 +23,12 @@ const messages = ref([])
 const draft = ref('')
 const loading = ref(true)
 const sending = ref(false)
+const uploading = ref(false)
+const uploadProgress = ref('')
 const errorMessage = ref('')
 const messagesRef = ref(null)
+const imageInputRef = ref(null)
+const lightboxSrc = ref('')
 
 const conversations = ref([])
 const selectedUserId = ref('')
@@ -90,6 +98,121 @@ function userInitials(name) {
   return parts.map((p) => p[0]).join('').toUpperCase().slice(0, 2)
 }
 
+function convPreview(conv) {
+  if (conv.last_message) return conv.last_message
+  if (conv.last_image_url) return '[รูปภาพ]'
+  return ''
+}
+
+function openLightbox(src) {
+  lightboxSrc.value = src
+}
+
+function closeLightbox() {
+  lightboxSrc.value = ''
+}
+
+function pickImage() {
+  imageInputRef.value?.click()
+}
+
+async function onImageSelected(event) {
+  const files = Array.from(event.target.files || []).filter((f) => f.type.startsWith('image/'))
+  event.target.value = ''
+  if (!files.length || uploading.value || sending.value) return
+
+  if (files.length > MAX_CHAT_IMAGES) {
+    errorMessage.value = `เลือกได้สูงสุด ${MAX_CHAT_IMAGES} รูปต่อครั้ง`
+    return
+  }
+
+  uploading.value = true
+  uploadProgress.value = ''
+  errorMessage.value = ''
+  const caption = draft.value.trim()
+
+  try {
+    for (let i = 0; i < files.length; i += 1) {
+      uploadProgress.value = files.length > 1 ? `กำลังส่งรูป ${i + 1}/${files.length}...` : 'กำลังส่งรูป...'
+      const { base64, mime } = await compressChatImage(files[i])
+      const data = await postChatPayload({
+        body: i === 0 ? caption : '',
+        imageData: base64,
+        imageMime: mime,
+      })
+      messages.value = [...messages.value, data]
+    }
+    draft.value = ''
+    if (isAdminMode.value) await loadConversations()
+    scrollToBottom()
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || err?.message || 'อัปโหลดรูปไม่สำเร็จ'
+  } finally {
+    uploading.value = false
+    uploadProgress.value = ''
+  }
+}
+
+async function postChatPayload({ body = '', imageData = null, imageMime = null } = {}) {
+  const text = String(body ?? '').trim()
+  if (!text && !imageData) return null
+  if (isAdminMode.value && !selectedUserId.value) return null
+
+  const payload = { body: text }
+  if (imageData) {
+    payload.image_data = imageData
+    payload.image_mime = imageMime
+  }
+
+  if (isAdminMode.value) {
+    const { data } = await api.post(
+      `/api/admin/chat/conversations/${selectedUserId.value}/messages`,
+      payload
+    )
+    return data
+  }
+
+  const { data } = await api.post('/api/chat/messages', payload)
+  return data
+}
+
+async function sendChatPayload({ body = '', imageData = null, imageMime = null } = {}) {
+  const text = String(body ?? '').trim()
+  if (!text && !imageData) return
+  if (isAdminMode.value && !selectedUserId.value) return
+
+  sending.value = true
+  errorMessage.value = ''
+  try {
+    const data = await postChatPayload({ body: text, imageData, imageMime })
+    if (data) messages.value = [...messages.value, data]
+    if (isAdminMode.value) await loadConversations()
+    scrollToBottom()
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'ส่งข้อความไม่สำเร็จ'
+  } finally {
+    sending.value = false
+  }
+}
+
+async function deleteConversation() {
+  if (!selectedUserId.value || !selectedConversation.value) return
+  const name = selectedConversation.value.name || 'ลูกค้า'
+  if (!window.confirm(`ลบประวัติแชทกับ "${name}" ทั้งหมดใช่ไหม?\nการลบไม่สามารถยกเลิกได้`)) return
+
+  errorMessage.value = ''
+  try {
+    await api.delete(`/api/admin/chat/conversations/${selectedUserId.value}`)
+    selectedUserId.value = ''
+    activeUser.value = null
+    messages.value = []
+    await loadConversations()
+    sidebarOpen.value = true
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'ลบแชทไม่สำเร็จ'
+  }
+}
+
 function scrollToBottom() {
   nextTick(() => {
     const el = messagesRef.value
@@ -122,7 +245,8 @@ async function loadConversations() {
           name: activeUser.value.name,
           email: activeUser.value.email,
           avatar_url: activeUser.value.avatar_url,
-          last_message: messages.value.at(-1)?.body || '',
+          last_message: messages.value.at(-1)?.body || (messages.value.at(-1)?.image_url ? '[รูปภาพ]' : ''),
+          last_image_url: messages.value.at(-1)?.image_url || null,
           last_sender_role: messages.value.at(-1)?.sender_role || 'admin',
           last_message_at: messages.value.at(-1)?.created_at || null,
           unread_count: 0,
@@ -181,30 +305,9 @@ function selectConversation(conv) {
 
 async function sendMessage() {
   const body = draft.value.trim()
-  if (!body || sending.value) return
-
-  sending.value = true
-  errorMessage.value = ''
-  try {
-    if (isAdminMode.value) {
-      if (!selectedUserId.value) return
-      const { data } = await api.post(
-        `/api/admin/chat/conversations/${selectedUserId.value}/messages`,
-        { body }
-      )
-      messages.value = [...messages.value, data]
-      await loadConversations()
-    } else {
-      const { data } = await api.post('/api/chat/messages', { body })
-      messages.value = [...messages.value, data]
-    }
-    draft.value = ''
-    scrollToBottom()
-  } catch (err) {
-    errorMessage.value = err?.response?.data?.error || 'ส่งข้อความไม่สำเร็จ'
-  } finally {
-    sending.value = false
-  }
+  if (!body || sending.value || uploading.value) return
+  await sendChatPayload({ body })
+  draft.value = ''
 }
 
 function onKeydown(event) {
@@ -215,10 +318,12 @@ function onKeydown(event) {
 }
 
 const canSend = computed(() => {
-  if (sending.value || !draft.value.trim()) return false
+  if (sending.value || uploading.value || !draft.value.trim()) return false
   if (isAdminMode.value) return Boolean(selectedUserId.value)
   return true
 })
+
+const composeBusy = computed(() => sending.value || uploading.value)
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer)
@@ -335,7 +440,7 @@ watch(
                 </span>
                 <span class="chat-conv-row chat-conv-row-sub">
                   <span class="chat-conv-preview muted">
-                    {{ conv.last_sender_role === 'admin' ? 'คุณ: ' : '' }}{{ conv.last_message }}
+                    {{ conv.last_sender_role === 'admin' ? 'คุณ: ' : '' }}{{ convPreview(conv) }}
                   </span>
                   <span v-if="conv.unread_count > 0" class="chat-conv-unread">
                     {{ conv.unread_count > 99 ? '99+' : conv.unread_count }}
@@ -371,9 +476,20 @@ watch(
               <strong class="chat-thread-name">แชทลูกค้า</strong>
               <p class="chat-thread-meta muted">เลือกลูกค้าเพื่อตอบข้อความ</p>
             </div>
+            <button
+              v-if="selectedUserId"
+              type="button"
+              class="chat-icon-btn chat-delete-btn"
+              aria-label="ลบประวัติแชท"
+              title="ลบประวัติแชท"
+              @click="deleteConversation"
+            >
+              <i class="ti ti-trash" aria-hidden="true"></i>
+            </button>
           </header>
 
           <p v-if="errorMessage" class="alert error chat-alert">{{ errorMessage }}</p>
+          <p v-if="uploadProgress" class="chat-upload-progress muted">{{ uploadProgress }}</p>
 
           <template v-if="selectedUserId">
             <div ref="messagesRef" class="chat-messages" aria-live="polite">
@@ -385,20 +501,44 @@ watch(
                 class="chat-bubble-row"
                 :class="msg.sender_role === 'admin' ? 'mine' : 'theirs'"
               >
-                <div class="chat-bubble">
-                  <p class="chat-body">{{ msg.body }}</p>
+                <div class="chat-bubble" :class="{ 'chat-bubble--image': msg.image_url }">
+                  <ChatImage
+                    v-if="msg.image_url"
+                    :filename="msg.image_url"
+                    @open="openLightbox"
+                  />
+                  <p v-if="msg.body" class="chat-body">{{ msg.body }}</p>
                   <time class="chat-time">{{ formatTime(msg.created_at) }}</time>
                 </div>
               </div>
             </div>
 
             <form class="chat-compose" @submit.prevent="sendMessage">
+              <input
+                ref="imageInputRef"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                class="chat-file-input"
+                multiple
+                @change="onImageSelected"
+              />
+              <button
+                type="button"
+                class="chat-icon-btn chat-attach-btn"
+                aria-label="แนบรูป"
+                :title="`แนบรูป (สูงสุด ${MAX_CHAT_IMAGES} รูป)`"
+                :disabled="composeBusy"
+                @click="pickImage"
+              >
+                <i class="ti ti-photo" aria-hidden="true"></i>
+              </button>
               <textarea
                 v-model="draft"
                 rows="1"
                 class="chat-input"
                 placeholder="พิมพ์ข้อความ..."
                 maxlength="2000"
+                :disabled="composeBusy"
                 @keydown="onKeydown"
               />
               <button type="submit" class="btn primary chat-send" :disabled="!canSend">
@@ -430,6 +570,7 @@ watch(
       </header>
 
       <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+      <p v-if="uploadProgress" class="chat-upload-progress muted">{{ uploadProgress }}</p>
 
       <div ref="messagesRef" class="chat-messages" aria-live="polite">
         <p v-if="messages.length === 0" class="chat-empty muted">{{ emptyHint }}</p>
@@ -439,27 +580,66 @@ watch(
           class="chat-bubble-row"
           :class="msg.sender_role === 'customer' ? 'mine' : 'theirs'"
         >
-          <div class="chat-bubble">
-            <p class="chat-body">{{ msg.body }}</p>
+          <div class="chat-bubble" :class="{ 'chat-bubble--image': msg.image_url }">
+            <ChatImage
+              v-if="msg.image_url"
+              :filename="msg.image_url"
+              @open="openLightbox"
+            />
+            <p v-if="msg.body" class="chat-body">{{ msg.body }}</p>
             <time class="chat-time">{{ formatTime(msg.created_at) }}</time>
           </div>
         </div>
       </div>
 
       <form class="chat-compose" @submit.prevent="sendMessage">
+        <input
+          ref="imageInputRef"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          class="chat-file-input"
+          multiple
+          @change="onImageSelected"
+        />
+        <button
+          type="button"
+          class="chat-icon-btn chat-attach-btn"
+          aria-label="แนบรูป"
+          :title="`แนบรูป (สูงสุด ${MAX_CHAT_IMAGES} รูป)`"
+          :disabled="composeBusy"
+          @click="pickImage"
+        >
+          <i class="ti ti-photo" aria-hidden="true"></i>
+        </button>
         <textarea
           v-model="draft"
           rows="2"
           class="chat-input"
           placeholder="พิมพ์ข้อความ..."
           maxlength="2000"
+          :disabled="composeBusy"
           @keydown="onKeydown"
         />
         <button type="submit" class="btn primary chat-send chat-send--label" :disabled="!canSend">
-          {{ sending ? '...' : 'ส่ง' }}
+          {{ sending || uploading ? '...' : 'ส่ง' }}
         </button>
       </form>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="lightboxSrc"
+        class="chat-lightbox"
+        role="dialog"
+        aria-label="ดูรูปเต็มจอ"
+        @click.self="closeLightbox"
+      >
+        <button type="button" class="chat-lightbox-close" aria-label="ปิด" @click="closeLightbox">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+        <img :src="lightboxSrc" alt="รูปเต็มจอ" class="chat-lightbox-img" @click.stop />
+      </div>
+    </Teleport>
 
     <BottomNav active="chat" />
   </div>
@@ -697,6 +877,14 @@ watch(
   flex-shrink: 0;
 }
 
+.chat-thread-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
 .chat-icon-btn {
   position: relative;
   flex-shrink: 0;
@@ -711,6 +899,20 @@ watch(
   justify-content: center;
   cursor: pointer;
   font-size: 18px;
+}
+
+.chat-delete-btn {
+  margin-left: auto;
+  color: var(--color-error);
+  border-color: rgba(196, 92, 92, 0.35);
+}
+
+.chat-file-input {
+  display: none;
+}
+
+.chat-attach-btn {
+  flex-shrink: 0;
 }
 
 .chat-list-toggle {
@@ -730,13 +932,6 @@ watch(
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
-}
-
-.chat-thread-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
 }
 
 .chat-thread-avatar {
@@ -772,6 +967,12 @@ watch(
 
 .chat-alert {
   margin: 8px 12px 0;
+}
+
+.chat-upload-progress {
+  margin: 6px 16px 0;
+  font-size: 12px;
+  text-align: center;
 }
 
 .chat-empty-state {
@@ -868,6 +1069,14 @@ watch(
   border-color: transparent;
 }
 
+.chat-bubble--image {
+  padding: 6px;
+}
+
+.chat-bubble--image .chat-body {
+  margin-top: 6px;
+}
+
 .chat-body {
   margin: 0;
   white-space: pre-wrap;
@@ -932,6 +1141,41 @@ watch(
 
 .alert.error {
   margin: 8px 16px 0;
+}
+
+.chat-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.chat-lightbox-close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top, 0));
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 /* ── Mobile: drawer sidebar ── */
