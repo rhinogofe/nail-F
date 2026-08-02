@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import ChatNotificationStack from './components/ChatNotificationStack.vue'
 
 const route = useRoute()
 const isAdminRoute = computed(() => /\/admin$/.test(route.path))
@@ -9,6 +10,7 @@ const isAdminRoute = computed(() => /\/admin$/.test(route.path))
 <template>
   <div class="app-shell" :class="{ 'app-shell--admin': isAdminRoute }">
     <router-view />
+    <ChatNotificationStack />
   </div>
 </template>
 
