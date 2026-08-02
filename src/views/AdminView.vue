@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useShopRoute } from '../composables/useShopRoute'
 import api from '../api/axios'
@@ -18,6 +18,35 @@ const { shopPath, shopSlug } = useShopRoute()
 const auth = useAuthStore()
 const shopStore = useShopStore()
 const uiSettingsStore = useUiSettingsStore()
+
+async function confirmAdminSave(title, message) {
+  const opts = {
+    title,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'ตกลง',
+    cancelButtonText: 'ยกเลิก',
+  }
+  if (typeof message === 'string' && message.includes('<')) {
+    opts.html = message
+  } else {
+    opts.text = message || 'บันทึกการเปลี่ยนแปลงนี้ใช่ไหม'
+  }
+  const result = await Swal.fire(opts)
+  return result.isConfirmed
+}
+
+function scrollToAdminSection(sectionId, focusSelector) {
+  nextTick(() => {
+    const section = document.getElementById(sectionId)
+    if (!section) return
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (focusSelector) {
+      const input = section.querySelector(focusSelector)
+      input?.focus({ preventScroll: true })
+    }
+  })
+}
 
 function todayYmd() {
   const n = new Date()
@@ -303,6 +332,11 @@ async function saveAdvanceDays() {
     errorMessage.value = 'จำนวนวันต้องอยู่ระหว่าง 1-365'
     return
   }
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึก',
+    `ตั้งจองล่วงหน้า ${advanceDays.value} วัน และล็อกวันสิ้นสุดใหม่ใช่ไหม`
+  )
+  if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
@@ -333,6 +367,8 @@ async function createShop() {
     errorMessage.value = 'กรุณากรอกชื่อและ slug ร้าน'
     return
   }
+  const ok = await confirmAdminSave('ยืนยันเพิ่มสาขา', `เพิ่มสาขา "${name}" (/${slug}) ใช่ไหม`)
+  if (!ok) return
   try {
     await api.post('/api/shops', { name, slug })
     newShopName.value = ''
@@ -355,6 +391,10 @@ function openShopEdit(shop) {
   shopEditActive.value = shop.is_active !== false
   shopEditError.value = ''
   shopEditOpen.value = true
+  scrollToAdminSection('settings-shops')
+  nextTick(() => {
+    document.getElementById('shop-edit-name-input')?.focus()
+  })
 }
 
 function closeShopEdit() {
@@ -369,6 +409,11 @@ async function saveShopEdit() {
     shopEditError.value = 'กรุณาระบุชื่อร้าน'
     return
   }
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึกสาขา',
+    `บันทึกสาขา "${name}" (${shopEditActive.value ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}) ใช่ไหม`
+  )
+  if (!ok) return
   shopEditSaving.value = true
   shopEditError.value = ''
   message.value = ''
@@ -433,6 +478,8 @@ async function loadUiSettingsAdmin() {
 }
 
 async function saveUiSettingsAdmin() {
+  const ok = await confirmAdminSave('ยืนยันบันทึก UI', 'บันทึกการตั้งค่า UI และข้อความทั้งหมดใช่ไหม')
+  if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
@@ -473,6 +520,11 @@ async function saveShopHours() {
     errorMessage.value = `เวลาเปิดต้องน้อยกว่าเวลาจองสุดท้ายอย่างน้อย ${slot} ชั่วโมง`
     return
   }
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึกเวลาร้าน',
+    `เปิด ${String(shopOpenHour.value).padStart(2, '0')}:00 – จองสุดท้าย ${String(shopLastBookingHour.value).padStart(2, '0')}:00 ใช่ไหม`
+  )
+  if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
@@ -881,6 +933,8 @@ async function saveBookingSlotHours() {
   message.value = ''
   errorMessage.value = ''
   const slot = normalizeBookingSlotHours(bookingSlotHours.value)
+  const ok = await confirmAdminSave('ยืนยันบันทึก', `ตั้งความยาวคิว ${slot} ชั่วโมง ใช่ไหม`)
+  if (!ok) return
   try {
     await api.patch('/api/admin/settings/booking-slot-hours', { slot_hours: slot })
     bookingSlotHours.value = slot
@@ -893,6 +947,11 @@ async function saveBookingSlotHours() {
 async function saveBookingDisplay() {
   message.value = ''
   errorMessage.value = ''
+  const modeLabel = bookingDisplayMode.value === 'slots_2h'
+    ? `ช่วงบล็อก (กระโดด ${bookingSlotHours.value} ชม.)`
+    : 'ปกติ (ทีละชม.)'
+  const ok = await confirmAdminSave('ยืนยันบันทึก', `ตั้งรูปแบบแสดงเวลาเป็น "${modeLabel}" ใช่ไหม`)
+  if (!ok) return
   try {
     await api.patch('/api/admin/settings/booking-display', {
       display_mode: bookingDisplayMode.value,
@@ -1024,6 +1083,11 @@ async function saveCouponSetting() {
     errorMessage.value = 'แต้มที่ใช้แลกต้องมากกว่า 0'
     return
   }
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึกคูปอง',
+    `ลด ${discount}% ใช้ ${points.toLocaleString('th-TH')} แต้ม ใช่ไหม`
+  )
+  if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
@@ -1055,6 +1119,8 @@ async function loadLinePushSetting() {
 }
 
 async function saveLinePushSetting() {
+  const ok = await confirmAdminSave('ยืนยันบันทึก LINE', 'บันทึกการตั้งค่าแจ้งเตือน LINE ใช่ไหม')
+  if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
@@ -1107,17 +1173,13 @@ async function saveUnpaidAutoCancelSetting() {
     return
   }
 
-  const ok = await Swal.fire({
-    title: 'ยืนยันบันทึกตั้งค่า',
-    html: unpaidAutoCancelEnabled.value
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึก',
+    unpaidAutoCancelEnabled.value
       ? `เปิดยกเลิกอัตโนมัติ — คิวรอชำระจะถูกยกเลิกหลัง <strong>${hours} ชม.</strong>`
-      : 'ปิดยกเลิกอัตโนมัติ — คิวรอชำระจะไม่ถูกยกเลิกเอง',
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonText: 'บันทึก',
-    cancelButtonText: 'ยกเลิก',
-  })
-  if (!ok.isConfirmed) return
+      : 'ปิดยกเลิกอัตโนมัติ — คิวรอชำระจะไม่ถูกยกเลิกเอง'
+  )
+  if (!ok) return
 
   message.value = ''
   errorMessage.value = ''
@@ -1137,15 +1199,11 @@ async function saveUnpaidAutoCancelSetting() {
 }
 
 async function saveDepositSetting() {
-  const ok = await Swal.fire({
-    title: 'ยืนยันบันทึกยอดมัดจำ',
-    text: `ตั้งยอดมัดจำเป็น ${depositAmount.value} บาท ใช่ไหม`,
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonText: 'บันทึก',
-    cancelButtonText: 'ยกเลิก',
-  })
-  if (!ok.isConfirmed) return
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึกยอดมัดจำ',
+    `ตั้งยอดมัดจำเป็น ${depositAmount.value} บาท ใช่ไหม`
+  )
+  if (!ok) return
 
   message.value = ''
   errorMessage.value = ''
@@ -2038,6 +2096,7 @@ function startEditLocation(item) {
     is_active: Boolean(item.is_active),
     sort_order: Number(item.sort_order) || 0,
   }
+  scrollToAdminSection('settings-locations', '.service-option-form input[type="text"]')
 }
 
 async function saveServiceLocation() {
@@ -2053,15 +2112,11 @@ async function saveServiceLocation() {
   }
 
   const isEdit = Boolean(locationForm.value.id)
-  const ok = await Swal.fire({
-    title: isEdit ? 'ยืนยันแก้ไขสถานที่' : 'ยืนยันเพิ่มสถานที่',
-    text: `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${name}" ใช่ไหม`,
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonText: 'บันทึก',
-    cancelButtonText: 'ยกเลิก',
-  })
-  if (!ok.isConfirmed) return
+  const ok = await confirmAdminSave(
+    isEdit ? 'ยืนยันแก้ไขสถานที่' : 'ยืนยันเพิ่มสถานที่',
+    `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${name}" ใช่ไหม`
+  )
+  if (!ok) return
 
   message.value = ''
   errorMessage.value = ''
@@ -3028,6 +3083,7 @@ watch(shopSlug, () => {
     </section>
 
     <section v-show="activeTab === 'settings'" class="card admin-section">
+      <div id="settings-deposit" class="admin-settings-section">
       <h3>ตั้งค่ายอดมัดจำ</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -3037,9 +3093,11 @@ watch(shopSlug, () => {
         <button class="btn primary admin-action-btn" @click="saveDepositSetting">บันทึกยอดมัดจำ</button>
       </div>
       <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-coupon" class="admin-settings-section">
       <h3>ตั้งค่าคูปองแลกแต้ม</h3>
       <p class="muted">ลูกค้าใช้แต้มแลกคูปองส่วนลด — ค่านี้แยกตามร้าน</p>
       <div class="admin-form-row" style="flex-wrap:wrap">
@@ -3059,9 +3117,11 @@ watch(shopSlug, () => {
         <i class="ti ti-ticket" style="font-size:16px;color:var(--color-primary)"></i>
         ลูกค้าจะเห็น: แลกคูปองลด <strong>{{ couponDiscountPercent }}%</strong> ใช้ <strong>{{ couponRequiredPoints.toLocaleString('th-TH') }}</strong> แต้ม
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-line" class="admin-settings-section">
       <h3>แจ้งเตือน LINE เมื่อมีคิวจอง</h3>
       <p class="muted">
         ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
@@ -3111,9 +3171,11 @@ watch(shopSlug, () => {
         <button type="button" class="btn primary admin-action-btn" @click="saveLinePushSetting">บันทึก LINE แจ้งเตือน</button>
         <button type="button" class="btn ghost admin-action-btn" @click="testLinePushSetting">ส่งทดสอบ</button>
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-unpaid" class="admin-settings-section">
       <h3>ยกเลิกคิวรอชำระอัตโนมัติ</h3>
       <p class="muted">
         คิวสถานะรอชำระเงินที่ไม่ชำระภายในเวลาที่กำหนดจะถูกยกเลิกเอง และช่วงเวลานั้นจะว่างให้จองใหม่
@@ -3146,9 +3208,11 @@ watch(shopSlug, () => {
         </template>
         <template v-else>ปิดอยู่ — คิวรอชำระจะไม่ถูกยกเลิกเอง</template>
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-shops" class="admin-settings-section">
       <h3>ร้าน / สาขา</h3>
       <p v-if="isSuperAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
       <p v-else class="muted">สาขาของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
@@ -3195,9 +3259,11 @@ watch(shopSlug, () => {
           เพิ่มร้าน
         </button>
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-shop-hours" class="admin-settings-section">
       <h3>เวลาเปิด-ปิดร้าน</h3>
       <p class="muted">กำหนดช่วงเวลาที่ลูกค้าสามารถเลือกจองได้ในหน้าจอง (ทุกคิวใช้เวลา 2 ชั่วโมง)</p>
       <div class="admin-form-row" style="flex-wrap:wrap">
@@ -3221,9 +3287,11 @@ watch(shopSlug, () => {
         <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
         (ปิดรับ {{ String(shopLastBookingHour + bookingSlotHours).padStart(2,'0') }}:00)
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-booking-display" class="admin-settings-section">
       <h3>รูปแบบแสดงเวลาหน้าจองลูกค้า</h3>
       <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจอง</p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-bottom:12px">
@@ -3267,9 +3335,11 @@ watch(shopSlug, () => {
         <i class="ti ti-layout-list" style="font-size:16px;color:var(--color-primary)"></i>
         ตัวอย่าง: {{ displaySlotPreview }}
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-locations" class="admin-settings-section">
       <h3>สถานที่ให้บริการ (ปุ่มลัด)</h3>
       <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเพิ่มบริการในแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำในรายการนี้</p>
 
@@ -3337,9 +3407,11 @@ watch(shopSlug, () => {
           <button type="button" class="btn danger" @click="removeServiceLocation(item)">ลบ</button>
         </div>
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-advance-days" class="admin-settings-section">
       <h3>จำนวนวันจองล่วงหน้า</h3>
       <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
       <div class="admin-form-row">
@@ -3354,9 +3426,11 @@ watch(shopSlug, () => {
         เปิดจองถึง <strong>{{ formatBookUntilLabel(bookUntilDate) }}</strong>
         <span v-if="bookUntilDate" class="muted">({{ advanceDays }} วัน นับจากวันที่กดบันทึกล่าสุด)</span>
       </div>
+      </div>
 
       <hr class="admin-divider" />
 
+      <div id="settings-use-coupon" class="admin-settings-section">
       <h3>ใช้คูปองลูกค้า</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -3365,9 +3439,10 @@ watch(shopSlug, () => {
         </label>
         <button class="btn primary admin-action-btn" @click="useCoupon">ยืนยันใช้คูปอง</button>
       </div>
+      </div>
     </section>
 
-    <section v-show="activeTab === 'ui'" class="card admin-section">
+    <section v-show="activeTab === 'ui'" id="settings-ui" class="card admin-section admin-settings-section">
       <h3>ตั้งค่า UI & ข้อความ</h3>
       <p class="muted">
         แก้ชื่อแบรนด์ รูปภาพ ข้อความแจ้งเตือน และสีธีมของร้าน <strong>/{{ shopSlug }}</strong>
@@ -3779,7 +3854,7 @@ watch(shopSlug, () => {
           <p v-if="shopEditItem" class="muted booking-edit-meta">/{{ shopEditItem.slug }}</p>
           <label class="booking-edit-field">
             ชื่อสาขา
-            <input v-model="shopEditName" class="admin-input" @input="shopEditError = ''" />
+            <input v-model="shopEditName" id="shop-edit-name-input" class="admin-input" @input="shopEditError = ''" />
           </label>
           <label class="admin-checkbox">
             <input v-model="shopEditActive" type="checkbox" />
@@ -5908,6 +5983,10 @@ watch(shopSlug, () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.admin-settings-section {
+  scroll-margin-top: 88px;
 }
 
 .admin-shop-list {
