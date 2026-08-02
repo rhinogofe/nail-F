@@ -48,6 +48,19 @@ function scrollToAdminSection(sectionId, focusSelector) {
   })
 }
 
+function focusAdminModal(modalId, focusSelector) {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const modal = document.getElementById(modalId)
+      modal?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (focusSelector) {
+        const el = modal?.querySelector(focusSelector)
+        el?.focus({ preventScroll: true })
+      }
+    })
+  })
+}
+
 function todayYmd() {
   const n = new Date()
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
@@ -635,6 +648,7 @@ function editUser(user) {
     : (user.admin_shop_slug || branchShopOptions.value[0]?.slug || 'default')
   userEditError.value = ''
   userEditOpen.value = true
+  focusAdminModal('admin-user-edit-modal', 'input[type="text"]:not([disabled])')
 }
 
 function closeUserEdit() {
@@ -1510,6 +1524,7 @@ async function editBooking(item) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
   } finally {
     bookingEditLoading.value = false
+    focusAdminModal('admin-booking-edit-modal', 'input[type="date"]')
   }
 }
 
@@ -1978,6 +1993,7 @@ function openEveryDayOptionForm() {
   resetOptionForm()
   message.value = ''
   errorMessage.value = ''
+  scrollToAdminSection('services-option-form-everyday', 'input[type="text"]')
 }
 
 function closeEveryDayForm() {
@@ -2197,6 +2213,7 @@ function startEditClip(item) {
     title: item.title || '',
     is_active: Boolean(item.is_active),
   }
+  scrollToAdminSection('reviews-clip-form', 'input[type="url"]')
 }
 
 async function saveShowcaseClip() {
@@ -2207,6 +2224,13 @@ async function saveShowcaseClip() {
   }
 
   const isEdit = Boolean(clipForm.value.id)
+  const label = String(clipForm.value.title || '').trim() || tiktok_url
+  const ok = await confirmAdminSave(
+    isEdit ? 'ยืนยันแก้ไขคลิป' : 'ยืนยันเพิ่มคลิป',
+    `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${label}" ใช่ไหม`
+  )
+  if (!ok) return
+
   message.value = ''
   errorMessage.value = ''
 
@@ -2340,6 +2364,10 @@ function startEditOption(item) {
     selectedServiceDate.value = from
     showEveryDayForm.value = false
   }
+  nextTick(() => {
+    const sectionId = showEveryDayForm.value ? 'services-option-form-everyday' : 'services-option-form-day'
+    scrollToAdminSection(sectionId, 'input[type="text"]')
+  })
 }
 
 async function saveNailOption() {
@@ -2350,18 +2378,6 @@ async function saveNailOption() {
   }
 
   const isEdit = Boolean(optionForm.value.id)
-  const ok = await Swal.fire({
-    title: isEdit ? 'ยืนยันแก้ไขบริการ' : 'ยืนยันเพิ่มบริการ',
-    text: `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${name}" ใช่ไหม`,
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonText: 'บันทึก',
-    cancelButtonText: 'ยกเลิก',
-  })
-  if (!ok.isConfirmed) return
-
-  message.value = ''
-  errorMessage.value = ''
   let showFrom = String(optionForm.value.show_from_date || '').trim()
   let showTo = String(optionForm.value.show_to_date || '').trim()
   if (!isEdit && selectedServiceDate.value) {
@@ -2379,6 +2395,15 @@ async function saveNailOption() {
     errorMessage.value = 'รูปแบบสีไม่ถูกต้อง ใช้ #RRGGBB'
     return
   }
+
+  const ok = await confirmAdminSave(
+    isEdit ? 'ยืนยันแก้ไขบริการ' : 'ยืนยันเพิ่มบริการ',
+    `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${name}" ใช่ไหม`
+  )
+  if (!ok) return
+
+  message.value = ''
+  errorMessage.value = ''
 
   const payload = {
     option_name: name,
@@ -2830,7 +2855,7 @@ watch(shopSlug, () => {
           </div>
           <p class="muted">บริการที่ไม่ผูกวันที่ จะแสดงให้ลูกค้าเลือกได้ทุกวันในปฏิทินจอง</p>
 
-          <div v-if="showEveryDayForm" class="service-option-form card-inner">
+          <div v-if="showEveryDayForm" id="services-option-form-everyday" class="service-option-form card-inner admin-settings-section">
             <h4>{{ optionForm.id ? 'แก้ไขบริการทุกวัน' : 'เพิ่มบริการทุกวัน' }}</h4>
             <div class="admin-form-grid admin-option-grid">
               <label>
@@ -2971,7 +2996,7 @@ watch(shopSlug, () => {
           </div>
         </div>
 
-        <div class="service-option-form card-inner">
+        <div id="services-option-form-day" class="service-option-form card-inner admin-settings-section">
           <h4>{{ optionForm.id ? 'แก้ไขบริการ' : 'เพิ่มบริการอื่น' }}</h4>
           <div class="admin-form-grid admin-option-grid">
             <label>
@@ -3710,6 +3735,7 @@ watch(shopSlug, () => {
         · Instagram: .../p/... หรือ .../reel/...
       </p>
 
+      <div id="reviews-clip-form" class="admin-settings-section">
       <div class="admin-form-row showcase-clip-form">
         <label class="admin-label-grow">
           ลิงก์ TikTok / Instagram
@@ -3745,6 +3771,7 @@ watch(shopSlug, () => {
         <button v-if="clipForm.id" type="button" class="btn" @click="resetClipForm">
           ยกเลิกแก้ไข
         </button>
+      </div>
       </div>
 
       <p v-if="showcaseClips.length === 0" class="muted" style="margin-top:14px">ยังไม่มีคลิป</p>
@@ -3930,7 +3957,7 @@ watch(shopSlug, () => {
         class="booking-edit-backdrop"
         @click.self="closeUserEdit"
       >
-        <div class="booking-edit-modal card" role="dialog" aria-labelledby="user-edit-title">
+        <div id="admin-user-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="user-edit-title">
           <div class="booking-edit-header">
             <h3 id="user-edit-title">แก้ไขข้อมูลผู้ใช้</h3>
             <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserEdit">
@@ -4185,7 +4212,7 @@ watch(shopSlug, () => {
         class="booking-edit-backdrop"
         @click.self="closeBookingEdit"
       >
-        <div class="booking-edit-modal card" role="dialog" aria-labelledby="booking-edit-title">
+        <div id="admin-booking-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="booking-edit-title">
           <div class="booking-edit-header">
             <h3 id="booking-edit-title">แก้ไขข้อมูลคิว</h3>
             <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingEdit">
