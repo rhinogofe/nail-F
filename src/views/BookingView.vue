@@ -15,8 +15,13 @@ import {
   toHourLabel,
 } from '../utils/bookingSlots'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
+import { useShopRoute } from '../composables/useShopRoute'
+import { useUiSettingsStore } from '../stores/uiSettings'
+import BrandMark from '../components/BrandMark.vue'
 
 const router = useRouter()
+const { shopPath } = useShopRoute()
+const ui = useUiSettingsStore()
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
 const unpaidCountdown = useUnpaidCountdown(() => ({
@@ -24,7 +29,7 @@ const unpaidCountdown = useUnpaidCountdown(() => ({
   expireHours: bookingStore.unpaidExpireHours,
 }))
 let expiryRefreshPending = false
-const { loadMyCoupons, redeemCoupon, showMyCoupons } = useCoupons()
+const { loadMyCoupons, redeemCoupon, showMyCoupons, couponSettings, canRedeem, loadCouponSettings } = useCoupons()
 
 const selectedDate = ref(toLocalYmd(new Date()))
 const busy = ref(false)
@@ -287,7 +292,7 @@ async function loadDate() {
       await refreshBlocksAndEnsureSelection(true)
       if (!isClosedDay(selectedDate.value)) { await loadDate(); return }
       bookingStore.bookingsByDate[selectedDate.value] = []
-      errorMessage.value = 'ช่วงนี้ร้านปิดรับคิวทั้งวัน กรุณาเลือกวันอื่น'
+      errorMessage.value = ui.get('ui_closed_day_error', 'ช่วงนี้ร้านปิดรับคิวทั้งวัน กรุณาเลือกวันอื่น')
     }
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดข้อมูลไม่สำเร็จ'
@@ -359,7 +364,7 @@ async function pollCurrentDate() {
 async function ensureSlotStillAvailable(hour) {
   await refreshSlotData()
   if (!canBook(hour)) {
-    serviceError.value = 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น'
+    serviceError.value = ui.get('ui_slot_taken_error', 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น')
     return false
   }
   return true
@@ -397,7 +402,7 @@ async function goToServiceStep() {
   try {
     if (!(await ensureSlotStillAvailable(hour))) return
     if (!nailOptions.value.length) {
-      serviceError.value = 'ไม่มีบริการให้เลือกในวันนี้'
+      serviceError.value = ui.get('ui_no_services_today', 'ไม่มีบริการให้เลือกในวันนี้')
       return
     }
     applyRequiredOptionDefaults()
@@ -439,15 +444,15 @@ async function submitBooking() {
     )
     closeBookSheet()
     await Swal.fire({
-      title: 'จองแล้ว รอชำระเงิน',
-      text: 'กรุณาโอนและส่งสลิปทาง LINE เพื่อรอแอดมินยืนยัน',
+      title: ui.get('ui_booking_success_title', 'จองแล้ว รอชำระเงิน'),
+      text: ui.get('ui_booking_success_text', 'กรุณาโอนและส่งสลิปทาง LINE เพื่อรอแอดมินยืนยัน'),
       icon: 'success',
-      confirmButtonText: 'ไปหน้าชำระเงิน',
+      confirmButtonText: ui.get('ui_booking_success_btn', 'ไปหน้าชำระเงิน'),
     })
-    router.push({ path: `/payment/${booking.id}`, query: { date: selectedDate.value, start: String(hour), end: String(hour+2) } })
+    router.push({ path: shopPath(`/payment/${booking.id}`), query: { date: selectedDate.value, start: String(hour), end: String(hour+2) } })
   } catch (error) {
     const msg = error?.response?.data?.error || 'จองคิวไม่สำเร็จ'
-    await Swal.fire({ title: 'จองไม่สำเร็จ', text: msg, icon: 'error' })
+    await Swal.fire({ title: ui.get('ui_booking_fail_title', 'จองไม่สำเร็จ'), text: msg, icon: 'error' })
     if (error?.response?.status === 409) await loadDate()
   } finally {
     busy.value = false
@@ -456,7 +461,8 @@ async function submitBooking() {
 
 async function cancel(bookingId) {
   const result = await Swal.fire({
-    title: 'ยืนยันการยกเลิก', text: 'ต้องการยกเลิกคิวนี้ใช่ไหม',
+    title: ui.get('ui_cancel_confirm_title', 'ยืนยันการยกเลิก'),
+    text: ui.get('ui_cancel_confirm_text', 'ต้องการยกเลิกคิวนี้ใช่ไหม'),
     icon: 'warning', showCancelButton: true,
     confirmButtonText: 'ยืนยันยกเลิก', cancelButtonText: 'ปิด',
   })
@@ -464,9 +470,9 @@ async function cancel(bookingId) {
   busy.value = true
   try {
     await bookingStore.cancelBooking(bookingId, selectedDate.value)
-    await Swal.fire({ title: 'ยกเลิกสำเร็จ', icon: 'success', timer: 1300, showConfirmButton: false })
+    await Swal.fire({ title: ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ'), icon: 'success', timer: 1300, showConfirmButton: false })
   } catch (error) {
-    await Swal.fire({ title: 'ยกเลิกไม่สำเร็จ', text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
+    await Swal.fire({ title: ui.get('ui_cancel_fail_title', 'ยกเลิกไม่สำเร็จ'), text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
   } finally {
     busy.value = false
   }
@@ -496,7 +502,7 @@ async function refreshBlocksAndEnsureSelection(ensureSelection = false) {
 
   const first = findFirstOpenDate(todayDate)
   if (!first) {
-    errorMessage.value = 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง'
+    errorMessage.value = ui.get('ui_no_open_days', 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง')
     return
   }
   const picked = parseYmdLocal(selectedDate.value)
@@ -517,7 +523,7 @@ async function nextWeek() {
 }
 
 function goToPayment(booking) {
-  router.push({ path: `/payment/${booking.id}`, query: { date: selectedDate.value, start: String(booking.start_hour), end: String(booking.end_hour ?? Number(booking.start_hour) + 2) } })
+  router.push({ path: shopPath(`/payment/${booking.id}`), query: { date: selectedDate.value, start: String(booking.start_hour), end: String(booking.end_hour ?? Number(booking.start_hour) + 2) } })
 }
 
 const initials = computed(() => {
@@ -536,7 +542,7 @@ const pointsLabel = computed(() => {
   if (n >= 10_000) return `${Math.round(n / 1_000)}k แต้ม`
   return `${n.toLocaleString('th-TH')} แต้ม`
 })
-const canRedeemCoupon = computed(() => totalPoints.value >= 100)
+const canRedeemCoupon = canRedeem
 
 watch(unpaidCountdown.nowMs, () => {
   if (!bookingStore.unpaidAutoCancelEnabled || busy.value || expiryRefreshPending) return
@@ -557,7 +563,7 @@ onMounted(async () => {
   await bookingStore.fetchBookingSettings()
   await bookingStore.fetchAllNailOptions()
   await refreshBlocksAndEnsureSelection(true)
-  await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons()])
+  await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons(), loadCouponSettings()])
   await nextTick()
   updateStripScroll()
   scrollActiveDayIntoView('auto')
@@ -576,10 +582,7 @@ onUnmounted(() => {
     <!-- ── HEADER ── -->
     <header class="hdr">
       <div class="hdr-top">
-        <div class="brand">
-          Nail<span class="brand-accent">Thuean</span>
-          <i class="ti ti-sparkles brand-icon-sm" aria-hidden="true"></i>
-        </div>
+        <BrandMark show-sparkle />
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
 
@@ -594,7 +597,7 @@ onUnmounted(() => {
         </button>
       </div>
       <p v-if="canGoNext" class="date-nav-hint">
-        ลากเลื่อนหรือกด <i class="ti ti-chevron-right" aria-hidden="true"></i> เพื่อดูวันถัดไป
+        {{ ui.get('ui_date_nav_hint', 'ลากเลื่อนหรือกด … เพื่อดูวันถัดไป') }}
       </p>
 
       <div class="date-nav">
@@ -641,7 +644,7 @@ onUnmounted(() => {
       </div>
 
       <p v-if="stripDays.length === 0" class="strip-hint">
-        ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง
+        {{ ui.get('ui_no_open_days', 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง') }}
       </p>
     </header>
 
@@ -769,7 +772,7 @@ onUnmounted(() => {
 
             <div class="points-banner">
               <i class="ti ti-star points-ic" aria-hidden="true"></i>
-              <span>เมื่อช่างทำเสร็จ คุณจะได้รับ <strong>+10 แต้ม</strong></span>
+              <span v-html="ui.get('ui_points_banner', 'เมื่อช่างทำเสร็จ คุณจะได้รับ <strong>+10 แต้ม</strong>')"></span>
             </div>
 
             <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>

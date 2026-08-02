@@ -5,10 +5,15 @@ import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
 import { useCoupons } from '../composables/useCoupons'
+import { useShopRoute } from '../composables/useShopRoute'
+import { useUiSettingsStore } from '../stores/uiSettings'
+import BrandMark from '../components/BrandMark.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
-const { showMyCoupons, loadMyCoupons, redeemCoupon, myCoupons } = useCoupons()
+const { shopPath } = useShopRoute()
+const ui = useUiSettingsStore()
+const { showMyCoupons, loadMyCoupons, redeemCoupon, myCoupons, couponSettings, canRedeem, loadCouponSettings } = useCoupons()
 
 const profileName = ref('')
 const profilePhone = ref('')
@@ -38,7 +43,7 @@ const initials = computed(() => {
 })
 
 const totalPoints = computed(() => auth.user?.total_points || 0)
-const canRedeemCoupon = computed(() => totalPoints.value >= 100)
+const canRedeemCoupon = canRedeem
 
 function formatDateLabel(iso) {
   if (!iso) return '-'
@@ -137,7 +142,7 @@ async function saveProfile() {
 
 function logout() {
   auth.logout()
-  router.push('/login')
+  router.push(shopPath('/login'))
 }
 
 watch(
@@ -151,6 +156,7 @@ onMounted(async () => {
     auth.fetchMe().catch(() => null),
     loadHistory(),
     loadMyCoupons(),
+    loadCouponSettings(),
   ])
   syncFormFromUser()
 })
@@ -160,13 +166,11 @@ onMounted(async () => {
   <div class="page">
     <header class="hdr">
       <div class="hdr-top">
-        <div class="brand">
-          Nail<span class="brand-accent">Thuean</span>
-        </div>
+        <BrandMark />
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
-      <h1 class="page-title">บัญชีของฉัน</h1>
-      <p class="page-sub">แก้ไขข้อมูลและดูประวัติการจอง</p>
+      <h1 class="page-title">{{ ui.get('ui_profile_title', 'บัญชีของฉัน') }}</h1>
+      <p class="page-sub">{{ ui.get('ui_profile_subtitle', 'แก้ไขข้อมูลและดูประวัติการจอง') }}</p>
     </header>
 
     <main class="content">
@@ -231,7 +235,7 @@ onMounted(async () => {
       <section class="card coupon-card">
         <h2 class="section-title">คูปอง</h2>
         <p class="coupon-hint">
-          แลกคูปองลด 20% ใช้ 100 แต้ม · คุณมี {{ totalPoints.toLocaleString('th-TH') }} แต้ม
+          แลกคูปองลด {{ couponSettings.discountPercent }}% ใช้ {{ couponSettings.requiredPoints.toLocaleString('th-TH') }} แต้ม · คุณมี {{ totalPoints.toLocaleString('th-TH') }} แต้ม
         </p>
         <div class="coupon-actions">
           <button type="button" class="btn-coupon" @click="showMyCoupons">

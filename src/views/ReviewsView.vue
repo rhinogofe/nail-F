@@ -3,9 +3,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
+import BrandMark from '../components/BrandMark.vue'
+import { useUiSettingsStore } from '../stores/uiSettings'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
 const auth = useAuthStore()
+const ui = useUiSettingsStore()
 
 const clips = ref([])
 const failedThumbs = ref(new Set())
@@ -122,11 +125,9 @@ onUnmounted(() => lockBodyScroll(false))
     <header class="hdr">
       <div class="hdr-top">
         <div class="hdr-title-wrap">
-          <div class="brand">
-            Nail<span class="brand-accent">Thuean</span>
-          </div>
-          <h1 class="page-title">รีวิว</h1>
-          <p class="page-sub">ผลงานจาก TikTok และ Instagram</p>
+          <BrandMark />
+          <h1 class="page-title">{{ ui.get('ui_reviews_title', 'รีวิว') }}</h1>
+          <p class="page-sub">{{ ui.get('ui_reviews_subtitle', 'ผลงานจาก TikTok และ Instagram') }}</p>
         </div>
         <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
       </div>
@@ -138,8 +139,8 @@ onUnmounted(() => lockBodyScroll(false))
 
       <div v-else-if="clips.length === 0" class="empty card">
         <i class="ti ti-video-off empty-icon" aria-hidden="true"></i>
-        <p>ยังไม่มีคลิปรีวิว</p>
-        <p class="muted">รอแอดมินเพิ่มลิงก์ TikTok หรือ Instagram</p>
+        <p>{{ ui.get('ui_reviews_empty', 'ยังไม่มีคลิปรีวิว') }}</p>
+        <p class="muted">{{ ui.get('ui_reviews_empty_hint', 'รอแอดมินเพิ่มลิงก์ TikTok หรือ Instagram') }}</p>
       </div>
 
       <div v-else class="clip-grid" aria-label="คลิปรีวิว">

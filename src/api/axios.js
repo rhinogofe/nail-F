@@ -9,6 +9,10 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  const shopSlug = localStorage.getItem('shopSlug')
+  if (shopSlug) {
+    config.headers['X-Shop-Slug'] = shopSlug
+  }
   return config
 })
 

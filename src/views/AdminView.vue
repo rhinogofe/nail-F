@@ -1,15 +1,22 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useShopRoute } from '../composables/useShopRoute'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
+import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 import { buildBookingHourSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
+import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
+import { useUiSettingsStore } from '../stores/uiSettings'
 
 const router = useRouter()
+const { shopPath, shopSlug } = useShopRoute()
 const auth = useAuthStore()
+const shopStore = useShopStore()
+const uiSettingsStore = useUiSettingsStore()
 
 function todayYmd() {
   const n = new Date()
@@ -76,6 +83,20 @@ const bulkBlockNote = ref('')
 const bulkStartDate = ref(todayYmd())
 const bulkDays = ref(7)
 const depositAmount = ref(300)
+const couponDiscountPercent = ref(20)
+const couponRequiredPoints = ref(100)
+const linePushEnabled = ref(false)
+const linePushToId = ref('')
+const lineChannelToken = ref('')
+const lineNotifyTemplate = ref('')
+const lineTokenConfigured = ref(false)
+const lineTokenMasked = ref('')
+const lineTokenFromEnv = ref(false)
+const lineWebhookUrlHint = computed(() => {
+  const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
+  return `${base}/api/line/webhook`
+})
+const isDefaultShopAdmin = computed(() => shopSlug.value === 'default')
 const unpaidAutoCancelEnabled = ref(true)
 const unpaidExpireHours = ref(24)
 const useCouponCode = ref('')
@@ -228,12 +249,18 @@ const adminTabs = [
   { key: 'revenue', label: 'สรุปยอด', icon: 'ti-report-money' },
   { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
   { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
+  { key: 'ui', label: 'UI', icon: 'ti-palette' },
   { key: 'blocks', label: 'ปิดร้าน', icon: 'ti-calendar-off' },
   { key: 'reviews', label: 'รีวิว', icon: 'ti-star' },
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
 
 // ── Shop hours ─────────────────────────────
+const allShops = ref([])
+const newShopName = ref('')
+const newShopSlug = ref('')
+const uiForm = ref({})
+const uiFieldGroups = UI_FIELD_GROUPS
 const shopOpenHour = ref(9)
 const shopLastBookingHour = ref(18)
 const hourOptions = Array.from({ length: 23 }, (_, i) => i)
@@ -273,6 +300,67 @@ async function saveAdvanceDays() {
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
   }
+}
+
+async function loadAllShops() {
+  try {
+    const { data } = await api.get('/api/admin/shops')
+    allShops.value = data || []
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดรายการร้านไม่สำเร็จ'
+  }
+}
+
+async function createShop() {
+  message.value = ''
+  errorMessage.value = ''
+  const name = newShopName.value.trim()
+  const slug = newShopSlug.value.trim().toLowerCase()
+  if (!name || !slug) {
+    errorMessage.value = 'กรุณากรอกชื่อและ slug ร้าน'
+    return
+  }
+  try {
+    await api.post('/api/shops', { name, slug })
+    newShopName.value = ''
+    newShopSlug.value = ''
+    message.value = `สร้างร้าน ${name} แล้ว — URL: /${slug}/bookings`
+    await loadAllShops()
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'สร้างร้านไม่สำเร็จ'
+  }
+}
+
+function switchShopAdmin(slug) {
+  if (slug === shopSlug.value) return
+  router.push(`/${slug}/admin`)
+}
+
+async function loadUiSettingsAdmin() {
+  try {
+    const { data } = await api.get('/api/admin/settings/ui')
+    uiForm.value = { ...(data || {}) }
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดตั้งค่า UI ไม่สำเร็จ'
+  }
+}
+
+async function saveUiSettingsAdmin() {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/ui', uiForm.value)
+    uiForm.value = { ...(data.settings || {}) }
+    uiSettingsStore.applyLocal(data.settings || uiForm.value)
+    message.value = 'บันทึกการตั้งค่า UI แล้ว'
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึก UI ไม่สำเร็จ'
+  }
+}
+
+function uiPreviewUrl(key) {
+  const url = String(uiForm.value[key] || '').trim()
+  return url || ''
 }
 
 async function loadShopHours() {
@@ -779,6 +867,93 @@ async function loadDepositSetting() {
     depositAmount.value = Number(data?.deposit_amount || 300)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดค่ายอดมัดจำไม่สำเร็จ'
+  }
+}
+
+async function loadCouponSetting() {
+  try {
+    const { data } = await api.get('/api/admin/settings/coupon')
+    couponDiscountPercent.value = Number(data?.discount_percent) || 20
+    couponRequiredPoints.value = Number(data?.required_points) || 100
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าคูปองไม่สำเร็จ'
+  }
+}
+
+async function saveCouponSetting() {
+  const discount = Number(couponDiscountPercent.value)
+  const points = Number(couponRequiredPoints.value)
+  if (!Number.isInteger(discount) || discount < 1 || discount > 100) {
+    errorMessage.value = 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
+    return
+  }
+  if (!Number.isInteger(points) || points < 1) {
+    errorMessage.value = 'แต้มที่ใช้แลกต้องมากกว่า 0'
+    return
+  }
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/coupon', {
+      discount_percent: discount,
+      required_points: points,
+    })
+    couponDiscountPercent.value = Number(data.discount_percent) || discount
+    couponRequiredPoints.value = Number(data.required_points) || points
+    message.value = `บันทึกคูปองแล้ว: ลด ${couponDiscountPercent.value}% ใช้ ${couponRequiredPoints.value} แต้ม`
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกตั้งค่าคูปองไม่สำเร็จ'
+  }
+}
+
+async function loadLinePushSetting() {
+  try {
+    const { data } = await api.get('/api/admin/settings/line-push')
+    linePushEnabled.value = data.enabled !== false
+    linePushToId.value = data.push_to_id || ''
+    lineTokenConfigured.value = Boolean(data.token_configured)
+    lineTokenMasked.value = data.token_masked || ''
+    lineTokenFromEnv.value = Boolean(data.token_from_env)
+    lineNotifyTemplate.value = data.notify_template || data.default_template || ''
+    lineChannelToken.value = ''
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่า LINE แจ้งเตือนไม่สำเร็จ'
+  }
+}
+
+async function saveLinePushSetting() {
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const payload = {
+      enabled: linePushEnabled.value,
+      push_to_id: linePushToId.value.trim(),
+      notify_template: lineNotifyTemplate.value,
+    }
+    if (!lineTokenFromEnv.value && lineChannelToken.value.trim()) {
+      payload.channel_access_token = lineChannelToken.value.trim()
+    }
+    const { data } = await api.patch('/api/admin/settings/line-push', payload)
+    linePushEnabled.value = data.enabled !== false
+    linePushToId.value = data.push_to_id || ''
+    lineTokenConfigured.value = Boolean(data.token_configured)
+    lineTokenMasked.value = data.token_masked || ''
+    lineTokenFromEnv.value = Boolean(data.token_from_env)
+    lineNotifyTemplate.value = data.notify_template || lineNotifyTemplate.value
+    lineChannelToken.value = ''
+    message.value = 'บันทึกการแจ้งเตือน LINE แล้ว'
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึก LINE แจ้งเตือนไม่สำเร็จ'
+  }
+}
+
+async function testLinePushSetting() {
+  errorMessage.value = ''
+  try {
+    const { data } = await api.post('/api/admin/settings/line-push/test')
+    message.value = data.message || 'ส่งข้อความทดสอบแล้ว'
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ส่งทดสอบ LINE ไม่สำเร็จ'
   }
 }
 
@@ -2085,12 +2260,16 @@ function statusLabel(s) {
 }
 
 function backToBooking() {
-  router.push('/bookings')
+  router.push(shopPath('/bookings'))
 }
 
+onMounted(loadUiSettingsAdmin)
+onMounted(loadAllShops)
 onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
+onMounted(loadCouponSetting)
+onMounted(loadLinePushSetting)
 onMounted(loadUnpaidAutoCancelSetting)
 onMounted(loadNailOptions)
 onMounted(loadServiceLocations)
@@ -2099,6 +2278,12 @@ onMounted(loadAdvanceDays)
 onMounted(loadBookingDisplay)
 onMounted(loadUsers)
 onMounted(loadShowcaseClips)
+
+watch(shopSlug, () => {
+  loadUiSettingsAdmin()
+  loadCouponSetting()
+  loadLinePushSetting()
+})
 </script>
 
 <template>
@@ -2106,7 +2291,7 @@ onMounted(loadShowcaseClips)
     <header class="admin-top-bar">
       <div>
         <h2 class="admin-title">แอดมิน</h2>
-        <p class="muted admin-sub">{{ auth.user?.name || '-' }}</p>
+        <p class="muted admin-sub">{{ shopStore.shopName || shopSlug }} · {{ auth.user?.name || '-' }}</p>
       </div>
       <button type="button" class="btn admin-back-btn" @click="backToBooking">
         <i class="ti ti-arrow-left" aria-hidden="true"></i>
@@ -2721,6 +2906,80 @@ onMounted(loadShowcaseClips)
 
       <hr class="admin-divider" />
 
+      <h3>ตั้งค่าคูปองแลกแต้ม</h3>
+      <p class="muted">ลูกค้าใช้แต้มแลกคูปองส่วนลด — ค่านี้แยกตามร้าน</p>
+      <div class="admin-form-row" style="flex-wrap:wrap">
+        <label class="admin-label-grow">
+          ส่วนลด (%)
+          <input v-model.number="couponDiscountPercent" type="number" min="1" max="100" step="1" class="admin-input" />
+        </label>
+        <label class="admin-label-grow">
+          แต้มที่ใช้แลก
+          <input v-model.number="couponRequiredPoints" type="number" min="1" step="1" class="admin-input" />
+        </label>
+        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveCouponSetting">
+          บันทึกคูปอง
+        </button>
+      </div>
+      <div class="shop-hours-preview">
+        <i class="ti ti-ticket" style="font-size:16px;color:var(--color-primary)"></i>
+        ลูกค้าจะเห็น: แลกคูปองลด <strong>{{ couponDiscountPercent }}%</strong> ใช้ <strong>{{ couponRequiredPoints.toLocaleString('th-TH') }}</strong> แต้ม
+      </div>
+
+      <hr class="admin-divider" />
+
+      <h3>แจ้งเตือน LINE เมื่อมีคิวจอง</h3>
+      <p class="muted">
+        ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
+        <code>{{ lineWebhookUrlHint }}</code>
+        แล้วให้ร้านทักบอท slug ร้านเพื่อผูกรับแจ้งเตือนอัตโนมัติ
+      </p>
+      <div class="shop-hours-preview" style="margin-bottom:12px">
+        <i class="ti ti-link" style="font-size:16px;color:var(--color-primary)"></i>
+        slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
+      </div>
+      <label class="admin-checkbox admin-label-grow" style="margin-bottom:12px">
+        <input v-model="linePushEnabled" type="checkbox" />
+        เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว
+      </label>
+      <div class="admin-form-grid admin-option-grid">
+        <div v-if="lineTokenFromEnv" class="shop-hours-preview" style="grid-column:1/-1">
+          <i class="ti ti-robot" style="font-size:16px;color:var(--color-primary)"></i>
+          บอทกลาง — Token ตั้งบน server แล้ว (<code>{{ lineTokenMasked }}</code>) ไม่ต้องใส่ในแอดมิน
+        </div>
+        <label v-else>
+          Channel Access Token
+          <input
+            v-model="lineChannelToken"
+            type="password"
+            class="admin-input"
+            :placeholder="lineTokenConfigured ? `ตั้งแล้ว (${lineTokenMasked}) — ใส่ใหม่เพื่อเปลี่ยน` : 'ใส่ Channel Access Token'"
+            autocomplete="off"
+          />
+        </label>
+        <label>
+          User ID / Group ID รับแจ้งเตือน
+          <input v-model="linePushToId" type="text" class="admin-input" placeholder="Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอท slug ร้านเพื่อผูกอัตโนมัติ" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งเตือน (template)
+          <textarea v-model="lineNotifyTemplate" class="admin-input" rows="7" />
+        </label>
+      </div>
+      <p class="muted" style="margin-top:8px">
+        ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code>
+      </p>
+      <p v-if="!lineTokenFromEnv" class="muted" style="margin-top:8px">
+        หลังร้านทักบอท slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · หรือตั้ง
+        <code>LINE_BOT_CHANNEL_ACCESS_TOKEN</code> บน Render ครั้งเดียวใช้ทุกร้าน
+      </p>
+      <div class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
+        <button type="button" class="btn primary admin-action-btn" @click="saveLinePushSetting">บันทึก LINE แจ้งเตือน</button>
+        <button type="button" class="btn ghost admin-action-btn" @click="testLinePushSetting">ส่งทดสอบ</button>
+      </div>
+
+      <hr class="admin-divider" />
+
       <h3>ยกเลิกคิวรอชำระอัตโนมัติ</h3>
       <p class="muted">
         คิวสถานะรอชำระเงินที่ไม่ชำระภายในเวลาที่กำหนดจะถูกยกเลิกเอง และช่วงเวลานั้นจะว่างให้จองใหม่
@@ -2752,6 +3011,43 @@ onMounted(loadShowcaseClips)
           นับจากเวลาจอง
         </template>
         <template v-else>ปิดอยู่ — คิวรอชำระจะไม่ถูกยกเลิกเอง</template>
+      </div>
+
+      <hr class="admin-divider" />
+
+      <h3>ร้าน / สาขา</h3>
+      <p v-if="isDefaultShopAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
+      <p v-else class="muted">ร้านของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
+      <ul v-if="allShops.length" class="admin-shop-list">
+        <li v-for="shop in allShops" :key="shop.id">
+          <button
+            v-if="isDefaultShopAdmin"
+            type="button"
+            class="admin-shop-item"
+            :class="{ active: shop.slug === shopSlug }"
+            @click="switchShopAdmin(shop.slug)"
+          >
+            <span>{{ shop.name }}</span>
+            <span class="muted">/{{ shop.slug }}</span>
+          </button>
+          <div v-else class="admin-shop-item active">
+            <span>{{ shop.name }}</span>
+            <span class="muted">/{{ shop.slug }}</span>
+          </div>
+        </li>
+      </ul>
+      <div v-if="isDefaultShopAdmin" class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
+        <label class="admin-label-grow">
+          ชื่อร้านใหม่
+          <input v-model="newShopName" class="admin-input" placeholder="เช่น Nail จุฬา" />
+        </label>
+        <label class="admin-label-grow">
+          slug (URL)
+          <input v-model="newShopSlug" class="admin-input" placeholder="เช่น chula" />
+        </label>
+        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="createShop">
+          เพิ่มร้าน
+        </button>
       </div>
 
       <hr class="admin-divider" />
@@ -2908,6 +3204,62 @@ onMounted(loadShowcaseClips)
           <input v-model="useCouponCode" type="text" maxlength="10" placeholder="กรอกรหัสคูปอง" class="admin-input" />
         </label>
         <button class="btn primary admin-action-btn" @click="useCoupon">ยืนยันใช้คูปอง</button>
+      </div>
+    </section>
+
+    <section v-show="activeTab === 'ui'" class="card admin-section">
+      <h3>ตั้งค่า UI & ข้อความ</h3>
+      <p class="muted">
+        แก้ชื่อแบรนด์ รูปภาพ ข้อความแจ้งเตือน และสีธีมของร้าน <strong>/{{ shopSlug }}</strong>
+        · ใช้ <code>{hours}</code> <code>{bookingId}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{amount}</code> ในข้อความ template ได้
+      </p>
+
+      <div v-for="group in uiFieldGroups" :key="group.title" class="ui-settings-group">
+        <h4 class="ui-settings-group-title">{{ group.title }}</h4>
+        <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
+        <div class="admin-form-grid admin-option-grid">
+          <label v-for="field in group.fields" :key="field.key" class="ui-field-label">
+            {{ field.label }}
+            <textarea
+              v-if="field.multiline"
+              v-model="uiForm[field.key]"
+              class="admin-input"
+              :rows="field.rows || 3"
+              :placeholder="field.placeholder || ''"
+            />
+            <input
+              v-else-if="field.type === 'color'"
+              v-model="uiForm[field.key]"
+              type="color"
+              class="admin-color-input ui-color-input"
+            />
+            <input
+              v-else
+              v-model="uiForm[field.key]"
+              type="text"
+              class="admin-input"
+              :placeholder="field.placeholder || ''"
+            />
+            <img
+              v-if="field.key === 'ui_logo_url' && uiPreviewUrl('ui_logo_url')"
+              :src="uiPreviewUrl('ui_logo_url')"
+              alt="preview logo"
+              class="ui-image-preview"
+            />
+            <img
+              v-if="field.key === 'ui_hero_image_url' && uiPreviewUrl('ui_hero_image_url')"
+              :src="uiPreviewUrl('ui_hero_image_url')"
+              alt="preview hero"
+              class="ui-image-preview ui-image-preview--wide"
+            />
+          </label>
+        </div>
+        <hr class="admin-divider" />
+      </div>
+
+      <div class="ui-settings-actions">
+        <button type="button" class="btn primary admin-action-btn" @click="saveUiSettingsAdmin">บันทึก UI ทั้งหมด</button>
+        <button type="button" class="btn ghost admin-action-btn" @click="loadUiSettingsAdmin">โหลดใหม่</button>
       </div>
     </section>
 
@@ -5345,6 +5697,77 @@ onMounted(loadShowcaseClips)
 .booking-edit-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-shop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-shop-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.admin-shop-item.active {
+  border-color: var(--color-primary, #c4847a);
+  background: #fdf2f8;
+}
+
+.ui-settings-group-title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.ui-settings-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.ui-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-color-input {
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+}
+
+.ui-image-preview {
+  max-width: 80px;
+  max-height: 80px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--color-border, #e2e8f0);
+}
+
+.ui-image-preview--wide {
+  max-width: 100%;
+  max-height: 120px;
+}
+
+.ui-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 </style>

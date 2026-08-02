@@ -2,19 +2,33 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useShopStore } from '../stores/shop'
+import { useUiSettingsStore } from '../stores/uiSettings'
+import BrandMark from '../components/BrandMark.vue'
 import api from '../api/axios'
-import shopLogo from '../assets/S__22888451.jpg'
-import shopHero from '../assets/S__22888451.jpg'
+import defaultShopImage from '../assets/S__22888451.jpg'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const shopStore = useShopStore()
+const ui = useUiSettingsStore()
 const name = ref('')
 const phone = ref('')
 const submitting = ref(false)
 const errorMessage = ref('')
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+
+const shopSlug = computed(() => route.params.shopSlug || shopStore.slug || 'default')
+const logoSrc = computed(() => ui.logoUrl || defaultShopImage)
+const heroSrc = computed(() => ui.heroImageUrl || defaultShopImage)
+const displayName = computed(() => {
+  const main = ui.brandMain
+  const accent = ui.brandAccent
+  if (accent) return `${main}${accent}`
+  return shopStore.shopName || main
+})
 
 const providers = [
   { key: 'line', label: 'เข้าสู่ระบบด้วย LINE', icon: 'L' },
@@ -24,9 +38,17 @@ const providers = [
 const loginLinks = computed(() =>
   providers.map((provider) => ({
     ...provider,
-    href: `${apiBase}/api/auth/${provider.key}`,
+    href: `${apiBase}/api/auth/${provider.key}?state=${encodeURIComponent(shopSlug.value)}`,
   })),
 )
+
+function bookingsPath() {
+  return `/${shopSlug.value}/bookings`
+}
+
+function loginPath() {
+  return `/${shopSlug.value}/login`
+}
 
 onMounted(async () => {
   const token = route.query.token
@@ -34,9 +56,9 @@ onMounted(async () => {
     auth.setToken(token)
     try {
       await auth.fetchMe()
-      router.replace('/bookings')
+      router.replace(bookingsPath())
     } catch {
-      router.replace('/login')
+      router.replace(loginPath())
     }
   }
 })
@@ -58,7 +80,7 @@ async function loginWithPhone() {
     const { data } = await api.post('/api/auth/phone-login', payload)
     auth.setToken(data.token)
     await auth.fetchMe()
-    router.replace('/bookings')
+    router.replace(bookingsPath())
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'เข้าสู่ระบบไม่สำเร็จ'
   } finally {
@@ -71,16 +93,16 @@ async function loginWithPhone() {
   <main class="login-page center">
     <section class="card login-card login-pretty">
       <div class="login-hero-wrap">
-        <img :src="shopHero" alt="Nail studio cover" class="login-hero-image" />
+        <img :src="heroSrc" alt="Nail studio cover" class="login-hero-image" />
       </div>
       <div class="login-body">
         <div class="brand-row">
           <div class="brand-icon">
-            <img :src="shopLogo" alt="Nail shop logo" class="brand-logo-image" />
+            <img :src="logoSrc" alt="Shop logo" class="brand-logo-image" />
           </div>
           <div>
-            <h1 class="login-brand-title">Nail Thuean</h1>
-            <p class="login-tagline">จองคิวง่าย · สะสมแต้ม</p>
+            <h1 class="login-brand-title">{{ displayName }}</h1>
+            <p class="login-tagline">{{ ui.tagline }}</p>
           </div>
         </div>
 

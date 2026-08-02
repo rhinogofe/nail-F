@@ -1,5 +1,6 @@
 <script setup>
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 defineProps({
@@ -9,8 +10,15 @@ defineProps({
   },
 })
 
+const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+
+const shopSlug = computed(() => route.params.shopSlug || localStorage.getItem('shopSlug') || 'default')
+
+function go(path) {
+  router.push(`/${shopSlug.value}${path}`)
+}
 </script>
 
 <template>
@@ -20,7 +28,7 @@ const auth = useAuthStore()
       class="nav-item"
       :class="{ active: active === 'bookings' }"
       :aria-current="active === 'bookings' ? 'page' : undefined"
-      @click="router.push('/bookings')"
+      @click="go('/bookings')"
     >
       <span v-if="active === 'bookings'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-calendar" aria-hidden="true"></i>
@@ -31,7 +39,7 @@ const auth = useAuthStore()
       class="nav-item"
       :class="{ active: active === 'reviews' }"
       :aria-current="active === 'reviews' ? 'page' : undefined"
-      @click="router.push('/reviews')"
+      @click="go('/reviews')"
     >
       <span v-if="active === 'reviews'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-star" aria-hidden="true"></i>
@@ -42,7 +50,7 @@ const auth = useAuthStore()
       class="nav-item"
       :class="{ active: active === 'profile' }"
       :aria-current="active === 'profile' ? 'page' : undefined"
-      @click="router.push('/profile')"
+      @click="go('/profile')"
     >
       <span v-if="active === 'profile'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-user" aria-hidden="true"></i>
@@ -54,7 +62,7 @@ const auth = useAuthStore()
       class="nav-item"
       :class="{ active: active === 'admin' }"
       :aria-current="active === 'admin' ? 'page' : undefined"
-      @click="router.push('/admin')"
+      @click="go('/admin')"
     >
       <span v-if="active === 'admin'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-shield" aria-hidden="true"></i>

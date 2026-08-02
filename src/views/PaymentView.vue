@@ -5,22 +5,31 @@ import api from '../api/axios'
 import QRCode from 'qrcode'
 import generatePayload from 'promptpay-qr'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
+import { useShopRoute } from '../composables/useShopRoute'
+import { useUiSettingsStore } from '../stores/uiSettings'
+import { formatUiText } from '../utils/formatUiText'
 
 const route = useRoute()
 const router = useRouter()
+const { shopPath } = useShopRoute()
+const ui = useUiSettingsStore()
 
 const bookingId = computed(() => route.params.bookingId)
 const bookingDate = computed(() => route.query.date || '-')
 const startHour = computed(() => route.query.start || '-')
 const endHour = computed(() => route.query.end || '-')
 
-const lineChatUrl = import.meta.env.VITE_LINE_CHAT_URL || 'https://line.me'
-const bankName = import.meta.env.VITE_BANK_NAME || 'ธนาคารกสิกรไทย'
-const bankAccountName = import.meta.env.VITE_BANK_ACCOUNT_NAME || 'Nail Studio'
-const bankAccountNo = import.meta.env.VITE_BANK_ACCOUNT_NO || 'xxx-x-xxxxx-x'
-const depositAmount = ref(Number(import.meta.env.VITE_DEPOSIT_AMOUNT || 300))
-const promptpayId = import.meta.env.VITE_PROMPTPAY_ID || ''
-const thaiQrLabel = import.meta.env.VITE_THAI_QR_LABEL || 'สแกน Thai QR เพื่อชำระมัดจำ'
+const lineChatUrl = computed(() => ui.get('ui_line_chat_url', 'https://line.me'))
+const bankName = computed(() => ui.get('ui_bank_name', 'ธนาคารกสิกรไทย'))
+const bankAccountName = computed(() => ui.get('ui_bank_account_name', 'Nail Studio'))
+const bankAccountNo = computed(() => ui.get('ui_bank_account_no', ''))
+const depositAmount = ref(300)
+const promptpayId = computed(() => ui.get('ui_promptpay_id', ''))
+const thaiQrLabel = computed(() => ui.get('ui_thai_qr_label', 'สแกน Thai QR เพื่อชำระมัดจำ'))
+const paymentPageTitle = computed(() => ui.get('ui_payment_page_title', 'ชำระเงินมัดจำ'))
+const lineButtonLabel = computed(() => ui.get('ui_line_button_label', 'ส่งสลิปทาง LINE'))
+const paymentHint = computed(() => ui.get('ui_payment_hint', ''))
+const copyAccountHint = computed(() => ui.get('ui_copy_account_hint', 'แตะเพื่อคัดลอก'))
 const qrCodeImage = ref('')
 const qrError = ref('')
 const copyHint = ref('')
@@ -49,29 +58,36 @@ const countdownText = computed(() => {
 
 const paymentNoticeText = computed(() => {
   if (!unpaidSettings.value.enabled) {
-    return 'กรุณาชำระมัดจำและส่งสลิปให้แอดมินยืนยัน'
+    return ui.get('ui_payment_notice_off', 'กรุณาชำระมัดจำและส่งสลิปให้แอดมินยืนยัน')
   }
-  return `กรุณาชำระภายใน ${unpaidSettings.value.expireHours} ชม. นับจากเวลาจอง มิฉะนั้นคิวจะถูกยกเลิกอัตโนมัติ`
+  return formatUiText(ui.get('ui_payment_notice_timer'), {
+    hours: unpaidSettings.value.expireHours,
+  })
 })
 
 const lineMessage = computed(() => {
-  return encodeURIComponent(
-    `ส่งสลิปมัดจำคิว\nBooking: ${bookingId.value}\nวันที่: ${bookingDate.value}\nเวลา: ${startHour.value}:00 - ${endHour.value}:00\nยอด: ${depositAmount.value} บาท`,
-  )
+  const text = formatUiText(ui.get('ui_line_message_template'), {
+    bookingId: bookingId.value,
+    date: bookingDate.value,
+    start: `${startHour.value}:00`,
+    end: `${endHour.value}:00`,
+    amount: depositAmount.value,
+  })
+  return encodeURIComponent(text)
 })
 
 function openLine() {
-  window.open(`${lineChatUrl}?text=${lineMessage.value}`, '_blank')
+  window.open(`${lineChatUrl.value}?text=${lineMessage.value}`, '_blank')
 }
 
 function backToBooking() {
-  router.push('/bookings')
+  router.push(shopPath('/bookings'))
 }
 
 async function copyAccountNo() {
   try {
-    await navigator.clipboard.writeText(bankAccountNo)
-    copyHint.value = 'คัดลอกแล้ว'
+    await navigator.clipboard.writeText(bankAccountNo.value)
+    copyHint.value = ui.get('ui_copy_success', 'คัดลอกแล้ว')
     setTimeout(() => { copyHint.value = '' }, 2000)
   } catch {
     copyHint.value = 'คัดลอกไม่สำเร็จ'
@@ -82,20 +98,20 @@ async function generateThaiQr() {
   qrError.value = ''
   qrCodeImage.value = ''
 
-  if (!promptpayId) {
-    qrError.value = 'ยังไม่ได้ตั้งค่า PromptPay ID'
+  if (!promptpayId.value) {
+    qrError.value = ui.get('ui_qr_not_configured', 'ยังไม่ได้ตั้งค่า PromptPay ID')
     return
   }
 
   try {
-    const payload = generatePayload(promptpayId, { amount: Number(depositAmount.value) })
+    const payload = generatePayload(promptpayId.value, { amount: Number(depositAmount.value) })
     qrCodeImage.value = await QRCode.toDataURL(payload, {
       width: 320,
       margin: 2,
       color: { dark: '#2D2424', light: '#FFFFFF' },
     })
   } catch {
-    qrError.value = 'สร้าง QR ไม่สำเร็จ กรุณาตรวจสอบ PromptPay ID'
+    qrError.value = ui.get('ui_qr_generate_failed', 'สร้าง QR ไม่สำเร็จ กรุณาตรวจสอบ PromptPay ID')
   }
 }
 
@@ -123,9 +139,9 @@ onMounted(async () => {
     }
     if (info?.is_expired || info?.booking?.status === 'cancelled') {
       bookingStatus.value = 'cancelled'
-      paymentError.value = 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ'
+      paymentError.value = ui.get('ui_payment_expired', 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ')
     } else if (info?.booking?.status !== 'awaiting_payment') {
-      paymentError.value = 'คิวนี้ไม่อยู่ในสถานะรอชำระเงินแล้ว'
+      paymentError.value = ui.get('ui_payment_not_awaiting', 'คิวนี้ไม่อยู่ในสถานะรอชำระเงินแล้ว')
     }
   } catch (err) {
     paymentError.value = err?.response?.data?.error || 'โหลดข้อมูลคิวไม่สำเร็จ'
@@ -137,7 +153,7 @@ onMounted(async () => {
   expiryTimer = setInterval(async () => {
     if (!canPay.value || !unpaidCountdown.isExpired(bookingCreatedAt.value)) return
     bookingStatus.value = 'cancelled'
-    paymentError.value = 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ'
+    paymentError.value = ui.get('ui_payment_expired', 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ')
     try {
       await api.get(`/api/bookings/${bookingId.value}/payment-info`)
     } catch {
@@ -157,7 +173,7 @@ onUnmounted(() => {
       <button type="button" class="back-btn" aria-label="กลับ" @click="backToBooking">
         <i class="ti ti-arrow-left" aria-hidden="true"></i>
       </button>
-      <h1 class="back-title">ชำระเงินมัดจำ</h1>
+      <h1 class="back-title">{{ paymentPageTitle }}</h1>
     </header>
 
     <main class="payment-content">
@@ -209,13 +225,13 @@ onUnmounted(() => {
         </div>
         <span class="copy-action">
           <i class="ti ti-copy" aria-hidden="true"></i>
-          {{ copyHint || 'แตะเพื่อคัดลอก' }}
+          {{ copyHint || copyAccountHint }}
         </span>
       </button>
 
       <button type="button" class="line-cta" @click="openLine">
         <i class="ti ti-brand-line" aria-hidden="true"></i>
-        ส่งสลิปทาง LINE
+        {{ lineButtonLabel }}
       </button>
 
       <div class="payment-notice">
@@ -224,7 +240,7 @@ onUnmounted(() => {
       </div>
 
       <p class="payment-hint muted">
-        หลังส่งสลิป แอดมินจะยืนยันการชำระเงิน และคิวจะเปลี่ยนเป็นพร้อมให้บริการ
+        {{ paymentHint }}
       </p>
 
       <button type="button" class="btn ghost back-link" @click="backToBooking">
