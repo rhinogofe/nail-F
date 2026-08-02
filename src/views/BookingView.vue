@@ -13,6 +13,7 @@ import {
   canBookSlot,
   slotTimeLabel as formatSlotTimeLabel,
   toHourLabel,
+  bookingEndHour,
 } from '../utils/bookingSlots'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
@@ -180,6 +181,7 @@ const slotBuildParams = computed(() => ({
   blocks: blockedSlots.value,
   bookings: bookings.value,
   displayMode: bookingStore.bookingDisplayMode,
+  slotHours: bookingStore.bookingSlotHours,
 }))
 
 const selectedDateLabel = computed(() => {
@@ -193,7 +195,7 @@ const monthLabel = computed(() => {
 const pendingTimeLabel = computed(() => {
   const h = pendingHour.value
   if (h == null) return ''
-  return `${toHourLabel(h)} – ${toHourLabel(h + 2)} น.`
+  return `${toHourLabel(h)} – ${toHourLabel(bookingEndHour(h, bookingStore.bookingSlotHours))} น.`
 })
 const requiredLocationLabel = computed(() =>
   nailOptions.value
@@ -220,7 +222,7 @@ function missingRequiredOptionNames() {
 }
 
 function slotTimeLabel(hour) {
-  return formatSlotTimeLabel(hour, isSlots2hMode.value)
+  return formatSlotTimeLabel(hour, isSlots2hMode.value, bookingStore.bookingSlotHours)
 }
 
 function occupiedSlotLabel(status) {
@@ -261,7 +263,7 @@ function activeBookings() {
 function bookingForHour(hour) {
   return activeBookings().find(b => {
     const start = Number(b.start_hour)
-    const end = Number(b.end_hour ?? start + 2)
+    const end = Number(b.end_hour ?? bookingEndHour(start, bookingStore.bookingSlotHours))
     return hour >= start && hour < end
   })
 }
@@ -303,6 +305,7 @@ function bookingSettingsSnapshot() {
   return {
     shopOpenHour: bookingStore.shopOpenHour,
     shopLastBookingHour: bookingStore.shopLastBookingHour,
+    bookingSlotHours: bookingStore.bookingSlotHours,
     advanceDays: bookingStore.advanceDays,
     bookUntilDate: bookingStore.bookUntilDate,
     bookingDisplayMode: bookingStore.bookingDisplayMode,
@@ -315,6 +318,7 @@ function hasBookingSettingsChanged(before, after) {
   return (
     before.shopOpenHour !== after.shopOpenHour ||
     before.shopLastBookingHour !== after.shopLastBookingHour ||
+    before.bookingSlotHours !== after.bookingSlotHours ||
     before.advanceDays !== after.advanceDays ||
     before.bookUntilDate !== after.bookUntilDate ||
     before.bookingDisplayMode !== after.bookingDisplayMode ||
@@ -523,7 +527,14 @@ async function nextWeek() {
 }
 
 function goToPayment(booking) {
-  router.push({ path: shopPath(`/payment/${booking.id}`), query: { date: selectedDate.value, start: String(booking.start_hour), end: String(booking.end_hour ?? Number(booking.start_hour) + 2) } })
+  router.push({
+    path: shopPath(`/payment/${booking.id}`),
+    query: {
+      date: selectedDate.value,
+      start: String(booking.start_hour),
+      end: String(booking.end_hour ?? bookingEndHour(Number(booking.start_hour), bookingStore.bookingSlotHours)),
+    },
+  })
 }
 
 const initials = computed(() => {
@@ -721,7 +732,7 @@ onUnmounted(() => {
           <!-- ── จองไม่ได้ (ทับคิว / ปิดช่วงเวลา / เลยเวลา) ── -->
           <div v-else-if="!canBook(hour)" class="slot-card busy">
             <div class="slot-left">
-              <span class="slot-range strike">{{ toHourLabel(hour) }} – {{ toHourLabel(hour + 2) }}</span>
+              <span class="slot-range strike">{{ slotTimeLabel(hour) }}</span>
               <span class="slot-status">ไม่ว่าง</span>
             </div>
           </div>
@@ -729,7 +740,7 @@ onUnmounted(() => {
           <!-- ── ว่าง จองได้ ── -->
           <div v-else class="slot-card free" @click="openBookSheet(hour)">
             <div class="slot-left">
-              <span class="slot-range">{{ toHourLabel(hour) }} – {{ toHourLabel(hour + 2) }}</span>
+              <span class="slot-range">{{ slotTimeLabel(hour) }}</span>
               <span class="slot-status">ว่าง</span>
             </div>
             <button class="book-btn" :disabled="busy" @click.stop="openBookSheet(hour)">

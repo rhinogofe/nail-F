@@ -10,6 +10,17 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isLoggedIn: (state) => Boolean(state.token),
     isAdmin: (state) => Boolean(state.user?.is_admin),
+    isSuperAdmin: (state) => Boolean(state.user?.is_super_admin),
+    managedShopSlugs: (state) => state.user?.managed_shop_slugs || [],
+    primaryAdminShopSlug: (state) => {
+      if (state.user?.is_super_admin) return 'default'
+      return state.user?.admin_shop_slug || state.user?.managed_shop_slugs?.[0] || null
+    },
+    canAccessShopAdmin: (state) => (slug) => {
+      if (!state.user?.is_admin) return false
+      if (state.user.is_super_admin) return true
+      return (state.user.managed_shop_slugs || []).includes(slug)
+    },
   },
   actions: {
     setToken(token) {

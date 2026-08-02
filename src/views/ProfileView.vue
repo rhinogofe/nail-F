@@ -2,7 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useBookingStore } from '../stores/booking'
 import api from '../api/axios'
+import { bookingEndHour } from '../utils/bookingSlots'
 import BottomNav from '../components/BottomNav.vue'
 import { useCoupons } from '../composables/useCoupons'
 import { useShopRoute } from '../composables/useShopRoute'
@@ -10,6 +12,7 @@ import { useUiSettingsStore } from '../stores/uiSettings'
 import BrandMark from '../components/BrandMark.vue'
 
 const auth = useAuthStore()
+const bookingStore = useBookingStore()
 const router = useRouter()
 const { shopPath } = useShopRoute()
 const ui = useUiSettingsStore()
@@ -154,6 +157,7 @@ watch(
 onMounted(async () => {
   await Promise.all([
     auth.fetchMe().catch(() => null),
+    bookingStore.fetchShopHours().catch(() => null),
     loadHistory(),
     loadMyCoupons(),
     loadCouponSettings(),
@@ -264,7 +268,7 @@ onMounted(async () => {
           <div class="history-head">
             <strong>{{ formatDateLabel(item.booking_date) }}</strong>
             <span class="history-time">
-              {{ item.start_hour }}:00 - {{ item.end_hour ?? Number(item.start_hour) + 2 }}:00
+              {{ item.start_hour }}:00 - {{ item.end_hour ?? bookingEndHour(Number(item.start_hour), bookingStore.bookingSlotHours) }}:00
             </span>
           </div>
           <span class="status-pill" :class="statusClass(item.status)">

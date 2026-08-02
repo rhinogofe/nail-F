@@ -7,9 +7,10 @@ import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
-import { buildBookingHourSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour } from '../utils/bookingSlots'
+import { buildBookingHourSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
+import { imageUrlHint } from '../utils/imageUrl'
 import { useUiSettingsStore } from '../stores/uiSettings'
 
 const router = useRouter()
@@ -96,7 +97,7 @@ const lineWebhookUrlHint = computed(() => {
   const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
   return `${base}/api/line/webhook`
 })
-const isDefaultShopAdmin = computed(() => shopSlug.value === 'default')
+const isSuperAdmin = computed(() => auth.isSuperAdmin)
 const unpaidAutoCancelEnabled = ref(true)
 const unpaidExpireHours = ref(24)
 const useCouponCode = ref('')
@@ -196,6 +197,7 @@ const bookingAddHourOptions = computed(() =>
     blocks: bookingAddSlotBlocks.value,
     bookings: bookingAddSlotBookings.value,
     displayMode: bookingDisplayMode.value,
+    slotHours: bookingSlotHours.value,
   })
 )
 
@@ -207,6 +209,7 @@ const bookingEditHourOptions = computed(() => {
     blocks: bookingEditSlotBlocks.value,
     bookings: bookingEditSlotBookings.value,
     displayMode: bookingDisplayMode.value,
+    slotHours: bookingSlotHours.value,
     excludeBookingId: bookingEditItem.value?.id,
   })
   const sameDay = bookingEditDate.value === bookingEditOriginalDate.value
@@ -219,7 +222,7 @@ const bookingEditHourOptions = computed(() => {
 const bookingEditCurrentHourLabel = computed(() => {
   const hour = bookingEditOriginalStartHour.value
   if (!Number.isFinite(hour)) return '-'
-  return slotTimeLabel(hour, bookingDisplayMode.value === 'slots_2h')
+  return slotTimeLabel(hour, bookingDisplayMode.value === 'slots_2h', bookingSlotHours.value)
 })
 
 const bookingAddUsers = computed(() => {
@@ -259,6 +262,16 @@ const adminTabs = [
 const allShops = ref([])
 const newShopName = ref('')
 const newShopSlug = ref('')
+const shopEditOpen = ref(false)
+const shopEditItem = ref(null)
+const shopEditName = ref('')
+const shopEditActive = ref(true)
+const shopEditSaving = ref(false)
+const shopEditError = ref('')
+
+const branchShopOptions = computed(() =>
+  allShops.value.filter((shop) => shop.slug !== 'default' && shop.is_active)
+)
 const uiForm = ref({})
 const uiFieldGroups = UI_FIELD_GROUPS
 const shopOpenHour = ref(9)
@@ -336,6 +349,80 @@ function switchShopAdmin(slug) {
   router.push(`/${slug}/admin`)
 }
 
+function openShopEdit(shop) {
+  shopEditItem.value = shop
+  shopEditName.value = shop.name || ''
+  shopEditActive.value = shop.is_active !== false
+  shopEditError.value = ''
+  shopEditOpen.value = true
+}
+
+function closeShopEdit() {
+  shopEditOpen.value = false
+  shopEditItem.value = null
+}
+
+async function saveShopEdit() {
+  if (!shopEditItem.value) return
+  const name = shopEditName.value.trim()
+  if (!name) {
+    shopEditError.value = 'กรุณาระบุชื่อร้าน'
+    return
+  }
+  shopEditSaving.value = true
+  shopEditError.value = ''
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(`/api/shops/${shopEditItem.value.slug}`, {
+      name,
+      is_active: shopEditActive.value,
+    })
+    message.value = `บันทึกสาขา "${name}" แล้ว`
+    await loadAllShops()
+    if (data?.shop?.slug === shopSlug.value && data.shop.is_active === false) {
+      router.push('/default/admin')
+    }
+    closeShopEdit()
+  } catch (err) {
+    shopEditError.value = err?.response?.data?.error || 'บันทึกสาขาไม่สำเร็จ'
+  } finally {
+    shopEditSaving.value = false
+  }
+}
+
+async function deleteShopBranch(shop) {
+  if (shop.slug === 'default') return
+  const ok = await Swal.fire({
+    title: 'ลบสาขา',
+    html: `ลบสาขา <strong>${shop.name}</strong> (/${shop.slug})<br><span style="color:#64748b">ถ้ามีข้อมูลจองจะปิดใช้งานแทนการลบถาวร</span>`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!ok.isConfirmed) return
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.delete(`/api/shops/${shop.slug}`)
+    message.value = data?.message || `ลบสาขา ${shop.name} แล้ว`
+    if (shop.slug === shopSlug.value) {
+      router.push('/default/admin')
+    }
+    await loadAllShops()
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'ลบสาขาไม่สำเร็จ'
+  }
+}
+
+function adminShopLabel(user) {
+  if (!user?.is_admin) return ''
+  if (user.is_super_admin || user.admin_shop_slug === 'default') return 'ทุกสาขา'
+  return user.admin_shop_slug || '-'
+}
+
 async function loadUiSettingsAdmin() {
   try {
     const { data } = await api.get('/api/admin/settings/ui')
@@ -363,19 +450,27 @@ function uiPreviewUrl(key) {
   return url || ''
 }
 
+function uiImageFieldHint(key) {
+  return imageUrlHint(uiForm.value[key])
+}
+
 async function loadShopHours() {
   try {
     const { data } = await api.get('/api/admin/settings/shop-hours')
     shopOpenHour.value = normalizeShopOpenHour(data.open_hour)
-    shopLastBookingHour.value = normalizeShopLastBookingHour(data.last_booking_hour, shopOpenHour.value)
+    if (data.slot_hours != null) {
+      bookingSlotHours.value = normalizeBookingSlotHours(data.slot_hours)
+    }
+    shopLastBookingHour.value = normalizeShopLastBookingHour(data.last_booking_hour, shopOpenHour.value, bookingSlotHours.value)
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดเวลาร้านไม่สำเร็จ'
   }
 }
 
 async function saveShopHours() {
-  if (shopOpenHour.value >= shopLastBookingHour.value - 1) {
-    errorMessage.value = 'เวลาเปิดต้องน้อยกว่าเวลาจองสุดท้ายอย่างน้อย 2 ชั่วโมง'
+  const slot = normalizeBookingSlotHours(bookingSlotHours.value)
+  if (shopOpenHour.value >= shopLastBookingHour.value - (slot - 1)) {
+    errorMessage.value = `เวลาเปิดต้องน้อยกว่าเวลาจองสุดท้ายอย่างน้อย ${slot} ชั่วโมง`
     return
   }
   message.value = ''
@@ -385,7 +480,7 @@ async function saveShopHours() {
       open_hour: shopOpenHour.value,
       last_booking_hour: shopLastBookingHour.value,
     })
-    message.value = `บันทึกเวลาร้านแล้ว: เปิด ${shopOpenHour.value}:00 – จองสุดท้าย ${shopLastBookingHour.value}:00 (ปิด ${shopLastBookingHour.value + 2}:00)`
+    message.value = `บันทึกเวลาร้านแล้ว: เปิด ${shopOpenHour.value}:00 – จองสุดท้าย ${shopLastBookingHour.value}:00 (ปิด ${shopLastBookingHour.value + bookingSlotHours.value}:00)`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกเวลาร้านไม่สำเร็จ'
   }
@@ -402,6 +497,7 @@ const userEditLoginId = ref('')
 const userEditPoints = ref(0)
 const userEditNote = ref('')
 const userEditIsAdmin = ref(false)
+const userEditAdminShopSlug = ref('default')
 const userEditSaving = ref(false)
 const userEditError = ref('')
 const userHistoryOpen = ref(false)
@@ -430,6 +526,7 @@ async function loadUsers() {
 
 async function toggleAdmin(user) {
   const next = !user.is_admin
+  if (next && !isSuperAdmin.value) return
   const ok = await Swal.fire({
     title: next ? 'ให้สิทธิ์แอดมิน' : 'ถอดสิทธิ์แอดมิน',
     text: `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมินของ "${user.name}" ใช่ไหม`,
@@ -438,8 +535,13 @@ async function toggleAdmin(user) {
   })
   if (!ok.isConfirmed) return
   try {
-    await api.patch(`/api/admin/users/${user.id}/set-admin`, { is_admin: next })
+    await api.patch(`/api/admin/users/${user.id}/set-admin`, {
+      is_admin: next,
+      admin_shop_slug: next ? 'default' : null,
+    })
     user.is_admin = next
+    user.is_super_admin = next
+    user.admin_shop_slug = next ? 'default' : null
     message.value = `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมิน "${user.name}" แล้ว`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'อัปเดตสิทธิ์ไม่สำเร็จ'
@@ -476,6 +578,9 @@ function editUser(user) {
   userEditPoints.value = Number(user.total_points) || 0
   userEditNote.value = user.admin_note || ''
   userEditIsAdmin.value = Boolean(user.is_admin)
+  userEditAdminShopSlug.value = user.is_super_admin || user.admin_shop_slug === 'default'
+    ? 'default'
+    : (user.admin_shop_slug || branchShopOptions.value[0]?.slug || 'default')
   userEditError.value = ''
   userEditOpen.value = true
 }
@@ -511,7 +616,7 @@ function closeUserHistory() {
 
 function bookingTimeRange(booking) {
   const start = Number(booking.start_hour)
-  const end = Number(booking.end_hour ?? start + 2)
+  const end = Number(booking.end_hour ?? bookingEndHour(start, bookingSlotHours.value))
   return `${start}:00 – ${end}:00`
 }
 
@@ -563,7 +668,12 @@ async function saveUserEdit() {
       email,
       total_points: totalPoints,
       admin_note: userEditNote.value.trim(),
-      is_admin: userEditIsAdmin.value,
+    }
+    if (isSuperAdmin.value) {
+      payload.is_admin = userEditIsAdmin.value
+      if (userEditIsAdmin.value) {
+        payload.admin_shop_slug = userEditAdminShopSlug.value
+      }
     }
     if (userEditItem.value.provider === 'phone') {
       payload.login_id = userEditLoginId.value.trim()
@@ -571,6 +681,9 @@ async function saveUserEdit() {
     const { data } = await api.patch(`/api/admin/users/${userEditItem.value.id}`, payload)
     const idx = users.value.findIndex((u) => u.id === userEditItem.value.id)
     if (idx >= 0 && data?.user) users.value[idx] = data.user
+    if (userEditItem.value.id === auth.user?.id) {
+      await auth.fetchMe().catch(() => null)
+    }
     message.value = 'บันทึกข้อมูลผู้ใช้แล้ว'
     closeUserEdit()
   } catch (err) {
@@ -739,21 +852,41 @@ async function loadRevenueSummary() {
 
 // ── รูปแบบแสดงเวลาหน้าจองลูกค้า ─────────────
 const bookingDisplayMode = ref('normal')
+const bookingSlotHours = ref(2)
 
 const displaySlotPreview = computed(() => {
+  const slot = normalizeBookingSlotHours(bookingSlotHours.value)
   const result = []
-  for (let h = shopOpenHour.value; h <= shopLastBookingHour.value; h += 2) {
-    result.push(`${String(h).padStart(2, '0')}:00–${String(h + 2).padStart(2, '0')}:00`)
+  const step = bookingDisplayMode.value === 'slots_2h' ? slot : 1
+  for (let h = shopOpenHour.value; h <= shopLastBookingHour.value; h += step) {
+    result.push(`${String(h).padStart(2, '0')}:00–${String(h + slot).padStart(2, '0')}:00`)
   }
   return result.join(' · ')
 })
 
 async function loadBookingDisplay() {
   try {
-    const { data } = await api.get('/api/admin/settings/booking-display')
-    bookingDisplayMode.value = data.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
+    const [{ data: displayData }, { data: slotData }] = await Promise.all([
+      api.get('/api/admin/settings/booking-display'),
+      api.get('/api/admin/settings/booking-slot-hours'),
+    ])
+    bookingDisplayMode.value = displayData.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
+    bookingSlotHours.value = normalizeBookingSlotHours(slotData.slot_hours)
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรูปแบบแสดงเวลาไม่สำเร็จ'
+  }
+}
+
+async function saveBookingSlotHours() {
+  message.value = ''
+  errorMessage.value = ''
+  const slot = normalizeBookingSlotHours(bookingSlotHours.value)
+  try {
+    await api.patch('/api/admin/settings/booking-slot-hours', { slot_hours: slot })
+    bookingSlotHours.value = slot
+    message.value = `บันทึกความยาวคิว ${slot} ชม. แล้ว`
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกความยาวคิวไม่สำเร็จ'
   }
 }
 
@@ -765,8 +898,8 @@ async function saveBookingDisplay() {
       display_mode: bookingDisplayMode.value,
     })
     message.value = bookingDisplayMode.value === 'slots_2h'
-      ? 'บันทึกแล้ว: หน้าจองแสดงช่วงเวลา 2 ชม.'
-      : 'บันทึกแล้ว: หน้าจองแสดงแบบปกติ (ทีละชั่วโมง)'
+      ? `บันทึกแล้ว: หน้าจองแสดงช่วง ${bookingSlotHours.value} ชม. (กระโดดทีละ ${bookingSlotHours.value} ชม.)`
+      : `บันทึกแล้ว: หน้าจองแสดงแบบปกติ (ทีละชั่วโมง · คิวละ ${bookingSlotHours.value} ชม.)`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกรูปแบบแสดงเวลาไม่สำเร็จ'
   }
@@ -1170,8 +1303,8 @@ async function createExtraHour() {
     errorMessage.value = 'ช่วงเวลาเปิดเพิ่มไม่ถูกต้อง (ชั่วโมงสิ้นสุดต้องมากกว่าเวลาเริ่ม)'
     return
   }
-  if (end - start < 2) {
-    errorMessage.value = 'ช่วงเปิดเพิ่มต้องยาวอย่างน้อย 2 ชั่วโมง (สำหรับคิว 2 ชม.)'
+  if (end - start < bookingSlotHours.value) {
+    errorMessage.value = `ช่วงเปิดเพิ่มต้องยาวอย่างน้อย ${bookingSlotHours.value} ชั่วโมง (ตามความยาวคิว)`
     return
   }
 
@@ -1580,7 +1713,7 @@ async function openBookingAdd() {
         : Promise.resolve({ data: { bookings: [], blocks: [] } }),
     ])
     shopOpenHour.value = normalizeShopOpenHour(hoursRes.data?.open_hour)
-    shopLastBookingHour.value = normalizeShopLastBookingHour(hoursRes.data?.last_booking_hour, shopOpenHour.value)
+    shopLastBookingHour.value = normalizeShopLastBookingHour(hoursRes.data?.last_booking_hour, shopOpenHour.value, bookingSlotHours.value)
     bookingAddExtraHours.value = extraRes.data || []
     bookingAddSlotBookings.value = dayRes.data?.bookings || []
     bookingAddSlotBlocks.value = dayRes.data?.blocks || []
@@ -1591,6 +1724,7 @@ async function openBookingAdd() {
       blocks: bookingAddSlotBlocks.value,
       bookings: bookingAddSlotBookings.value,
       displayMode: bookingDisplayMode.value,
+      slotHours: bookingSlotHours.value,
     })
     if (hourOpts.length && !hourOpts.some((o) => o.hour === bookingAddStartHour.value)) {
       bookingAddStartHour.value = hourOpts[0].hour
@@ -2423,7 +2557,7 @@ watch(shopSlug, () => {
         <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
         <div v-for="item in filtered" :key="item.id" class="admin-item">
           <div>
-            <strong>{{ item.start_hour }}:00 - {{ item.end_hour ?? (Number(item.start_hour) + 2) }}:00</strong>
+            <strong>{{ item.start_hour }}:00 - {{ item.end_hour ?? bookingEndHour(Number(item.start_hour), bookingSlotHours) }}:00</strong>
             <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
             <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
             <p class="muted">
@@ -3016,27 +3150,39 @@ watch(shopSlug, () => {
       <hr class="admin-divider" />
 
       <h3>ร้าน / สาขา</h3>
-      <p v-if="isDefaultShopAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
-      <p v-else class="muted">ร้านของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
+      <p v-if="isSuperAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
+      <p v-else class="muted">สาขาของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
       <ul v-if="allShops.length" class="admin-shop-list">
-        <li v-for="shop in allShops" :key="shop.id">
+        <li v-for="shop in allShops" :key="shop.id" class="admin-shop-row">
           <button
-            v-if="isDefaultShopAdmin"
+            v-if="isSuperAdmin"
             type="button"
             class="admin-shop-item"
-            :class="{ active: shop.slug === shopSlug }"
+            :class="{ active: shop.slug === shopSlug, inactive: !shop.is_active }"
             @click="switchShopAdmin(shop.slug)"
           >
             <span>{{ shop.name }}</span>
             <span class="muted">/{{ shop.slug }}</span>
+            <span v-if="!shop.is_active" class="shop-inactive-badge">ปิด</span>
           </button>
           <div v-else class="admin-shop-item active">
             <span>{{ shop.name }}</span>
             <span class="muted">/{{ shop.slug }}</span>
           </div>
+          <div v-if="isSuperAdmin" class="admin-shop-actions">
+            <button type="button" class="btn" @click="openShopEdit(shop)">แก้ไข</button>
+            <button
+              v-if="shop.slug !== 'default'"
+              type="button"
+              class="btn danger"
+              @click="deleteShopBranch(shop)"
+            >
+              ลบ
+            </button>
+          </div>
         </li>
       </ul>
-      <div v-if="isDefaultShopAdmin" class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
+      <div v-if="isSuperAdmin" class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
         <label class="admin-label-grow">
           ชื่อร้านใหม่
           <input v-model="newShopName" class="admin-input" placeholder="เช่น Nail จุฬา" />
@@ -3064,7 +3210,7 @@ watch(shopSlug, () => {
         <label class="admin-label-grow">
           จองสุดท้ายได้ถึง
           <select v-model.number="shopLastBookingHour" class="admin-input">
-            <option v-for="h in hourOptions" :key="h" :value="h">{{ String(h).padStart(2,'0') }}:00 (ปิด {{ String(h+2).padStart(2,'0') }}:00)</option>
+            <option v-for="h in hourOptions" :key="h" :value="h">{{ String(h).padStart(2,'0') }}:00 (ปิด {{ String(h + bookingSlotHours).padStart(2,'0') }}:00)</option>
           </select>
         </label>
         <button class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveShopHours">บันทึกเวลาร้าน</button>
@@ -3073,13 +3219,27 @@ watch(shopSlug, () => {
         <i class="ti ti-clock" style="font-size:16px;color:var(--color-primary)"></i>
         ลูกค้าจะเห็นช่วงเวลา
         <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
-        (ปิดรับ {{ String(shopLastBookingHour + 2).padStart(2,'0') }}:00)
+        (ปิดรับ {{ String(shopLastBookingHour + bookingSlotHours).padStart(2,'0') }}:00)
       </div>
 
       <hr class="admin-divider" />
 
       <h3>รูปแบบแสดงเวลาหน้าจองลูกค้า</h3>
-      <p class="muted">กำหนดว่าหน้าจองของลูกค้าแสดงเวลาแบบไหน</p>
+      <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจอง</p>
+      <div class="admin-form-row" style="flex-wrap:wrap;margin-bottom:12px">
+        <label class="admin-label-grow">
+          ความยาวคิว (ชม.)
+          <select v-model.number="bookingSlotHours" class="admin-input">
+            <option :value="1">1 ชั่วโมง</option>
+            <option :value="2">2 ชั่วโมง</option>
+            <option :value="3">3 ชั่วโมง</option>
+            <option :value="4">4 ชั่วโมง</option>
+          </select>
+        </label>
+        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveBookingSlotHours">
+          บันทึกความยาวคิว
+        </button>
+      </div>
       <div class="booking-view-toggle" role="group" aria-label="รูปแบบแสดงเวลาหน้าจอง">
         <button
           type="button"
@@ -3097,7 +3257,7 @@ watch(shopSlug, () => {
           @click="bookingDisplayMode = 'slots_2h'"
         >
           <i class="ti ti-clock" aria-hidden="true"></i>
-          ช่วง 2 ชม.
+          ช่วงบล็อก (กระโดด {{ bookingSlotHours }} ชม.)
         </button>
       </div>
       <div class="admin-form-row" style="margin-top:10px">
@@ -3245,13 +3405,21 @@ watch(shopSlug, () => {
               :src="uiPreviewUrl('ui_logo_url')"
               alt="preview logo"
               class="ui-image-preview"
+              @error="($event.target.style.display = 'none')"
             />
             <img
               v-if="field.key === 'ui_hero_image_url' && uiPreviewUrl('ui_hero_image_url')"
               :src="uiPreviewUrl('ui_hero_image_url')"
               alt="preview hero"
               class="ui-image-preview ui-image-preview--wide"
+              @error="($event.target.style.display = 'none')"
             />
+            <p
+              v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url') && uiImageFieldHint(field.key)"
+              class="muted ui-image-url-warn"
+            >
+              {{ uiImageFieldHint(field.key) }}
+            </p>
           </label>
         </div>
         <hr class="admin-divider" />
@@ -3566,7 +3734,9 @@ watch(shopSlug, () => {
         <div class="user-info">
           <strong>{{ u.name }}</strong>
           <span class="user-badge-provider">{{ providerLabel(u.provider) }}</span>
-          <span v-if="u.is_admin" class="user-badge-admin">แอดมิน</span>
+          <span v-if="u.is_admin" class="user-badge-admin">
+            แอดมิน · {{ adminShopLabel(u) }}
+          </span>
           <p class="muted">{{ u.email || '-' }}</p>
           <p v-if="u.provider === 'phone'" class="muted">ล็อกอิน: {{ u.provider_id }}</p>
           <p class="muted">
@@ -3582,6 +3752,7 @@ watch(shopSlug, () => {
           <button type="button" class="btn primary" @click="openUserHistory(u)">ประวัติจอง</button>
           <button type="button" class="btn" @click="editUser(u)">แก้ไขข้อมูล</button>
           <button
+            v-if="isSuperAdmin"
             class="btn"
             :class="u.is_admin ? 'danger' : ''"
             :disabled="u.id === auth.user?.id && u.is_admin"
@@ -3595,6 +3766,35 @@ watch(shopSlug, () => {
     </section>
 
     <Teleport to="body">
+      <div
+        v-if="shopEditOpen"
+        class="booking-edit-backdrop"
+        @click.self="closeShopEdit"
+      >
+        <div class="booking-edit-modal card" role="dialog" aria-labelledby="shop-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="shop-edit-title">แก้ไขสาขา</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeShopEdit">×</button>
+          </div>
+          <p v-if="shopEditItem" class="muted booking-edit-meta">/{{ shopEditItem.slug }}</p>
+          <label class="booking-edit-field">
+            ชื่อสาขา
+            <input v-model="shopEditName" class="admin-input" @input="shopEditError = ''" />
+          </label>
+          <label class="admin-checkbox">
+            <input v-model="shopEditActive" type="checkbox" />
+            เปิดใช้งาน
+          </label>
+          <p v-if="shopEditError" class="alert error">{{ shopEditError }}</p>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="shopEditSaving" @click="closeShopEdit">ยกเลิก</button>
+            <button type="button" class="btn primary" :disabled="shopEditSaving" @click="saveShopEdit">
+              {{ shopEditSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div
         v-if="userHistoryOpen"
         class="booking-edit-backdrop"
@@ -3726,7 +3926,7 @@ watch(shopSlug, () => {
             />
           </label>
 
-          <label class="admin-checkbox user-edit-admin-check">
+          <label v-if="isSuperAdmin" class="admin-checkbox user-edit-admin-check">
             <input
               v-model="userEditIsAdmin"
               type="checkbox"
@@ -3734,6 +3934,16 @@ watch(shopSlug, () => {
               @change="userEditError = ''"
             />
             สิทธิ์แอดมิน
+          </label>
+
+          <label v-if="isSuperAdmin && userEditIsAdmin" class="booking-edit-field">
+            สาขาที่ดูแล
+            <select v-model="userEditAdminShopSlug" class="admin-input" @change="userEditError = ''">
+              <option value="default">ทุกสาขา (แอดมินหลัก)</option>
+              <option v-for="shop in branchShopOptions" :key="shop.id" :value="shop.slug">
+                {{ shop.name }} ({{ shop.slug }})
+              </option>
+            </select>
           </label>
 
           <label class="booking-edit-field">
@@ -5707,6 +5917,37 @@ watch(shopSlug, () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.admin-shop-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-shop-row .admin-shop-item {
+  flex: 1 1 220px;
+}
+
+.admin-shop-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-shop-item.inactive {
+  opacity: 0.65;
+}
+
+.shop-inactive-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .admin-shop-item {

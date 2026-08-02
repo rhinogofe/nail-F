@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '../api/axios'
-import { normalizeShopOpenHour, normalizeShopLastBookingHour } from '../utils/bookingSlots'
+import { normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours } from '../utils/bookingSlots'
 
 function toLocalYmd(date) {
   const y = date.getFullYear()
@@ -34,6 +34,7 @@ export const useBookingStore = defineStore('booking', {
     loading: false,
     shopOpenHour: 9,
     shopLastBookingHour: 18,
+    bookingSlotHours: 2,
     advanceDays: 30,
     bookUntilDate: '',
     bookingDisplayMode: 'normal',
@@ -132,7 +133,12 @@ export const useBookingStore = defineStore('booking', {
       try {
         const { data } = await api.get('/api/bookings/shop-hours')
         this.shopOpenHour = normalizeShopOpenHour(data.open_hour)
-        this.shopLastBookingHour = normalizeShopLastBookingHour(data.last_booking_hour, this.shopOpenHour)
+        this.shopLastBookingHour = normalizeShopLastBookingHour(
+          data.last_booking_hour,
+          this.shopOpenHour,
+          data.slot_hours
+        )
+        this.bookingSlotHours = normalizeBookingSlotHours(data.slot_hours)
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }

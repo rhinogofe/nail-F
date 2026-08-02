@@ -9,14 +9,14 @@ export function formatUiText(template, vars = {}) {
 export const UI_FIELD_GROUPS = [
   {
     title: 'แบรนด์ & รูปภาพ',
-    hint: 'ชื่อแบรนด์ รูปโลโก้ และภาพปกหน้าเข้าสู่ระบบ (URL รูป เช่น https://... หรือ /assets/...)',
+    hint: 'URL รูปต้องเป็นลิงก์ไฟล์โดยตรง (ลงท้าย .jpg/.png หรือ i.ibb.co/...) — อย่าใช้ลิงก์หน้า ibb.co',
     fields: [
       { key: 'ui_brand_main', label: 'ชื่อแบรนด์ (ส่วนหลัก)', placeholder: 'Nail' },
       { key: 'ui_brand_accent', label: 'ชื่อแบรนด์ (ส่วนเน้น)', placeholder: 'Thuean' },
       { key: 'ui_tagline', label: 'คำโปรย', placeholder: 'จองคิวง่าย · สะสมแต้ม' },
       { key: 'ui_page_title', label: 'ชื่อแท็บเบราว์เซอร์', placeholder: 'Nail Thuean' },
-      { key: 'ui_logo_url', label: 'URL โลโก้', placeholder: 'https://...' },
-      { key: 'ui_hero_image_url', label: 'URL ภาพปก Login', placeholder: 'https://...' },
+      { key: 'ui_logo_url', label: 'URL โลโก้', placeholder: 'https://i.ibb.co/xxx/logo.png' },
+      { key: 'ui_hero_image_url', label: 'URL ภาพปก Login', placeholder: 'https://i.ibb.co/xxx/hero.jpg' },
     ],
   },
   {
