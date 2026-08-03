@@ -28,6 +28,7 @@ export const useBookingStore = defineStore('booking', {
     bookingsByDate: {},
     blocksByDate: {},
     extraHoursByDate: {},
+    dayHoursByDate: {},
     nailOptions: [],
     allNailOptions: [],
     myBookings: [],
@@ -80,6 +81,24 @@ export const useBookingStore = defineStore('booking', {
       }
       return data
     },
+    async fetchDayHoursForDate(date) {
+      if (!date) return []
+      try {
+        const { data } = await api.get('/api/bookings/day-hours', { params: { date } })
+        const rows = (data || []).map((row) => ({
+          ...row,
+          start_hour: Number(row.start_hour),
+          start_minute: Number(row.start_minute ?? 0),
+          end_hour: Number(row.end_hour),
+          end_minute: Number(row.end_minute ?? 0),
+        }))
+        this.dayHoursByDate = { ...this.dayHoursByDate, [date]: rows }
+        return rows
+      } catch {
+        this.dayHoursByDate = { ...this.dayHoursByDate, [date]: [] }
+        return []
+      }
+    },
     async fetchExtraHoursRange(from, to) {
       const { data } = await api.get('/api/bookings/extra-hours', { params: { from, to } })
       const fromDate = parseYmd(from)
@@ -98,8 +117,22 @@ export const useBookingStore = defineStore('booking', {
       }
       return data
     },
-    async bookSlot(booking_date, start_hour, option_ids) {
-      const { data } = await api.post('/api/bookings', { booking_date, start_hour, option_ids: option_ids || [] })
+    async bookSlot(booking_date, slotOrHour, option_ids) {
+      const payload = typeof slotOrHour === 'object' && slotOrHour != null
+        ? {
+          booking_date,
+          start_hour: slotOrHour.startHour,
+          start_minute: slotOrHour.startMinute ?? 0,
+          end_hour: slotOrHour.endHour,
+          end_minute: slotOrHour.endMinute ?? 0,
+          option_ids: option_ids || [],
+        }
+        : {
+          booking_date,
+          start_hour: slotOrHour,
+          option_ids: option_ids || [],
+        }
+      const { data } = await api.post('/api/bookings', payload)
       await this.fetchByDate(booking_date)
       await this.fetchMyBookings()
       return data?.booking
