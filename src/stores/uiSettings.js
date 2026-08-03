@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import api from '../api/axios'
 import { formatUiText } from '../utils/formatUiText'
+import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 
 const FALLBACK = {
   ui_brand_main: 'Nail',
@@ -36,8 +37,8 @@ export const useUiSettingsStore = defineStore('uiSettings', {
     brandMain: (state) => state.settings.ui_brand_main || FALLBACK.ui_brand_main,
     brandAccent: (state) => state.settings.ui_brand_accent || FALLBACK.ui_brand_accent,
     tagline: (state) => state.settings.ui_tagline || FALLBACK.ui_tagline,
-    logoUrl: (state) => state.settings.ui_logo_url || '',
-    heroImageUrl: (state) => state.settings.ui_hero_image_url || '',
+    logoUrl: (state) => resolveUiImageUrl(state.settings.ui_logo_url, state.loadedForSlug),
+    heroImageUrl: (state) => resolveUiImageUrl(state.settings.ui_hero_image_url, state.loadedForSlug),
     get: (state) => (key, fallback = '') => state.settings[key] ?? fallback,
   },
   actions: {

@@ -654,7 +654,7 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0));
+  padding-bottom: var(--page-nav-padding-bottom);
   background: var(--color-bg);
   box-sizing: border-box;
 }
@@ -794,7 +794,7 @@ watch(
   height: 44px;
   border-radius: 50%;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -849,9 +849,9 @@ watch(
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
-  background: #ef4444;
-  color: #fff;
+  border-radius: var(--radius-pill);
+  background: var(--color-error);
+  color: var(--color-on-primary);
   font-size: 10px;
   font-weight: 700;
   line-height: 18px;
@@ -888,17 +888,27 @@ watch(
 .chat-icon-btn {
   position: relative;
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: var(--touch-min);
+  height: var(--touch-min);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated);
   color: var(--color-text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   font-size: 18px;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition);
+}
+
+.chat-icon-btn:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.chat-icon-btn:active {
+  transform: scale(0.96);
 }
 
 .chat-delete-btn {
@@ -926,9 +936,9 @@ watch(
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: 999px;
-  background: #ef4444;
-  color: #fff;
+  border-radius: var(--radius-pill);
+  background: var(--color-error);
+  color: var(--color-on-primary);
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
@@ -1058,15 +1068,26 @@ watch(
 
 .chat-bubble {
   max-width: 82%;
-  padding: 10px 12px;
-  border-radius: 16px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .chat-bubble-row.mine .chat-bubble {
-  background: var(--color-primary-light);
+  background: var(--color-primary);
   border-color: transparent;
+  color: var(--color-on-primary);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.chat-bubble-row.theirs .chat-bubble {
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+.chat-bubble-row.mine .chat-time {
+  color: color-mix(in srgb, var(--color-on-primary) 72%, transparent);
 }
 
 .chat-bubble--image {
@@ -1094,14 +1115,16 @@ watch(
 
 .chat-compose {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-end;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--color-border);
-  background: var(--color-surface-elevated);
+  background: color-mix(in srgb, var(--color-surface-elevated) 94%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   flex-shrink: 0;
 }
 
@@ -1111,15 +1134,23 @@ watch(
   width: 0;
   resize: none;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
   font-family: inherit;
   font-size: 16px;
   line-height: 1.4;
-  background: var(--color-bg);
+  background: var(--color-surface-elevated);
   color: var(--color-text-primary);
   box-sizing: border-box;
   -webkit-text-size-adjust: 100%;
+  min-height: var(--touch-min);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .chat-send {
@@ -1184,7 +1215,7 @@ watch(
     position: fixed;
     top: 0;
     left: 0;
-    bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0));
+    bottom: var(--bottom-nav-total);
     width: min(88vw, 300px);
     max-width: 300px;
     transform: translateX(-105%);

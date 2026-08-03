@@ -96,7 +96,7 @@ const visibleStack = computed(() => notifications.value.slice(0, 3))
   left: 50%;
   transform: translateX(-50%);
   width: min(392px, calc(100vw - 24px));
-  z-index: 200;
+  z-index: var(--z-toast);
   pointer-events: none;
 }
 

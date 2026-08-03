@@ -1,20 +1,17 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import api from '../api/axios'
 import { bookingEndHour } from '../utils/bookingSlots'
 import BottomNav from '../components/BottomNav.vue'
 import { useCoupons } from '../composables/useCoupons'
-import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import BrandMark from '../components/BrandMark.vue'
+import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
-const router = useRouter()
-const { shopPath } = useShopRoute()
 const ui = useUiSettingsStore()
 const { showMyCoupons, loadMyCoupons, redeemCoupon, myCoupons, couponSettings, canRedeem, loadCouponSettings } = useCoupons()
 
@@ -143,11 +140,6 @@ async function saveProfile() {
   }
 }
 
-function logout() {
-  auth.logout()
-  router.push(shopPath('/login'))
-}
-
 watch(
   () => auth.user,
   () => syncFormFromUser(),
@@ -167,17 +159,25 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <header class="hdr">
+  <div class="app-page app-page--nav profile-page">
+    <header class="hdr app-header">
       <div class="hdr-top">
         <BrandMark />
-        <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
+        <AccountMenuDrawer />
       </div>
-      <h1 class="page-title">{{ ui.get('ui_profile_title', 'บัญชีของฉัน') }}</h1>
-      <p class="page-sub">{{ ui.get('ui_profile_subtitle', 'แก้ไขข้อมูลและดูประวัติการจอง') }}</p>
+      <h1 class="page-title app-page-title">{{ ui.get('ui_profile_title', 'บัญชีของฉัน') }}</h1>
+      <p class="page-sub app-page-sub">{{ ui.get('ui_profile_subtitle', 'แก้ไขข้อมูลและดูประวัติการจอง') }}</p>
     </header>
 
-    <main class="content">
+    <main class="content app-content">
+      <section class="card profile-hero">
+        <div class="profile-hero-avatar app-avatar">{{ initials }}</div>
+        <div class="profile-hero-text">
+          <h2 class="profile-hero-name">{{ auth.user?.name || 'สมาชิก' }}</h2>
+          <p class="profile-hero-meta muted">{{ isPhoneAccount ? profilePhone || loginLabel : loginLabel }}</p>
+        </div>
+      </section>
+
       <section class="card profile-card">
         <div class="profile-stats">
           <div class="stat-box">
@@ -197,41 +197,53 @@ onMounted(async () => {
         <h2 class="section-title">ข้อมูลส่วนตัว</h2>
 
         <label class="field">
-          <span>ชื่อ</span>
-          <input
-            v-model="profileName"
-            type="text"
-            class="input"
-            placeholder="ชื่อผู้จอง"
-            @input="errorMessage = ''"
-          />
+          <span class="field-label">ชื่อ</span>
+          <div class="field-input-wrap">
+            <i class="ti ti-user field-input-icon" aria-hidden="true"></i>
+            <input
+              v-model="profileName"
+              type="text"
+              class="input"
+              placeholder="ชื่อผู้จอง"
+              @input="errorMessage = ''"
+            />
+          </div>
         </label>
 
         <label v-if="isPhoneAccount" class="field">
-          <span>เบอร์โทร (รหัสล็อกอิน)</span>
-          <input
-            v-model="profilePhone"
-            type="tel"
-            class="input"
-            placeholder="เบอร์โทร"
-            @input="errorMessage = ''"
-          />
+          <span class="field-label">เบอร์โทร (รหัสล็อกอิน)</span>
+          <div class="field-input-wrap">
+            <i class="ti ti-phone field-input-icon" aria-hidden="true"></i>
+            <input
+              v-model="profilePhone"
+              type="tel"
+              class="input"
+              placeholder="เบอร์โทร"
+              @input="errorMessage = ''"
+            />
+          </div>
         </label>
 
         <label v-else class="field">
-          <span>วิธีล็อกอิน</span>
-          <input :value="loginLabel" type="text" class="input readonly" readonly />
+          <span class="field-label">วิธีล็อกอิน</span>
+          <div class="field-input-wrap">
+            <i class="ti ti-lock field-input-icon" aria-hidden="true"></i>
+            <input :value="loginLabel" type="text" class="input readonly" readonly />
+          </div>
         </label>
 
-        <label class="field">
-          <span>อีเมล</span>
-          <input :value="auth.user?.email || '-'" type="text" class="input readonly" readonly />
-        </label>
+        <!-- <label class="field">
+          <span class="field-label">อีเมล</span>
+          <div class="field-input-wrap">
+            <i class="ti ti-mail field-input-icon" aria-hidden="true"></i>
+            <input :value="auth.user?.email || '-'" type="text" class="input readonly" readonly />
+          </div>
+        </label> -->
 
-        <p v-if="message" class="alert success">{{ message }}</p>
-        <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+        <p v-if="message" class="alert-banner success">{{ message }}</p>
+        <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
 
-        <button type="button" class="btn-save" :disabled="saving" @click="saveProfile">
+        <button type="button" class="btn primary btn-save" :disabled="saving" @click="saveProfile">
           {{ saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล' }}
         </button>
       </section>
@@ -287,11 +299,6 @@ onMounted(async () => {
           <p class="history-meta">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
         </div>
       </section>
-
-      <button type="button" class="btn-logout" @click="logout">
-        <i class="ti ti-logout" aria-hidden="true"></i>
-        ออกจากระบบ
-      </button>
     </main>
 
     <BottomNav active="profile" />
@@ -299,188 +306,170 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.page {
-  font-family: var(--font-body);
-  background: var(--color-surface);
-  min-height: 100svh;
-  max-width: 430px;
-  margin: 0 auto;
-  position: relative;
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
+.profile-page {
+  padding: 0;
 }
 
 .hdr {
-  background: rgba(255, 251, 249, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border);
-  padding: 14px var(--page-padding-x) 16px;
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  padding-bottom: var(--space-3);
 }
 
 .hdr-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.brand {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.brand-accent {
-  color: var(--color-primary);
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .page-title {
-  margin: 0 0 4px;
-  font-size: 20px;
-  color: #1e293b;
+  margin: 0 0 var(--space-1);
 }
 
 .page-sub {
   margin: 0;
-  font-size: 13px;
-  color: #94a3b8;
 }
 
 .content {
-  padding: 14px 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  padding-top: 0;
 }
 
 .card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--color-border);
+}
+
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.profile-hero-avatar {
+  width: 56px;
+  height: 56px;
+  font-size: var(--text-body);
+}
+
+.profile-hero-name {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-h2);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.profile-hero-meta {
+  margin: 0;
+  font-size: var(--text-caption);
 }
 
 .profile-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .stat-box {
-  background: var(--color-surface);
+  background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 12px 8px;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-2);
   text-align: center;
 }
 
 .stat-box strong {
   display: block;
-  font-size: 18px;
+  font-size: var(--text-h2);
   color: var(--color-primary);
   margin-bottom: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-box span {
-  font-size: 11px;
-  color: #64748b;
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
 }
 
 .section-title {
-  margin: 0 0 12px;
-  font-size: 16px;
-  color: #1e293b;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-h3);
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-  font-size: 13px;
-  color: #475569;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.field-label {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.field-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  background: var(--color-surface-elevated);
+  min-height: var(--touch-min);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.field-input-wrap:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.field-input-icon {
+  color: var(--color-text-muted);
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 .input {
   width: 100%;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 11px 12px;
-  font-size: 14px;
+  border: 0;
+  outline: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--text-body);
   font-family: inherit;
-  color: #1e293b;
-  background: #fff;
+  color: var(--color-text-primary);
+  background: transparent;
+  min-width: 0;
 }
 
 .input.readonly {
-  background: var(--color-surface);
   color: var(--color-text-secondary);
-}
-
-.alert {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-.alert.success {
-  background: rgba(91, 140, 106, 0.1);
-  color: var(--color-success);
-}
-
-.alert.error {
-  background: rgba(196, 92, 92, 0.08);
-  color: var(--color-error);
 }
 
 .btn-save {
   width: 100%;
-  border: none;
-  border-radius: 12px;
-  padding: 13px;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 14px;
+  min-height: var(--btn-primary-height);
   font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.btn-save:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .coupon-hint {
-  margin: -4px 0 12px;
-  font-size: 13px;
-  color: #64748b;
+  margin: calc(var(--space-1) * -1) 0 var(--space-3);
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
   line-height: 1.45;
 }
 
 .coupon-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .btn-coupon,
@@ -490,24 +479,32 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   border: none;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-3);
+  font-size: var(--text-body);
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+  min-height: var(--touch-min);
+  transition: transform var(--transition), opacity var(--transition);
 }
 
 .btn-coupon {
   background: var(--color-primary-light);
   color: var(--color-primary-dark);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
 }
 
 .btn-redeem {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
+}
+
+.btn-coupon:active,
+.btn-redeem:active {
+  transform: scale(0.98);
 }
 
 .btn-coupon i,
@@ -519,10 +516,10 @@ onMounted(async () => {
   min-width: 22px;
   height: 22px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-primary);
-  color: #fff;
-  font-size: 12px;
+  color: var(--color-on-primary);
+  font-size: var(--text-caption);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -531,13 +528,13 @@ onMounted(async () => {
 
 .muted {
   margin: 0;
-  font-size: 13px;
-  color: #94a3b8;
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
 }
 
 .history-item {
-  padding: 12px 0;
-  border-top: 1px solid #f1f5f9;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .history-item:first-of-type {
@@ -549,46 +546,46 @@ onMounted(async () => {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 
 .history-head strong {
-  font-size: 14px;
-  color: #1e293b;
+  font-size: var(--text-body);
+  color: var(--color-text-primary);
 }
 
 .history-time {
-  font-size: 12px;
-  color: #64748b;
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
 }
 
 .status-pill {
   display: inline-block;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-2);
   padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
   font-weight: 600;
 }
 
 .status-awaiting {
-  background: rgba(196, 154, 60, 0.15);
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
   color: var(--color-warning);
 }
 
 .status-pending {
-  background: rgba(107, 143, 163, 0.15);
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
   color: var(--color-info);
 }
 
 .status-done {
-  background: rgba(91, 140, 106, 0.15);
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
   color: var(--color-success);
 }
 
 .status-cancelled {
-  background: rgba(196, 92, 92, 0.1);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
   color: var(--color-error);
 }
 
@@ -596,32 +593,12 @@ onMounted(async () => {
 .history-total,
 .history-meta {
   margin: 0 0 2px;
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--color-text-secondary);
 }
 
-.btn-logout {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 14px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 14px;
-  min-height: var(--touch-min);
-}
-
-.btn-logout:hover {
-  color: var(--color-text-secondary);
-}
-
-.btn-logout i {
-  font-size: 18px;
+.history-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 </style>

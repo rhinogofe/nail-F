@@ -33,7 +33,6 @@ function go(path) {
       :aria-current="active === 'bookings' ? 'page' : undefined"
       @click="go('/bookings')"
     >
-      <span v-if="active === 'bookings'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-calendar" aria-hidden="true"></i>
       <span>จอง</span>
     </button>
@@ -44,7 +43,6 @@ function go(path) {
       :aria-current="active === 'reviews' ? 'page' : undefined"
       @click="go('/reviews')"
     >
-      <span v-if="active === 'reviews'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-star" aria-hidden="true"></i>
       <span>รีวิว</span>
     </button>
@@ -55,7 +53,6 @@ function go(path) {
       :aria-current="active === 'chat' ? 'page' : undefined"
       @click="go('/chat')"
     >
-      <span v-if="active === 'chat'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-message-circle" aria-hidden="true"></i>
       <span>แชท</span>
       <span v-if="unreadCount > 0" class="nav-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
@@ -67,7 +64,6 @@ function go(path) {
       :aria-current="active === 'profile' ? 'page' : undefined"
       @click="go('/profile')"
     >
-      <span v-if="active === 'profile'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-user" aria-hidden="true"></i>
       <span>บัญชี</span>
     </button>
@@ -79,7 +75,6 @@ function go(path) {
       :aria-current="active === 'admin' ? 'page' : undefined"
       @click="go('/admin')"
     >
-      <span v-if="active === 'admin'" class="nav-dot" aria-hidden="true"></span>
       <i class="ti ti-shield" aria-hidden="true"></i>
       <span>แอดมิน</span>
     </button>
@@ -93,13 +88,16 @@ function go(path) {
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
-  max-width: 430px;
-  height: var(--bottom-nav-height);
-  background: var(--color-surface-elevated);
+  max-width: var(--page-max-width);
+  min-height: var(--bottom-nav-total);
+  padding-bottom: var(--bottom-nav-safe);
+  background: color-mix(in srgb, var(--color-surface-elevated) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--color-border);
+  box-shadow: var(--shadow-nav);
   display: flex;
-  padding-bottom: env(safe-area-inset-bottom, 0);
-  z-index: 30;
+  z-index: var(--z-nav);
 }
 
 .nav-item {
@@ -108,7 +106,7 @@ function go(path) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   font-size: var(--text-label);
   font-weight: 500;
   color: var(--color-text-muted);
@@ -118,8 +116,8 @@ function go(path) {
   font-family: inherit;
   transition: color var(--transition);
   position: relative;
-  min-height: var(--touch-min);
-  padding-top: 6px;
+  min-height: var(--bottom-nav-height);
+  padding: var(--space-1) var(--space-1) var(--space-2);
 }
 
 .nav-item i {
@@ -127,35 +125,44 @@ function go(path) {
   line-height: 1;
 }
 
-.nav-dot {
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--color-primary);
-}
-
 .nav-item.active {
   color: var(--color-primary);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-primary-light) 65%, transparent);
+  border-radius: var(--radius-md);
+  margin: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+.nav-item.active i {
+  transform: translateY(-1px);
+}
+
+.nav-item:active:not(.active) {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-item.active i {
+    transform: none;
+  }
 }
 
 .nav-badge {
   position: absolute;
-  top: 4px;
-  right: calc(50% - 22px);
+  top: 6px;
+  left: calc(50% + 10px);
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: 999px;
-  background: #ef4444;
-  color: #fff;
+  border-radius: var(--radius-pill);
+  background: var(--color-error);
+  color: var(--color-on-primary);
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
   text-align: center;
+  border: 2px solid var(--color-surface-elevated);
 }
 
 .nav-item:hover:not(.active) {

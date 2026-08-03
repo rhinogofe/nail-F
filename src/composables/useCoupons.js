@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 const DEFAULT_COUPON = {
   discountPercent: 20,
   requiredPoints: 100,
+  completionPoints: 10,
 }
 
 export function useCoupons() {
@@ -24,6 +25,7 @@ export function useCoupons() {
       couponSettings.value = {
         discountPercent: Number(data?.discount_percent) || DEFAULT_COUPON.discountPercent,
         requiredPoints: Number(data?.required_points) || DEFAULT_COUPON.requiredPoints,
+        completionPoints: Number(data?.completion_points ?? DEFAULT_COUPON.completionPoints),
       }
       settingsLoaded.value = true
     } catch {

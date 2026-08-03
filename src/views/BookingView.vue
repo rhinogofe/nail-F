@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import { useCoupons } from '../composables/useCoupons'
 import BottomNav from '../components/BottomNav.vue'
+import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import api from '../api/axios'
 import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
 import {
@@ -18,6 +19,7 @@ import {
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { formatUiText } from '../utils/formatUiText'
 import BrandMark from '../components/BrandMark.vue'
 
 const router = useRouter()
@@ -538,11 +540,6 @@ function goToPayment(booking) {
   })
 }
 
-const initials = computed(() => {
-  const n = auth.user?.name || ''
-  return n.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'NA'
-})
-
 const totalPoints = computed(() => auth.user?.total_points || 0)
 const pointsLabel = computed(() => {
   const n = totalPoints.value
@@ -555,6 +552,13 @@ const pointsLabel = computed(() => {
   return `${n.toLocaleString('th-TH')} แต้ม`
 })
 const canRedeemCoupon = canRedeem
+
+const pointsBannerHtml = computed(() =>
+  formatUiText(
+    ui.get('ui_points_banner', 'เมื่อช่างทำเสร็จ คุณจะได้รับ <strong>+{points} แต้ม</strong>'),
+    { points: (couponSettings.value.completionPoints ?? 10).toLocaleString('th-TH') }
+  )
+)
 
 watch(unpaidCountdown.nowMs, () => {
   if (!bookingStore.unpaidAutoCancelEnabled || busy.value || expiryRefreshPending) return
@@ -589,13 +593,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page">
+  <div class="app-page app-page--nav booking-page">
 
     <!-- ── HEADER ── -->
-    <header class="hdr">
+    <header class="hdr app-header">
       <div class="hdr-top">
         <BrandMark show-sparkle />
-        <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
+        <AccountMenuDrawer />
       </div>
 
       <div class="hdr-bar">
@@ -784,7 +788,7 @@ onUnmounted(() => {
 
             <div class="points-banner">
               <i class="ti ti-star points-ic" aria-hidden="true"></i>
-              <span v-html="ui.get('ui_points_banner', 'เมื่อช่างทำเสร็จ คุณจะได้รับ <strong>+10 แต้ม</strong>')"></span>
+              <span v-html="pointsBannerHtml"></span>
             </div>
 
             <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>
@@ -873,28 +877,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.page {
-  display: block;
-  font-family: var(--font-body);
-  background: var(--color-surface);
-  min-height: 100svh;
-  max-width: 430px;
-  margin: 0 auto;
-  position: relative;
+.booking-page {
   padding: 0;
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
 }
 
 /* ── HEADER ── */
 .hdr {
-  background: rgba(255, 251, 249, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border);
-  padding: 14px var(--page-padding-x) 0;
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  padding-bottom: 0;
 }
 .hdr-top {
   display: flex;
@@ -916,13 +905,6 @@ onUnmounted(() => {
 }
 .brand-accent { color: var(--color-primary); }
 .brand-icon-sm { font-size: 16px; color: var(--color-primary); line-height: 1; }
-.avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-secondary), var(--color-primary-light));
-  color: var(--color-primary-dark); font-size: 12px; font-weight: 600;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
 
 .hdr-bar {
   display: flex;
@@ -961,7 +943,7 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.chip-rose { background: var(--color-primary); color: #fff; flex-shrink: 0; }
+.chip-rose { background: var(--color-primary); color: var(--color-on-primary); flex-shrink: 0; }
 .chip-slate { background: var(--color-surface); color: var(--color-text-secondary); border-color: var(--color-border); }
 
 /* Date nav */
@@ -1046,13 +1028,13 @@ onUnmounted(() => {
   background: var(--color-primary);
   border-color: var(--color-primary);
   transform: scale(1.02);
-  box-shadow: 0 0 0 2px rgba(196, 132, 122, 0.25);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 .day-name { font-size: 10px; color: var(--color-text-muted); font-weight: 500; }
 .day-num { font-size: 15px; font-weight: 600; color: var(--color-text-primary); }
 .day-pill.today:not(.active):not(.has-tint) .day-num { color: var(--color-primary); }
 .day-pill.active:not(.has-tint) .day-name,
-.day-pill.active:not(.has-tint) .day-num { color: #fff; }
+.day-pill.active:not(.has-tint) .day-num { color: var(--color-on-primary); }
 .day-dot {
   width: 4px; height: 4px; border-radius: 50%; background: transparent;
 }
@@ -1114,9 +1096,9 @@ onUnmounted(() => {
 .slot-status.status-awaiting { color: var(--color-primary); font-weight: 500; }
 .slot-status.status-paid { color: var(--color-text-secondary); }
 .slot-countdown {
-  font-size: 11px;
+  font-size: var(--text-label);
   font-weight: 600;
-  color: #b45309;
+  color: var(--color-warning);
   font-variant-numeric: tabular-nums;
 }
 .slot-card.mine .slot-countdown {
@@ -1135,12 +1117,13 @@ onUnmounted(() => {
 .badge-busy { font-size: 14px; color: var(--color-text-muted); }
 
 .book-btn {
-  padding: 7px 14px; border-radius: 10px; border: none;
-  background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 600;
-  cursor: pointer; flex-shrink: 0; font-family: inherit; transition: opacity var(--transition);
+  padding: 7px 14px; border-radius: var(--radius-md); border: none;
+  background: var(--color-primary); color: var(--color-on-primary); font-size: var(--text-caption); font-weight: 600;
+  cursor: pointer; flex-shrink: 0; font-family: inherit; transition: background var(--transition), transform var(--transition);
   min-height: 36px;
 }
-.book-btn:hover:not(:disabled) { opacity: .85; }
+.book-btn:hover:not(:disabled) { background: var(--color-primary-hover); }
+.book-btn:active:not(:disabled) { transform: scale(0.97); }
 .book-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .btn-cancel-slot {
@@ -1217,17 +1200,17 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface-elevated);
   cursor: pointer;
-  transition: border-color .15s, background .15s, box-shadow .15s;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
 }
 .option-card:hover { border-color: var(--color-primary-light); background: var(--color-primary-light); }
 .option-card.selected {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
-  box-shadow: 0 0 0 1px rgba(196, 132, 122, 0.12);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 .option-card.required {
   cursor: default;

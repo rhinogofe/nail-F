@@ -17,10 +17,11 @@ const isAdminRoute = computed(() => /\/admin$/.test(route.path))
 <style>
 .app-shell {
   min-height: 100svh;
-  max-width: 430px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
-  background: var(--color-surface);
+  background: var(--color-background);
   position: relative;
+  isolation: isolate;
 }
 
 .app-shell--admin {
@@ -28,17 +29,18 @@ const isAdminRoute = computed(() => /\/admin$/.test(route.path))
   width: 100%;
   overflow-x: clip;
   box-sizing: border-box;
+  background: var(--color-background);
 }
 
 @media (min-width: 431px) {
   body {
-    background: #F5F0ED;
+    background: var(--color-surface-muted);
   }
 }
 
 @media (min-width: 768px) {
   .app-shell--admin {
-    padding: 0 20px;
+    padding: 0 var(--space-5);
   }
 }
 </style>

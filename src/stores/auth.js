@@ -36,8 +36,10 @@ export const useAuthStore = defineStore('auth', {
       this.loading = true
       try {
         const { data } = await api.get('/api/auth/me')
-        this.user = data
-        return data
+        const { token, ...profile } = data
+        this.user = profile
+        if (token) this.setToken(token)
+        return profile
       } catch (error) {
         this.logout()
         throw error

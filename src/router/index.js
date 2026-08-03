@@ -14,6 +14,7 @@ import ChatView from '../views/ChatView.vue'
 
 const shopChildren = [
   { path: 'login', component: LoginView, meta: { guest: true } },
+  { path: 'register-shop', component: () => import('../views/RegisterShopView.vue'), meta: { registerShop: true } },
   { path: 'bookings', component: BookingView, meta: { requiresAuth: true } },
   { path: 'reviews', component: ReviewsView, meta: { requiresAuth: true } },
   { path: 'chat', component: ChatView, meta: { requiresAuth: true } },
@@ -40,6 +41,7 @@ const router = createRouter({
     { path: '/profile', redirect: '/default/profile' },
     { path: '/admin', redirect: '/default/admin' },
     { path: '/auth/callback', redirect: '/default/auth/callback' },
+    { path: '/register-shop', redirect: '/default/register-shop' },
     { path: '/payment/:bookingId', redirect: (to) => `/default/payment/${to.params.bookingId}` },
   ],
 })
@@ -84,7 +86,7 @@ router.beforeEach(async (to) => {
     if (shopSlug) return shopPath(shopSlug, '/bookings')
     return '/'
   }
-  if (to.meta.guest && auth.isLoggedIn) {
+  if (to.meta.guest && auth.isLoggedIn && !to.meta.registerShop) {
     if (shopSlug) return shopPath(shopSlug, '/bookings')
     return '/'
   }

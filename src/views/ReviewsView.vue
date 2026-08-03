@@ -1,13 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useAuthStore } from '../stores/auth'
 import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
 import BrandMark from '../components/BrandMark.vue'
+import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
-const auth = useAuthStore()
 const ui = useUiSettingsStore()
 
 const clips = ref([])
@@ -111,35 +110,30 @@ function onViewerScroll() {
   }
 }
 
-const initials = computed(() => {
-  const n = auth.user?.name || ''
-  return n.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2) || 'NA'
-})
-
 onMounted(loadClips)
 onUnmounted(() => lockBodyScroll(false))
 </script>
 
 <template>
-  <div class="page">
-    <header class="hdr">
+  <div class="app-page app-page--nav reviews-page">
+    <header class="hdr app-header">
       <div class="hdr-top">
         <div class="hdr-title-wrap">
           <BrandMark />
           <h1 class="page-title">{{ ui.get('ui_reviews_title', 'รีวิว') }}</h1>
           <p class="page-sub">{{ ui.get('ui_reviews_subtitle', 'ผลงานจาก TikTok และ Instagram') }}</p>
         </div>
-        <div class="avatar" :title="auth.user?.name">{{ initials }}</div>
+        <AccountMenuDrawer />
       </div>
     </header>
 
-    <main class="content">
+    <main class="content app-content">
       <p v-if="loading" class="muted loading-hint">กำลังโหลด...</p>
-      <p v-else-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+      <p v-else-if="errorMessage" class="alert-banner error content-alert">{{ errorMessage }}</p>
 
-      <div v-else-if="clips.length === 0" class="empty card">
-        <i class="ti ti-video-off empty-icon" aria-hidden="true"></i>
-        <p>{{ ui.get('ui_reviews_empty', 'ยังไม่มีคลิปรีวิว') }}</p>
+      <div v-else-if="clips.length === 0" class="empty state-card">
+        <i class="ti ti-video-off state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">{{ ui.get('ui_reviews_empty', 'ยังไม่มีคลิปรีวิว') }}</p>
         <p class="muted">{{ ui.get('ui_reviews_empty_hint', 'รอแอดมินเพิ่มลิงก์ TikTok หรือ Instagram') }}</p>
       </div>
 
@@ -166,6 +160,7 @@ onUnmounted(() => lockBodyScroll(false))
           <span class="clip-play" aria-hidden="true">
             <i class="ti ti-player-play-filled"></i>
           </span>
+          <span class="clip-source-badge">{{ clipSourceLabel(clip) }}</span>
         </button>
       </div>
     </main>
@@ -229,121 +224,67 @@ onUnmounted(() => lockBodyScroll(false))
 </template>
 
 <style scoped>
-.page {
-  font-family: var(--font-body);
-  background: var(--color-surface);
-  display: block;
+.reviews-page {
   padding: 0;
-  gap: 0;
-  max-width: 430px;
-  margin: 0 auto;
-  position: relative;
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0) + 8px);
+  background: var(--color-background);
 }
 
 .hdr {
-  background: rgba(255, 251, 249, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border);
-  padding: 10px var(--page-padding-x) 8px;
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  padding-bottom: var(--space-2);
 }
 
 .hdr-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .hdr-title-wrap {
   min-width: 0;
 }
 
-.brand {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.brand-accent {
-  color: var(--color-primary);
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .page-title {
-  margin: 2px 0 0;
-  font-size: 18px;
-  line-height: 1.2;
-  color: #1e293b;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-h2);
+  line-height: var(--lh-tight);
+  color: var(--color-text-primary);
 }
 
 .page-sub {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #94a3b8;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
   line-height: 1.35;
 }
 
 .content {
-  padding: 0;
+  padding: 0 var(--page-padding-x) var(--space-4);
+}
+
+.content-alert {
+  margin: var(--space-3) 0;
 }
 
 .loading-hint {
   text-align: center;
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 .muted {
-  color: #94a3b8;
-  font-size: 13px;
-}
-
-.alert.error {
-  background: #fef2f2;
-  color: #b91c1c;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  margin: 14px 16px;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
 }
 
 .empty {
-  text-align: center;
-  padding: 32px 16px;
-  margin: 14px 16px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-}
-
-.empty-icon {
-  font-size: 36px;
-  color: #cbd5e1;
-  display: block;
-  margin-bottom: 8px;
+  margin: var(--space-3) 0;
 }
 
 .clip-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  padding: 8px var(--page-padding-x) 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 0;
 }
 
 .clip-cell {
@@ -351,10 +292,21 @@ onUnmounted(() => lockBodyScroll(false))
   aspect-ratio: 9 / 16;
   padding: 0;
   border: none;
-  border-radius: 12px;
-  background: #2D2424;
+  border-radius: var(--radius-md);
+  background: var(--color-text-primary);
   cursor: pointer;
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.clip-cell:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.clip-cell:active {
+  transform: scale(0.98);
 }
 
 .clip-thumb {
@@ -371,19 +323,19 @@ onUnmounted(() => lockBodyScroll(false))
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  background: linear-gradient(160deg, #1e293b, #0f172a);
-  color: #fff;
+  gap: var(--space-2);
+  background: linear-gradient(160deg, var(--color-text-primary), color-mix(in srgb, var(--color-primary-dark) 80%, var(--color-text-primary)));
+  color: var(--color-on-primary);
   font-size: 28px;
-  padding: 8px;
+  padding: var(--space-2);
 }
 
 .clip-fallback-title {
-  font-size: 10px;
+  font-size: var(--text-label);
   font-weight: 600;
   text-align: center;
   line-height: 1.3;
-  color: #e2e8f0;
+  color: var(--color-surface-muted);
 }
 
 .clip-play {
@@ -392,9 +344,23 @@ onUnmounted(() => lockBodyScroll(false))
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(transparent 40%, rgba(45, 36, 36, 0.55));
-  color: #fff;
+  background: linear-gradient(transparent 35%, color-mix(in srgb, var(--color-text-primary) 72%, transparent));
+  color: var(--color-on-primary);
   font-size: 22px;
+  pointer-events: none;
+}
+
+.clip-source-badge {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-text-primary) 55%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--color-on-primary);
+  font-size: 10px;
+  font-weight: 600;
   pointer-events: none;
 }
 
@@ -404,27 +370,28 @@ onUnmounted(() => lockBodyScroll(false))
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
-  max-width: 430px;
-  z-index: 100;
-  background: #000;
+  max-width: var(--page-max-width);
+  z-index: var(--z-overlay);
+  background: var(--color-text-primary);
 }
 
 .viewer-close {
   position: absolute;
-  top: max(12px, env(safe-area-inset-top));
-  left: 12px;
+  top: max(var(--space-3), env(safe-area-inset-top));
+  left: var(--space-3);
   z-index: 110;
-  width: 40px;
-  height: 40px;
+  width: var(--touch-min);
+  height: var(--touch-min);
   border: none;
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.65);
-  color: #fff;
+  background: color-mix(in srgb, var(--color-text-primary) 72%, transparent);
+  color: var(--color-on-primary);
   font-size: 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  backdrop-filter: blur(8px);
 }
 
 .viewer-scroll {
@@ -441,7 +408,7 @@ onUnmounted(() => lockBodyScroll(false))
   scroll-snap-stop: always;
   position: relative;
   overflow: hidden;
-  background: #000;
+  background: var(--color-text-primary);
 }
 
 .viewer-embed-wrap {
@@ -466,7 +433,7 @@ onUnmounted(() => lockBodyScroll(false))
 .viewer-embed-placeholder {
   width: 100%;
   height: 100%;
-  background: #0f172a;
+  background: var(--color-text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -484,40 +451,41 @@ onUnmounted(() => lockBodyScroll(false))
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 14px 16px max(18px, env(safe-area-inset-bottom));
-  color: #fff;
+  padding: var(--space-3) var(--space-4) max(var(--space-4), env(safe-area-inset-bottom));
+  color: var(--color-on-primary);
   text-align: center;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
+  background: linear-gradient(transparent, color-mix(in srgb, var(--color-text-primary) 92%, transparent));
 }
 
 .viewer-title {
-  margin: 0 0 6px;
-  font-size: 15px;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
   font-weight: 600;
 }
 
 .viewer-hint {
-  margin: 0 0 10px;
-  font-size: 12px;
-  color: #cbd5e1;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
 }
 
 .viewer-embed-instagram {
   max-width: 540px;
   margin: 0 auto;
-  border-radius: 12px;
-  background: #fff;
+  border-radius: var(--radius-md);
+  background: var(--color-on-primary);
 }
 
 .viewer-tiktok-btn {
   border: none;
-  border-radius: 999px;
-  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-4);
   background: var(--color-primary-light);
   color: var(--color-primary-dark);
-  font-size: 13px;
+  font-size: var(--text-caption);
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+  min-height: var(--touch-min);
 }
 </style>

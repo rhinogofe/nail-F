@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useShopRoute } from '../composables/useShopRoute'
 import api from '../api/axios'
@@ -11,6 +11,8 @@ import { buildBookingHourSelectOptions, slotTimeLabel, normalizeShopOpenHour, no
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
 import { imageUrlHint } from '../utils/imageUrl'
+import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
+import { compressImage } from '../utils/compressChatImage'
 import { useUiSettingsStore } from '../stores/uiSettings'
 
 const router = useRouter()
@@ -37,6 +39,13 @@ async function confirmAdminSave(title, message) {
 }
 
 function scrollToAdminSection(sectionId, focusSelector) {
+  const settingsKey = settingsSectionById[sectionId]
+  if (settingsKey) {
+    activeTab.value = 'settings'
+    activeSettingsSection.value = settingsKey
+    focusAdminSectionEl(sectionId, focusSelector)
+    return
+  }
   nextTick(() => {
     const section = document.getElementById(sectionId)
     if (!section) return
@@ -44,6 +53,16 @@ function scrollToAdminSection(sectionId, focusSelector) {
     if (focusSelector) {
       const input = section.querySelector(focusSelector)
       input?.focus({ preventScroll: true })
+    }
+  })
+}
+
+function focusAdminSectionEl(sectionId, focusSelector) {
+  nextTick(() => {
+    const section = document.getElementById(sectionId)
+    if (!section) return
+    if (focusSelector) {
+      section.querySelector(focusSelector)?.focus({ preventScroll: true })
     }
   })
 }
@@ -105,6 +124,11 @@ const revenueDaySummary = ref({})
 const revenueMonthTotal = ref(0)
 const revenueMonthDepositTotal = ref(0)
 const revenueMonthDoneCount = ref(0)
+const revenuePrevMonthDepositTotal = ref(0)
+const revenuePrevMonthTotal = ref(0)
+const revenueDepositChangePct = ref(null)
+const revenueTotalChangePct = ref(null)
+const revenuePrevMonthLabel = ref('')
 const revenueDepositRate = ref(300)
 const revenueLoading = ref(false)
 const blockMonth = ref(todayYm())
@@ -126,8 +150,11 @@ const bulkBlockNote = ref('')
 const bulkStartDate = ref(todayYmd())
 const bulkDays = ref(7)
 const depositAmount = ref(300)
+const registerShopPin = ref('')
+const registerShopPinConfigured = ref(false)
 const couponDiscountPercent = ref(20)
 const couponRequiredPoints = ref(100)
+const couponCompletionPoints = ref(10)
 const linePushEnabled = ref(false)
 const linePushToId = ref('')
 const lineChannelToken = ref('')
@@ -300,6 +327,98 @@ const adminTabs = [
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
 
+const settingsSections = [
+  { key: 'deposit', id: 'settings-deposit', label: 'มัดจำ', icon: 'ti-cash' },
+  { key: 'coupon', id: 'settings-coupon', label: 'คูปองแลกแต้ม', icon: 'ti-ticket' },
+  { key: 'line', id: 'settings-line', label: 'LINE แจ้งเตือน', icon: 'ti-brand-line' },
+  { key: 'unpaid', id: 'settings-unpaid', label: 'ยกเลิกอัตโนมัติ', icon: 'ti-clock-pause' },
+  { key: 'shops', id: 'settings-shops', label: 'ร้าน / สาขา', icon: 'ti-building-store' },
+  { key: 'register-pin', id: 'settings-register-pin', label: 'รหัสสร้างร้านค้า', icon: 'ti-lock', superAdminOnly: true },
+  { key: 'hours', id: 'settings-shop-hours', label: 'เวลาเปิดร้าน', icon: 'ti-clock' },
+  { key: 'display', id: 'settings-booking-display', label: 'แสดงเวลาจอง', icon: 'ti-layout-list' },
+  { key: 'locations', id: 'settings-locations', label: 'สถานที่บริการ', icon: 'ti-map-pin' },
+  { key: 'advance', id: 'settings-advance-days', label: 'จองล่วงหน้า', icon: 'ti-calendar-event' },
+  { key: 'use-coupon', id: 'settings-use-coupon', label: 'ใช้คูปอง', icon: 'ti-scan' },
+]
+
+const settingsSectionById = Object.fromEntries(
+  settingsSections.map((s) => [s.id, s.key])
+)
+
+const visibleSettingsSections = computed(() =>
+  settingsSections.filter(
+    (section) =>
+      !section.superAdminOnly
+      || (isSuperAdmin.value && shopSlug.value === 'default')
+  )
+)
+
+const activeSettingsSection = ref('deposit')
+const activeUiSection = ref(0)
+const settingsNavOpen = ref(false)
+const uiNavOpen = ref(false)
+const blocksSections = [
+  { key: 'bulk', label: 'ปิดหลายวัน', icon: 'ti-calendar-stats' },
+  { key: 'calendar', label: 'ปิดทีละวัน', icon: 'ti-calendar' },
+]
+const activeBlocksSection = ref('bulk')
+const blocksNavOpen = ref(false)
+const isMobile = ref(false)
+let adminMobileMq = null
+
+const activeSettingsSectionMeta = computed(
+  () => visibleSettingsSections.value.find((s) => s.key === activeSettingsSection.value)
+    || visibleSettingsSections.value[0]
+    || settingsSections[0]
+)
+
+const activeUiSectionMeta = computed(
+  () => uiFieldGroups[activeUiSection.value] || uiFieldGroups[0]
+)
+
+const activeBlocksSectionMeta = computed(
+  () => blocksSections.find((s) => s.key === activeBlocksSection.value) || blocksSections[0]
+)
+
+const blocksToolbarSubtitle = computed(() => {
+  if (selectedBlockDate.value && activeBlocksSection.value === 'calendar') {
+    return formatServiceDateLabel(selectedBlockDate.value)
+  }
+  return 'ปิดวัน / ปิดช่วงเวลา'
+})
+
+function updateAdminMobileLayout() {
+  isMobile.value = adminMobileMq?.matches ?? window.innerWidth <= 640
+}
+
+function toggleSettingsNav() {
+  settingsNavOpen.value = !settingsNavOpen.value
+}
+
+function toggleUiNav() {
+  uiNavOpen.value = !uiNavOpen.value
+}
+
+function toggleBlocksNav() {
+  blocksNavOpen.value = !blocksNavOpen.value
+}
+
+function selectSettingsSection(key) {
+  activeSettingsSection.value = key
+  if (isMobile.value) settingsNavOpen.value = false
+}
+
+function selectUiSection(index) {
+  activeUiSection.value = index
+  if (isMobile.value) uiNavOpen.value = false
+}
+
+function selectBlocksSection(key) {
+  activeBlocksSection.value = key
+  if (key === 'bulk') closeBlockDay()
+  if (isMobile.value) blocksNavOpen.value = false
+}
+
 // ── Shop hours ─────────────────────────────
 const allShops = ref([])
 const newShopName = ref('')
@@ -315,6 +434,9 @@ const branchShopOptions = computed(() =>
   allShops.value.filter((shop) => shop.slug !== 'default' && shop.is_active)
 )
 const uiForm = ref({})
+const uiImageUploading = ref('')
+const pendingUiUploadKind = ref('')
+const uiImageFileInput = ref(null)
 const uiFieldGroups = UI_FIELD_GROUPS
 const shopOpenHour = ref(9)
 const shopLastBookingHour = ref(18)
@@ -507,11 +629,46 @@ async function saveUiSettingsAdmin() {
 
 function uiPreviewUrl(key) {
   const url = String(uiForm.value[key] || '').trim()
-  return url || ''
+  return url ? resolveUiImageUrl(url, shopSlug.value) : ''
 }
 
 function uiImageFieldHint(key) {
   return imageUrlHint(uiForm.value[key])
+}
+
+function triggerUiImageUpload(kind) {
+  if (uiImageUploading.value) return
+  pendingUiUploadKind.value = kind
+  uiImageFileInput.value?.click()
+}
+
+async function onUiImageSelected(event) {
+  const kind = pendingUiUploadKind.value
+  const input = event.target
+  const file = input.files?.[0]
+  input.value = ''
+  pendingUiUploadKind.value = ''
+  if (!file || !kind || uiImageUploading.value) return
+
+  uiImageUploading.value = kind
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const maxWidth = kind === 'logo' ? 800 : 1920
+    const { base64, mime } = await compressImage(file, { maxWidth, quality: 0.85 })
+    const { data } = await api.post('/api/admin/settings/ui/upload', {
+      kind,
+      image_data: base64,
+      image_mime: mime,
+    })
+    uiForm.value = { ...(data.settings || uiForm.value) }
+    uiSettingsStore.applyLocal(data.settings || uiForm.value)
+    message.value = kind === 'logo' ? 'อัปโหลดโลโก้แล้ว' : 'อัปโหลดภาพปกแล้ว'
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || err?.message || 'อัปโหลดรูปไม่สำเร็จ'
+  } finally {
+    uiImageUploading.value = ''
+  }
 }
 
 async function loadShopHours() {
@@ -817,6 +974,11 @@ function switchTab(tab) {
   errorMessage.value = ''
   if (tab === 'revenue') loadRevenueSummary()
   if (tab === 'reviews') loadShowcaseClips()
+  if (tab === 'ui') activeUiSection.value = 0
+  if (tab === 'blocks') activeBlocksSection.value = 'bulk'
+  settingsNavOpen.value = false
+  uiNavOpen.value = false
+  blocksNavOpen.value = false
 }
 
 const filtered = computed(() => bookings.value)
@@ -940,6 +1102,33 @@ function shiftRevenueMonth(delta) {
   loadRevenueSummary()
 }
 
+function formatRevenueChangePct(pct, currentTotal) {
+  if (pct == null) {
+    return {
+      text: currentTotal > 0 ? 'ใหม่' : '—',
+      className: currentTotal > 0 ? 'revenue-change--up' : '',
+      icon: currentTotal > 0 ? 'ti-trending-up' : 'ti-minus',
+    }
+  }
+  const rounded = Math.round(pct * 10) / 10
+  if (rounded === 0) {
+    return { text: '0%', className: 'revenue-change--flat', icon: '' }
+  }
+  const sign = rounded > 0 ? '+' : ''
+  return {
+    text: `${sign}${rounded.toLocaleString('th-TH', { maximumFractionDigits: 1 })}%`,
+    className: rounded > 0 ? 'revenue-change--up' : 'revenue-change--down',
+    icon: rounded > 0 ? 'ti-trending-up' : 'ti-trending-down',
+  }
+}
+
+const revenueDepositChange = computed(() =>
+  formatRevenueChangePct(revenueDepositChangePct.value, revenueMonthDepositTotal.value)
+)
+const revenueTotalChange = computed(() =>
+  formatRevenueChangePct(revenueTotalChangePct.value, revenueMonthTotal.value)
+)
+
 async function loadRevenueSummary() {
   revenueLoading.value = true
   try {
@@ -953,6 +1142,16 @@ async function loadRevenueSummary() {
     revenueMonthDepositTotal.value = Number(data?.month_deposit_total) || 0
     revenueMonthTotal.value = Number(data?.month_total) || 0
     revenueMonthDoneCount.value = Number(data?.month_done_count) || 0
+    revenuePrevMonthDepositTotal.value = Number(data?.prev_month_deposit_total) || 0
+    revenuePrevMonthTotal.value = Number(data?.prev_month_total) || 0
+    revenueDepositChangePct.value = data?.deposit_change_pct ?? null
+    revenueTotalChangePct.value = data?.total_change_pct ?? null
+    if (data?.prev_month) {
+      const [py, pm] = String(data.prev_month).split('-').map(Number)
+      revenuePrevMonthLabel.value = `${serviceThMonths[pm - 1]} ${py + 543}`
+    } else {
+      revenuePrevMonthLabel.value = ''
+    }
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดสรุปยอดไม่สำเร็จ'
   } finally {
@@ -1101,6 +1300,7 @@ function shiftBlockMonth(delta) {
 }
 
 function openBlockDay(iso) {
+  activeBlocksSection.value = 'calendar'
   selectedBlockDate.value = iso
   blockDate.value = iso
   message.value = ''
@@ -1120,11 +1320,50 @@ async function loadDepositSetting() {
   }
 }
 
+async function loadRegisterShopPinSetting() {
+  if (!isSuperAdmin.value || shopSlug.value !== 'default') return
+  try {
+    const { data } = await api.get('/api/admin/settings/register-pin')
+    registerShopPin.value = String(data?.pin || '')
+    registerShopPinConfigured.value = Boolean(data?.configured)
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดรหัสสร้างร้านไม่สำเร็จ'
+  }
+}
+
+async function saveRegisterShopPinSetting() {
+  const pin = String(registerShopPin.value || '').replace(/\D/g, '').slice(0, 4)
+  if (!/^\d{4}$/.test(pin)) {
+    errorMessage.value = 'รหัสต้องเป็นตัวเลข 4 หลัก'
+    return
+  }
+  const ok = await confirmAdminSave(
+    'ยืนยันบันทึกรหัสสร้างร้าน',
+    'บันทึกรหัสนี้สำหรับสมัครร้านค้าใหม่ใช่ไหม'
+  )
+  if (!ok) return
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/register-pin', { pin })
+    registerShopPin.value = String(data?.pin || pin)
+    registerShopPinConfigured.value = true
+    message.value = 'บันทึกรหัสสร้างร้านค้าแล้ว'
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกรหัสไม่สำเร็จ'
+  }
+}
+
+function onRegisterPinInput(event) {
+  registerShopPin.value = String(event.target.value || '').replace(/\D/g, '').slice(0, 4)
+}
+
 async function loadCouponSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/coupon')
     couponDiscountPercent.value = Number(data?.discount_percent) || 20
     couponRequiredPoints.value = Number(data?.required_points) || 100
+    couponCompletionPoints.value = Number(data?.completion_points ?? 10)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าคูปองไม่สำเร็จ'
   }
@@ -1133,6 +1372,7 @@ async function loadCouponSetting() {
 async function saveCouponSetting() {
   const discount = Number(couponDiscountPercent.value)
   const points = Number(couponRequiredPoints.value)
+  const completion = Number(couponCompletionPoints.value)
   if (!Number.isInteger(discount) || discount < 1 || discount > 100) {
     errorMessage.value = 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
     return
@@ -1141,9 +1381,13 @@ async function saveCouponSetting() {
     errorMessage.value = 'แต้มที่ใช้แลกต้องมากกว่า 0'
     return
   }
+  if (!Number.isInteger(completion) || completion < 0) {
+    errorMessage.value = 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
+    return
+  }
   const ok = await confirmAdminSave(
     'ยืนยันบันทึกคูปอง',
-    `ลด ${discount}% ใช้ ${points.toLocaleString('th-TH')} แต้ม ใช่ไหม`
+    `ลด ${discount}% ใช้ ${points.toLocaleString('th-TH')} แต้ม · ทำเสร็จ +${completion.toLocaleString('th-TH')} แต้ม ใช่ไหม`
   )
   if (!ok) return
   message.value = ''
@@ -1152,10 +1396,12 @@ async function saveCouponSetting() {
     const { data } = await api.patch('/api/admin/settings/coupon', {
       discount_percent: discount,
       required_points: points,
+      completion_points: completion,
     })
     couponDiscountPercent.value = Number(data.discount_percent) || discount
     couponRequiredPoints.value = Number(data.required_points) || points
-    message.value = `บันทึกคูปองแล้ว: ลด ${couponDiscountPercent.value}% ใช้ ${couponRequiredPoints.value} แต้ม`
+    couponCompletionPoints.value = Number(data.completion_points ?? completion)
+    message.value = `บันทึกแล้ว: ลด ${couponDiscountPercent.value}% · แลก ${couponRequiredPoints.value} แต้ม · ทำเสร็จ +${couponCompletionPoints.value} แต้ม`
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกตั้งค่าคูปองไม่สำเร็จ'
   }
@@ -1471,9 +1717,11 @@ function formatBookingTotal(value) {
 }
 
 async function markDone(id) {
+  const pts = Number(couponCompletionPoints.value) || 0
+  const pointsHint = pts > 0 ? `ลูกค้าจะได้รับ +${pts.toLocaleString('th-TH')} แต้ม` : 'ไม่มีการให้แต้ม'
   const result = await Swal.fire({
     title: 'ทำคิวเสร็จ',
-    text: 'กรอกยอดเงินแล้วยืนยัน — ลูกค้าจะได้รับ +10 แต้ม',
+    text: `กรอกยอดเงินแล้วยืนยัน — ${pointsHint}`,
     input: 'number',
     inputLabel: 'ยอดเงิน (บาท)',
     inputAttributes: { min: 0, step: 1 },
@@ -2521,11 +2769,44 @@ function backToBooking() {
   router.push(shopPath('/bookings'))
 }
 
+const shopShareUrl = computed(() => {
+  const path = `/${shopSlug.value}/bookings`
+  if (typeof window === 'undefined') return path
+  return `${window.location.origin}${path}`
+})
+
+async function shareShopLink() {
+  message.value = ''
+  errorMessage.value = ''
+  const url = shopShareUrl.value
+  const title = shopStore.shopName || shopSlug.value
+  const text = `จองคิว ${title}`
+
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text, url })
+      message.value = 'แชร์ลิงก์แล้ว'
+      return
+    }
+    await navigator.clipboard.writeText(url)
+    message.value = 'คัดลอกลิงก์ร้านแล้ว'
+  } catch (err) {
+    if (err?.name === 'AbortError') return
+    try {
+      await navigator.clipboard.writeText(url)
+      message.value = 'คัดลอกลิงก์ร้านแล้ว'
+    } catch {
+      errorMessage.value = 'แชร์/คัดลอกลิงก์ไม่สำเร็จ'
+    }
+  }
+}
+
 onMounted(loadUiSettingsAdmin)
 onMounted(loadAllShops)
 onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
+onMounted(loadRegisterShopPinSetting)
 onMounted(loadCouponSetting)
 onMounted(loadLinePushSetting)
 onMounted(loadUnpaidAutoCancelSetting)
@@ -2536,11 +2817,20 @@ onMounted(loadAdvanceDays)
 onMounted(loadBookingDisplay)
 onMounted(loadUsers)
 onMounted(loadShowcaseClips)
+onMounted(() => {
+  adminMobileMq = window.matchMedia('(max-width: 640px)')
+  updateAdminMobileLayout()
+  adminMobileMq.addEventListener('change', updateAdminMobileLayout)
+})
+onUnmounted(() => {
+  adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
+})
 
 watch(shopSlug, () => {
   loadUiSettingsAdmin()
   loadCouponSetting()
   loadLinePushSetting()
+  loadRegisterShopPinSetting()
 })
 </script>
 
@@ -2551,10 +2841,16 @@ watch(shopSlug, () => {
         <h2 class="admin-title">แอดมิน</h2>
         <p class="muted admin-sub">{{ shopStore.shopName || shopSlug }} · {{ auth.user?.name || '-' }}</p>
       </div>
-      <button type="button" class="btn admin-back-btn" @click="backToBooking">
-        <i class="ti ti-arrow-left" aria-hidden="true"></i>
-        กลับจอง
-      </button>
+      <div class="admin-top-actions">
+        <button type="button" class="btn admin-share-btn" @click="shareShopLink">
+          <i class="ti ti-share-2" aria-hidden="true"></i>
+          แชร์ลิงก์ร้าน
+        </button>
+        <button type="button" class="btn admin-back-btn" @click="backToBooking">
+          <i class="ti ti-arrow-left" aria-hidden="true"></i>
+          กลับจอง
+        </button>
+      </div>
     </header>
 
     <div class="admin-tab-wrap">
@@ -2742,7 +3038,7 @@ watch(shopSlug, () => {
               class="btn primary"
               @click="markDone(item.id)"
             >
-              ทำเสร็จ +10 แต้ม
+              ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
             </button>
             <button
               v-if="item.status === 'pending'"
@@ -2836,21 +3132,50 @@ watch(shopSlug, () => {
 
         <div class="revenue-month-summary">
           <div class="revenue-summary-grid">
-            <div class="revenue-summary-block">
-              <span class="revenue-summary-label">มัดจำรวม</span>
+            <div class="revenue-summary-slot revenue-summary-slot--deposit">
+              <div class="revenue-summary-slot-head">
+                <i class="ti ti-coin" aria-hidden="true"></i>
+                <span class="revenue-summary-label">มัดจำรวม</span>
+              </div>
               <strong class="revenue-summary-deposit">{{ formatBookingTotal(revenueMonthDepositTotal) }}</strong>
               <span class="muted revenue-summary-sub">
                 {{ revenueMonthDoneCount.toLocaleString('th-TH') }} คิว × คนละ
                 {{ revenueDepositRate.toLocaleString('th-TH') }} บาท
               </span>
             </div>
-            <div class="revenue-summary-block">
-              <span class="revenue-summary-label">ยอดบริการรวม</span>
+            <div class="revenue-summary-slot revenue-summary-slot--total">
+              <div class="revenue-summary-slot-head">
+                <i class="ti ti-receipt" aria-hidden="true"></i>
+                <span class="revenue-summary-label">ยอดบริการรวม</span>
+              </div>
               <strong class="revenue-summary-total">{{ formatBookingTotal(revenueMonthTotal) }}</strong>
               <span class="muted revenue-summary-sub">
                 {{ revenueMonthDoneCount.toLocaleString('th-TH') }} คิวทำเสร็จ
               </span>
             </div>
+            <aside v-if="revenuePrevMonthLabel" class="revenue-summary-slot revenue-summary-slot--compare">
+              <div class="revenue-summary-slot-head">
+                <i class="ti ti-chart-line" aria-hidden="true"></i>
+                <span class="revenue-summary-label">เทียบเดือนก่อน</span>
+              </div>
+              <span class="revenue-compare-ref">{{ revenuePrevMonthLabel }}</span>
+              <div class="revenue-compare-rows">
+                <div class="revenue-compare-row">
+                  <span class="revenue-compare-metric">มัดจำ</span>
+                  <span class="revenue-change" :class="revenueDepositChange.className">
+                    <i v-if="revenueDepositChange.icon" class="ti" :class="revenueDepositChange.icon" aria-hidden="true"></i>
+                    {{ revenueDepositChange.text }}
+                  </span>
+                </div>
+                <div class="revenue-compare-row">
+                  <span class="revenue-compare-metric">บริการ</span>
+                  <span class="revenue-change" :class="revenueTotalChange.className">
+                    <i v-if="revenueTotalChange.icon" class="ti" :class="revenueTotalChange.icon" aria-hidden="true"></i>
+                    {{ revenueTotalChange.text }}
+                  </span>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       </template>
@@ -3161,8 +3486,65 @@ watch(shopSlug, () => {
       </template>
     </section>
 
-    <section v-show="activeTab === 'settings'" class="card admin-section">
-      <div id="settings-deposit" class="admin-settings-section">
+    <section v-show="activeTab === 'settings'" class="card admin-section admin-drawer-section">
+      <div class="admin-drawer-shell">
+        <Transition name="admin-drawer-backdrop">
+          <button
+            v-if="settingsNavOpen && isMobile"
+            type="button"
+            class="admin-drawer-backdrop"
+            aria-label="ปิดหัวข้อตั้งค่า"
+            @click="settingsNavOpen = false"
+          />
+        </Transition>
+
+        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': settingsNavOpen }">
+          <div class="admin-drawer-nav-head">
+            <h3 class="admin-drawer-nav-title">หัวข้อตั้งค่า</h3>
+            <button
+              type="button"
+              class="admin-drawer-icon-btn admin-drawer-close"
+              aria-label="ปิดหัวข้อ"
+              @click="settingsNavOpen = false"
+            >
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+          <nav class="admin-drawer-nav-list" aria-label="หัวข้อตั้งค่า">
+            <button
+              v-for="section in visibleSettingsSections"
+              :key="section.key"
+              type="button"
+              class="admin-drawer-nav-item"
+              :class="{ active: activeSettingsSection === section.key }"
+              :aria-current="activeSettingsSection === section.key ? 'true' : undefined"
+              @click="selectSettingsSection(section.key)"
+            >
+              <i class="ti" :class="section.icon" aria-hidden="true"></i>
+              <span>{{ section.label }}</span>
+            </button>
+          </nav>
+        </aside>
+
+        <div class="admin-drawer-main">
+          <header class="admin-drawer-toolbar">
+            <button
+              type="button"
+              class="admin-drawer-icon-btn"
+              :aria-expanded="settingsNavOpen"
+              aria-label="เปิดหัวข้อตั้งค่า"
+              @click="toggleSettingsNav"
+            >
+              <i class="ti ti-menu-2" aria-hidden="true"></i>
+            </button>
+            <div class="admin-drawer-toolbar-text">
+              <strong>{{ activeSettingsSectionMeta.label }}</strong>
+              <span class="muted">ตั้งค่าร้าน</span>
+            </div>
+          </header>
+
+          <div class="admin-drawer-panel">
+      <div v-show="activeSettingsSection === 'deposit'" id="settings-deposit" class="admin-settings-section">
       <h3>ตั้งค่ายอดมัดจำ</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -3174,9 +3556,7 @@ watch(shopSlug, () => {
       <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-coupon" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'coupon'" id="settings-coupon" class="admin-settings-section">
       <h3>ตั้งค่าคูปองแลกแต้ม</h3>
       <p class="muted">ลูกค้าใช้แต้มแลกคูปองส่วนลด — ค่านี้แยกตามร้าน</p>
       <div class="admin-form-row" style="flex-wrap:wrap">
@@ -3188,6 +3568,10 @@ watch(shopSlug, () => {
           แต้มที่ใช้แลก
           <input v-model.number="couponRequiredPoints" type="number" min="1" step="1" class="admin-input" />
         </label>
+        <label class="admin-label-grow">
+          แต้มเมื่อทำเสร็จ
+          <input v-model.number="couponCompletionPoints" type="number" min="0" step="1" class="admin-input" />
+        </label>
         <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveCouponSetting">
           บันทึกคูปอง
         </button>
@@ -3195,12 +3579,11 @@ watch(shopSlug, () => {
       <div class="shop-hours-preview">
         <i class="ti ti-ticket" style="font-size:16px;color:var(--color-primary)"></i>
         ลูกค้าจะเห็น: แลกคูปองลด <strong>{{ couponDiscountPercent }}%</strong> ใช้ <strong>{{ couponRequiredPoints.toLocaleString('th-TH') }}</strong> แต้ม
+        · ทำเสร็จได้ <strong>+{{ couponCompletionPoints.toLocaleString('th-TH') }}</strong> แต้ม
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-line" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'line'" id="settings-line" class="admin-settings-section">
       <h3>แจ้งเตือน LINE เมื่อมีคิวจอง</h3>
       <p class="muted">
         ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
@@ -3252,9 +3635,7 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-unpaid" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'unpaid'" id="settings-unpaid" class="admin-settings-section">
       <h3>ยกเลิกคิวรอชำระอัตโนมัติ</h3>
       <p class="muted">
         คิวสถานะรอชำระเงินที่ไม่ชำระภายในเวลาที่กำหนดจะถูกยกเลิกเอง และช่วงเวลานั้นจะว่างให้จองใหม่
@@ -3289,9 +3670,7 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-shops" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'shops'" id="settings-shops" class="admin-settings-section">
       <h3>ร้าน / สาขา</h3>
       <p v-if="isSuperAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
       <p v-else class="muted">สาขาของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
@@ -3340,9 +3719,38 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
+      <div v-show="activeSettingsSection === 'register-pin'" id="settings-register-pin" class="admin-settings-section">
+      <h3>รหัสสร้างร้านค้า</h3>
+      <p class="muted">
+        รหัส 4 หลักที่ต้องกรอกก่อนสมัครร้านใหม่ — แสดงเฉพาะแอดมินหลัก (default)
+      </p>
+      <div class="admin-form-row" style="flex-wrap:wrap">
+        <label class="admin-label-grow">
+          รหัส 4 หลัก
+          <input
+            :value="registerShopPin"
+            type="text"
+            inputmode="numeric"
+            maxlength="4"
+            pattern="\d{4}"
+            class="admin-input register-pin-admin-input"
+            placeholder="เช่น 1234"
+            autocomplete="off"
+            @input="onRegisterPinInput"
+          />
+        </label>
+        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveRegisterShopPinSetting">
+          บันทึกรหัส
+        </button>
+      </div>
+      <div class="shop-hours-preview">
+        <i class="ti ti-lock" style="font-size:16px;color:var(--color-primary)"></i>
+        สถานะ:
+        <strong>{{ registerShopPinConfigured ? 'เปิดรับสมัครร้านแล้ว' : 'ยังไม่ตั้งรหัส — ปิดการสมัครร้าน' }}</strong>
+      </div>
+      </div>
 
-      <div id="settings-shop-hours" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'hours'" id="settings-shop-hours" class="admin-settings-section">
       <h3>เวลาเปิด-ปิดร้าน</h3>
       <p class="muted">กำหนดช่วงเวลาที่ลูกค้าสามารถเลือกจองได้ในหน้าจอง (ความยาวคิวตามที่ตั้งด้านล่าง)</p>
       <div class="admin-form-row" style="flex-wrap:wrap">
@@ -3368,9 +3776,7 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-booking-display" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'display'" id="settings-booking-display" class="admin-settings-section">
       <h3>รูปแบบแสดงเวลาหน้าจองลูกค้า</h3>
       <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจอง</p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-bottom:12px">
@@ -3416,9 +3822,7 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-locations" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'locations'" id="settings-locations" class="admin-settings-section">
       <h3>สถานที่ให้บริการ (ปุ่มลัด)</h3>
       <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเพิ่มบริการในแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำในรายการนี้</p>
 
@@ -3488,9 +3892,7 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-advance-days" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'advance'" id="settings-advance-days" class="admin-settings-section">
       <h3>จำนวนวันจองล่วงหน้า</h3>
       <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
       <div class="admin-form-row">
@@ -3507,9 +3909,7 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <hr class="admin-divider" />
-
-      <div id="settings-use-coupon" class="admin-settings-section">
+      <div v-show="activeSettingsSection === 'use-coupon'" id="settings-use-coupon" class="admin-settings-section">
       <h3>ใช้คูปองลูกค้า</h3>
       <div class="admin-form-row">
         <label class="admin-label-grow">
@@ -3519,265 +3919,413 @@ watch(shopSlug, () => {
         <button class="btn primary admin-action-btn" @click="useCoupon">ยืนยันใช้คูปอง</button>
       </div>
       </div>
-    </section>
-
-    <section v-show="activeTab === 'ui'" id="settings-ui" class="card admin-section admin-settings-section">
-      <h3>ตั้งค่า UI & ข้อความ</h3>
-      <p class="muted">
-        แก้ชื่อแบรนด์ รูปภาพ ข้อความแจ้งเตือน และสีธีมของร้าน <strong>/{{ shopSlug }}</strong>
-        · ใช้ <code>{hours}</code> <code>{bookingId}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{amount}</code> ในข้อความ template ได้
-      </p>
-
-      <div v-for="group in uiFieldGroups" :key="group.title" class="ui-settings-group">
-        <h4 class="ui-settings-group-title">{{ group.title }}</h4>
-        <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
-        <div class="admin-form-grid admin-option-grid">
-          <label v-for="field in group.fields" :key="field.key" class="ui-field-label">
-            {{ field.label }}
-            <textarea
-              v-if="field.multiline"
-              v-model="uiForm[field.key]"
-              class="admin-input"
-              :rows="field.rows || 3"
-              :placeholder="field.placeholder || ''"
-            />
-            <input
-              v-else-if="field.type === 'color'"
-              v-model="uiForm[field.key]"
-              type="color"
-              class="admin-color-input ui-color-input"
-            />
-            <input
-              v-else
-              v-model="uiForm[field.key]"
-              type="text"
-              class="admin-input"
-              :placeholder="field.placeholder || ''"
-            />
-            <img
-              v-if="field.key === 'ui_logo_url' && uiPreviewUrl('ui_logo_url')"
-              :src="uiPreviewUrl('ui_logo_url')"
-              alt="preview logo"
-              class="ui-image-preview"
-              @error="($event.target.style.display = 'none')"
-            />
-            <img
-              v-if="field.key === 'ui_hero_image_url' && uiPreviewUrl('ui_hero_image_url')"
-              :src="uiPreviewUrl('ui_hero_image_url')"
-              alt="preview hero"
-              class="ui-image-preview ui-image-preview--wide"
-              @error="($event.target.style.display = 'none')"
-            />
-            <p
-              v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url') && uiImageFieldHint(field.key)"
-              class="muted ui-image-url-warn"
-            >
-              {{ uiImageFieldHint(field.key) }}
-            </p>
-          </label>
+          </div>
         </div>
-        <hr class="admin-divider" />
-      </div>
-
-      <div class="ui-settings-actions">
-        <button type="button" class="btn primary admin-action-btn" @click="saveUiSettingsAdmin">บันทึก UI ทั้งหมด</button>
-        <button type="button" class="btn ghost admin-action-btn" @click="loadUiSettingsAdmin">โหลดใหม่</button>
       </div>
     </section>
 
-    <section v-show="activeTab === 'blocks'" class="card admin-section admin-blocks-section">
-      <template v-if="!selectedBlockDate">
-        <div class="service-cal-header">
-          <h3>ปิดวัน / ปิดช่วงเวลา</h3>
-          <p class="muted">กดวันที่ในปฏิทินเพื่อจัดการรายการปิด · สีตามสถานที่ให้บริการ</p>
-        </div>
+    <section v-show="activeTab === 'ui'" id="settings-ui" class="card admin-section admin-drawer-section">
+      <div class="admin-drawer-shell">
+        <Transition name="admin-drawer-backdrop">
+          <button
+            v-if="uiNavOpen && isMobile"
+            type="button"
+            class="admin-drawer-backdrop"
+            aria-label="ปิดหัวข้อ UI"
+            @click="uiNavOpen = false"
+          />
+        </Transition>
 
-        <div class="bulk-block-box">
-          <h4>ปิดล่วงหน้า 7 / 15 / 30 วัน (ทั้งวัน หรือ บางช่วงเวลา)</h4>
-          <div class="admin-form-grid admin-bulk-settings">
-            <label>
-              ประเภท
-              <select v-model="bulkBlockType" class="admin-input">
-                <option value="partial">ปิดบางช่วงเวลา</option>
-                <option value="full_day">ปิดทั้งวัน</option>
-              </select>
-            </label>
-            <label v-if="bulkBlockType === 'partial'">
-              เริ่ม (ชม.)
-              <input v-model="bulkBlockStart" type="number" min="0" max="23" class="admin-input" />
-            </label>
-            <label v-if="bulkBlockType === 'partial'">
-              ถึง (ชม.)
-              <input v-model="bulkBlockEnd" type="number" min="1" max="24" class="admin-input" />
-            </label>
-          </div>
-          <div class="admin-form-grid admin-bulk-grid">
-            <label>
-              เริ่มจากวันที่
-              <input v-model="bulkStartDate" type="date" class="admin-input" />
-            </label>
-            <label>
-              จำนวนวัน
-              <input v-model.number="bulkDays" type="number" min="1" max="90" class="admin-input" />
-            </label>
-          </div>
-          <div class="admin-form-row">
-            <label class="admin-label-grow">
-              หมายเหตุ
-              <input v-model="bulkBlockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
-            </label>
-          </div>
-          <p class="bulk-preview">{{ bulkPreviewText }}</p>
-          <div class="bulk-preset-row">
-            <button type="button" class="btn" :class="{ primary: bulkDays === 7 }" @click="bulkDays = 7">7 วัน</button>
-            <button type="button" class="btn" :class="{ primary: bulkDays === 15 }" @click="bulkDays = 15">15 วัน</button>
-            <button type="button" class="btn" :class="{ primary: bulkDays === 30 }" @click="bulkDays = 30">30 วัน</button>
-            <button type="button" class="btn primary admin-action-btn" @click="createBulkBlocks">
-              ยืนยันปิดล่วงหน้า
-            </button>
-          </div>
-        </div>
-
-        <div class="service-cal-nav">
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="เดือนก่อน">
-            <i class="ti ti-chevron-left" aria-hidden="true"></i>
-          </button>
-          <span class="service-cal-month">{{ blockMonthLabel }}</span>
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="เดือนถัดไป">
-            <i class="ti ti-chevron-right" aria-hidden="true"></i>
-          </button>
-        </div>
-
-        <div class="service-cal-weekdays">
-          <span v-for="wd in serviceWeekdays" :key="`blk-${wd}`" class="service-cal-wd">{{ wd }}</span>
-        </div>
-
-        <div class="service-cal-grid">
-          <div v-for="(week, wi) in blockCalendarWeeks" :key="`blk-week-${wi}`" class="service-cal-week">
+        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': uiNavOpen }">
+          <div class="admin-drawer-nav-head">
+            <h3 class="admin-drawer-nav-title">หัวข้อ UI</h3>
             <button
-              v-for="(cell, ci) in week"
-              :key="`blk-${wi}-${ci}`"
               type="button"
-              class="service-cal-day block-cal-day"
-              :class="{
-                empty: !cell,
-                today: cell?.isToday && !blockDayColor(cell.iso),
-                'has-block': cell && blockDayMarker(cell.iso) && !blockDayColor(cell.iso),
-              }"
-              :style="cell ? blockDayStyle(cell.iso) : undefined"
-              :disabled="!cell"
-              @click="cell && openBlockDay(cell.iso)"
+              class="admin-drawer-icon-btn admin-drawer-close"
+              aria-label="ปิดหัวข้อ"
+              @click="uiNavOpen = false"
             >
-              <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
-              <span
-                v-if="cell && blockDayMarker(cell.iso)"
-                class="block-cal-marker"
-                :class="blockDayMarker(cell.iso)"
-                :title="blockDayMarker(cell.iso) === 'full' ? 'ปิดทั้งวัน' : 'ปิดบางช่วงเวลา'"
-              >
-                {{ blockDayMarker(cell.iso) === 'full' ? '×' : '!' }}
-              </span>
+              <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
-        </div>
+          <nav class="admin-drawer-nav-list" aria-label="หัวข้อ UI">
+            <button
+              v-for="(group, idx) in uiFieldGroups"
+              :key="group.title"
+              type="button"
+              class="admin-drawer-nav-item"
+              :class="{ active: activeUiSection === idx }"
+              :aria-current="activeUiSection === idx ? 'true' : undefined"
+              @click="selectUiSection(idx)"
+            >
+              <i class="ti ti-adjustments" aria-hidden="true"></i>
+              <span>{{ group.title }}</span>
+            </button>
+          </nav>
+        </aside>
 
-        <div class="booking-cal-legend block-cal-legend">
-          <span><span class="block-cal-marker full inline">×</span> ปิดทั้งวัน</span>
-          <span><span class="block-cal-marker partial inline">!</span> ปิดบางช่วงเวลา</span>
-        </div>
-      </template>
+        <div class="admin-drawer-main">
+          <header class="admin-drawer-toolbar">
+            <button
+              type="button"
+              class="admin-drawer-icon-btn"
+              :aria-expanded="uiNavOpen"
+              aria-label="เปิดหัวข้อ UI"
+              @click="toggleUiNav"
+            >
+              <i class="ti ti-menu-2" aria-hidden="true"></i>
+            </button>
+            <div class="admin-drawer-toolbar-text">
+              <strong>{{ activeUiSectionMeta.title }}</strong>
+              <span class="muted">/{{ shopSlug }} · template ใช้ {hours} {bookingId} …</span>
+            </div>
+          </header>
 
-      <template v-else>
-        <div class="service-day-header">
-          <button type="button" class="btn service-back-btn" @click="closeBlockDay">
-            <i class="ti ti-arrow-left" aria-hidden="true"></i>
-            กลับปฏิทิน
-          </button>
-          <div>
-            <h3>ปิดรับคิววันที่ {{ formatServiceDateLabel(selectedBlockDate) }}</h3>
-            <p v-if="blockDayColor(selectedBlockDate)" class="muted">
-              สถานที่ให้บริการ:
-              <span
-                class="block-day-color-dot"
-                :style="{ background: blockDayColor(selectedBlockDate) }"
-              ></span>
-            </p>
+          <div class="admin-drawer-panel">
+          <div
+            v-for="(group, idx) in uiFieldGroups"
+            v-show="activeUiSection === idx"
+            :key="group.title"
+            class="ui-settings-group admin-settings-section"
+          >
+            <h4 class="ui-settings-group-title">{{ group.title }}</h4>
+            <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
+            <div class="admin-form-grid admin-option-grid">
+              <label v-for="field in group.fields" :key="field.key" class="ui-field-label">
+                {{ field.label }}
+                <textarea
+                  v-if="field.multiline"
+                  v-model="uiForm[field.key]"
+                  class="admin-input"
+                  :rows="field.rows || 3"
+                  :placeholder="field.placeholder || ''"
+                />
+                <input
+                  v-else-if="field.type === 'color'"
+                  v-model="uiForm[field.key]"
+                  type="color"
+                  class="admin-color-input ui-color-input"
+                />
+                <input
+                  v-else
+                  v-model="uiForm[field.key]"
+                  type="text"
+                  class="admin-input"
+                  :placeholder="field.placeholder || ''"
+                />
+                <div v-if="field.uploadKind" class="ui-image-upload-row">
+                  <button
+                    type="button"
+                    class="btn ghost admin-action-btn ui-image-upload-btn"
+                    :disabled="!!uiImageUploading"
+                    @click="triggerUiImageUpload(field.uploadKind)"
+                  >
+                    <i class="ti ti-photo-up" aria-hidden="true"></i>
+                    {{
+                      uiImageUploading === field.uploadKind
+                        ? 'กำลังอัปโหลด...'
+                        : 'อัปโหลดจากมือถือ'
+                    }}
+                  </button>
+                  <span class="muted ui-image-upload-hint">เลือกจากแกลเลอรีหรือถ่ายรูป</span>
+                </div>
+                <img
+                  v-if="field.key === 'ui_logo_url' && uiPreviewUrl('ui_logo_url')"
+                  :src="uiPreviewUrl('ui_logo_url')"
+                  alt="preview logo"
+                  class="ui-image-preview"
+                  @error="($event.target.style.display = 'none')"
+                />
+                <img
+                  v-if="field.key === 'ui_hero_image_url' && uiPreviewUrl('ui_hero_image_url')"
+                  :src="uiPreviewUrl('ui_hero_image_url')"
+                  alt="preview hero"
+                  class="ui-image-preview ui-image-preview--wide"
+                  @error="($event.target.style.display = 'none')"
+                />
+                <p
+                  v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url') && uiImageFieldHint(field.key)"
+                  class="muted ui-image-url-warn"
+                >
+                  {{ uiImageFieldHint(field.key) }}
+                </p>
+              </label>
+            </div>
+          </div>
+
+          <div class="ui-settings-actions">
+            <input
+              ref="uiImageFileInput"
+              type="file"
+              accept="image/*"
+              class="ui-image-file-input"
+              @change="onUiImageSelected"
+            />
+            <button type="button" class="btn primary admin-action-btn" @click="saveUiSettingsAdmin">บันทึก UI ทั้งหมด</button>
+            <button type="button" class="btn ghost admin-action-btn" @click="loadUiSettingsAdmin">โหลดใหม่</button>
+          </div>
           </div>
         </div>
+      </div>
+    </section>
 
-        <div v-if="selectedDayBlocks.length === 0" class="muted">ยังไม่มีรายการปิดในวันนี้</div>
-        <div v-for="item in selectedDayBlocks" :key="item.id" class="admin-item">
-          <div>
-            <strong>
-              {{
-                item.is_full_day
-                  ? 'ปิดทั้งวัน'
-                  : `ปิดเวลา ${item.start_hour}:00 - ${item.end_hour}:00`
-              }}
-            </strong>
-            <p v-if="item.note" class="muted">{{ item.note }}</p>
+    <section v-show="activeTab === 'blocks'" class="card admin-section admin-drawer-section admin-blocks-section">
+      <div class="admin-drawer-shell">
+        <Transition name="admin-drawer-backdrop">
+          <button
+            v-if="blocksNavOpen && isMobile"
+            type="button"
+            class="admin-drawer-backdrop"
+            aria-label="ปิดหัวข้อปิดร้าน"
+            @click="blocksNavOpen = false"
+          />
+        </Transition>
+
+        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': blocksNavOpen }">
+          <div class="admin-drawer-nav-head">
+            <h3 class="admin-drawer-nav-title">ปิดร้าน</h3>
+            <button
+              type="button"
+              class="admin-drawer-icon-btn admin-drawer-close"
+              aria-label="ปิดหัวข้อ"
+              @click="blocksNavOpen = false"
+            >
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
           </div>
-          <button class="btn danger" @click="removeBlock(item.id)">ลบ</button>
-        </div>
+          <nav class="admin-drawer-nav-list" aria-label="หัวข้อปิดร้าน">
+            <button
+              v-for="section in blocksSections"
+              :key="section.key"
+              type="button"
+              class="admin-drawer-nav-item"
+              :class="{ active: activeBlocksSection === section.key }"
+              :aria-current="activeBlocksSection === section.key ? 'true' : undefined"
+              @click="selectBlocksSection(section.key)"
+            >
+              <i class="ti" :class="section.icon" aria-hidden="true"></i>
+              <span>{{ section.label }}</span>
+            </button>
+          </nav>
+        </aside>
 
-        <h4 class="admin-subtitle">เพิ่มรายการปิดวันนี้</h4>
-        <div class="admin-form-grid">
-          <label>
-            ประเภท
-            <select v-model="blockType" class="admin-input">
-              <option value="partial">ปิดบางช่วงเวลา</option>
-              <option value="full_day">ปิดทั้งวัน</option>
-            </select>
-          </label>
-          <label v-if="blockType === 'partial'">
-            เริ่ม
-            <input v-model="blockStart" type="number" min="0" max="23" class="admin-input" />
-          </label>
-          <label v-if="blockType === 'partial'">
-            ถึง
-            <input v-model="blockEnd" type="number" min="1" max="24" class="admin-input" />
-          </label>
-        </div>
-        <div class="admin-form-row">
-          <label class="admin-label-grow">
-            หมายเหตุ
-            <input v-model="blockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
-          </label>
-          <button class="btn primary admin-action-btn" @click="createBlock">เพิ่มรายการปิด</button>
-        </div>
+        <div class="admin-drawer-main">
+          <header class="admin-drawer-toolbar">
+            <button
+              type="button"
+              class="admin-drawer-icon-btn"
+              :aria-expanded="blocksNavOpen"
+              aria-label="เปิดหัวข้อปิดร้าน"
+              @click="toggleBlocksNav"
+            >
+              <i class="ti ti-menu-2" aria-hidden="true"></i>
+            </button>
+            <div class="admin-drawer-toolbar-text">
+              <strong>{{ activeBlocksSectionMeta.label }}</strong>
+              <span class="muted">{{ blocksToolbarSubtitle }}</span>
+            </div>
+          </header>
 
-        <h4 class="admin-subtitle admin-extra-title">เปิดรับเพิ่ม (นอกเวลาปกติ)</h4>
-        <p class="muted admin-extra-hint">
-          เช่น เปิด 19:00–21:00 วันพิเศษ ทั้งที่ปกติปิดรับ 19:00
-        </p>
+          <div class="admin-drawer-panel">
+            <div v-show="activeBlocksSection === 'bulk'" class="admin-settings-section">
+              <h3>ปิดล่วงหน้า 7 / 15 / 30 วัน</h3>
+              <p class="muted">ปิดทั้งวัน หรือ บางช่วงเวลา ตั้งแต่วันที่ที่เลือก</p>
 
-        <div v-if="selectedDayExtraHours.length === 0" class="muted">ยังไม่มีช่วงเปิดเพิ่มในวันนี้</div>
-        <div v-for="item in selectedDayExtraHours" :key="item.id" class="admin-item admin-extra-item">
-          <div>
-            <strong>เปิดเพิ่ม {{ item.start_hour }}:00 – {{ item.end_hour }}:00</strong>
-            <p v-if="item.note" class="muted">{{ item.note }}</p>
+              <div class="bulk-block-box">
+                <div class="admin-form-grid admin-bulk-settings">
+                  <label>
+                    ประเภท
+                    <select v-model="bulkBlockType" class="admin-input">
+                      <option value="partial">ปิดบางช่วงเวลา</option>
+                      <option value="full_day">ปิดทั้งวัน</option>
+                    </select>
+                  </label>
+                  <label v-if="bulkBlockType === 'partial'">
+                    เริ่ม (ชม.)
+                    <input v-model="bulkBlockStart" type="number" min="0" max="23" class="admin-input" />
+                  </label>
+                  <label v-if="bulkBlockType === 'partial'">
+                    ถึง (ชม.)
+                    <input v-model="bulkBlockEnd" type="number" min="1" max="24" class="admin-input" />
+                  </label>
+                </div>
+                <div class="admin-form-grid admin-bulk-grid">
+                  <label>
+                    เริ่มจากวันที่
+                    <input v-model="bulkStartDate" type="date" class="admin-input" />
+                  </label>
+                  <label>
+                    จำนวนวัน
+                    <input v-model.number="bulkDays" type="number" min="1" max="90" class="admin-input" />
+                  </label>
+                </div>
+                <div class="admin-form-row">
+                  <label class="admin-label-grow">
+                    หมายเหตุ
+                    <input v-model="bulkBlockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
+                  </label>
+                </div>
+                <p class="bulk-preview">{{ bulkPreviewText }}</p>
+                <div class="bulk-preset-row">
+                  <button type="button" class="btn" :class="{ primary: bulkDays === 7 }" @click="bulkDays = 7">7 วัน</button>
+                  <button type="button" class="btn" :class="{ primary: bulkDays === 15 }" @click="bulkDays = 15">15 วัน</button>
+                  <button type="button" class="btn" :class="{ primary: bulkDays === 30 }" @click="bulkDays = 30">30 วัน</button>
+                  <button type="button" class="btn primary admin-action-btn" @click="createBulkBlocks">
+                    ยืนยันปิดล่วงหน้า
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-show="activeBlocksSection === 'calendar'" class="admin-settings-section">
+              <template v-if="!selectedBlockDate">
+                <h3>ปิดทีละวัน</h3>
+                <p class="muted">กดวันที่ในปฏิทินเพื่อจัดการรายการปิด · สีตามสถานที่ให้บริการ</p>
+
+                <div class="service-cal-nav">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="เดือนก่อน">
+                    <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                  </button>
+                  <span class="service-cal-month">{{ blockMonthLabel }}</span>
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="เดือนถัดไป">
+                    <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                  </button>
+                </div>
+
+                <div class="service-cal-weekdays">
+                  <span v-for="wd in serviceWeekdays" :key="`blk-${wd}`" class="service-cal-wd">{{ wd }}</span>
+                </div>
+
+                <div class="service-cal-grid">
+                  <div v-for="(week, wi) in blockCalendarWeeks" :key="`blk-week-${wi}`" class="service-cal-week">
+                    <button
+                      v-for="(cell, ci) in week"
+                      :key="`blk-${wi}-${ci}`"
+                      type="button"
+                      class="service-cal-day block-cal-day"
+                      :class="{
+                        empty: !cell,
+                        today: cell?.isToday && !blockDayColor(cell.iso),
+                        'has-block': cell && blockDayMarker(cell.iso) && !blockDayColor(cell.iso),
+                      }"
+                      :style="cell ? blockDayStyle(cell.iso) : undefined"
+                      :disabled="!cell"
+                      @click="cell && openBlockDay(cell.iso)"
+                    >
+                      <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
+                      <span
+                        v-if="cell && blockDayMarker(cell.iso)"
+                        class="block-cal-marker"
+                        :class="blockDayMarker(cell.iso)"
+                        :title="blockDayMarker(cell.iso) === 'full' ? 'ปิดทั้งวัน' : 'ปิดบางช่วงเวลา'"
+                      >
+                        {{ blockDayMarker(cell.iso) === 'full' ? '×' : '!' }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="booking-cal-legend block-cal-legend">
+                  <span><span class="block-cal-marker full inline">×</span> ปิดทั้งวัน</span>
+                  <span><span class="block-cal-marker partial inline">!</span> ปิดบางช่วงเวลา</span>
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="service-day-header">
+                  <button type="button" class="btn service-back-btn" @click="closeBlockDay">
+                    <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                    กลับปฏิทิน
+                  </button>
+                  <div>
+                    <h3>ปิดรับคิววันที่ {{ formatServiceDateLabel(selectedBlockDate) }}</h3>
+                    <p v-if="blockDayColor(selectedBlockDate)" class="muted">
+                      สถานที่ให้บริการ:
+                      <span
+                        class="block-day-color-dot"
+                        :style="{ background: blockDayColor(selectedBlockDate) }"
+                      ></span>
+                    </p>
+                  </div>
+                </div>
+
+                <div v-if="selectedDayBlocks.length === 0" class="muted">ยังไม่มีรายการปิดในวันนี้</div>
+                <div v-for="item in selectedDayBlocks" :key="item.id" class="admin-item">
+                  <div>
+                    <strong>
+                      {{
+                        item.is_full_day
+                          ? 'ปิดทั้งวัน'
+                          : `ปิดเวลา ${item.start_hour}:00 - ${item.end_hour}:00`
+                      }}
+                    </strong>
+                    <p v-if="item.note" class="muted">{{ item.note }}</p>
+                  </div>
+                  <button class="btn danger" @click="removeBlock(item.id)">ลบ</button>
+                </div>
+
+                <h4 class="admin-subtitle">เพิ่มรายการปิดวันนี้</h4>
+                <div class="admin-form-grid">
+                  <label>
+                    ประเภท
+                    <select v-model="blockType" class="admin-input">
+                      <option value="partial">ปิดบางช่วงเวลา</option>
+                      <option value="full_day">ปิดทั้งวัน</option>
+                    </select>
+                  </label>
+                  <label v-if="blockType === 'partial'">
+                    เริ่ม
+                    <input v-model="blockStart" type="number" min="0" max="23" class="admin-input" />
+                  </label>
+                  <label v-if="blockType === 'partial'">
+                    ถึง
+                    <input v-model="blockEnd" type="number" min="1" max="24" class="admin-input" />
+                  </label>
+                </div>
+                <div class="admin-form-row">
+                  <label class="admin-label-grow">
+                    หมายเหตุ
+                    <input v-model="blockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
+                  </label>
+                  <button class="btn primary admin-action-btn" @click="createBlock">เพิ่มรายการปิด</button>
+                </div>
+
+                <h4 class="admin-subtitle admin-extra-title">เปิดรับเพิ่ม (นอกเวลาปกติ)</h4>
+                <p class="muted admin-extra-hint">
+                  เช่น เปิด 19:00–21:00 วันพิเศษ ทั้งที่ปกติปิดรับ 19:00
+                </p>
+
+                <div v-if="selectedDayExtraHours.length === 0" class="muted">ยังไม่มีช่วงเปิดเพิ่มในวันนี้</div>
+                <div v-for="item in selectedDayExtraHours" :key="item.id" class="admin-item admin-extra-item">
+                  <div>
+                    <strong>เปิดเพิ่ม {{ item.start_hour }}:00 – {{ item.end_hour }}:00</strong>
+                    <p v-if="item.note" class="muted">{{ item.note }}</p>
+                  </div>
+                  <button class="btn danger" @click="removeExtraHour(item.id)">ลบ</button>
+                </div>
+
+                <div class="admin-form-grid">
+                  <label>
+                    เริ่ม (ชม.)
+                    <input v-model="extraStart" type="number" min="0" max="23" class="admin-input" />
+                  </label>
+                  <label>
+                    ถึง (ชม.)
+                    <input v-model="extraEnd" type="number" min="1" max="24" class="admin-input" />
+                  </label>
+                </div>
+                <div class="admin-form-row">
+                  <label class="admin-label-grow">
+                    หมายเหตุ
+                    <input v-model="extraNote" type="text" placeholder="เช่น เปิดคิวพิเศษช่วงเย็น" class="admin-input" />
+                  </label>
+                  <button class="btn primary admin-action-btn" @click="createExtraHour">เพิ่มช่วงเปิดรับ</button>
+                </div>
+              </template>
+            </div>
           </div>
-          <button class="btn danger" @click="removeExtraHour(item.id)">ลบ</button>
         </div>
-
-        <div class="admin-form-grid">
-          <label>
-            เริ่ม (ชม.)
-            <input v-model="extraStart" type="number" min="0" max="23" class="admin-input" />
-          </label>
-          <label>
-            ถึง (ชม.)
-            <input v-model="extraEnd" type="number" min="1" max="24" class="admin-input" />
-          </label>
-        </div>
-        <div class="admin-form-row">
-          <label class="admin-label-grow">
-            หมายเหตุ
-            <input v-model="extraNote" type="text" placeholder="เช่น เปิดคิวพิเศษช่วงเย็น" class="admin-input" />
-          </label>
-          <button class="btn primary admin-action-btn" @click="createExtraHour">เพิ่มช่วงเปิดรับ</button>
-        </div>
-      </template>
+      </div>
     </section>
 
     <!-- ── รีวิว TikTok / Instagram ── -->
@@ -4448,8 +4996,8 @@ watch(shopSlug, () => {
   min-width: 0;
   margin: 0 auto;
   padding: var(--page-padding-x);
-  padding-bottom: calc(env(safe-area-inset-bottom, 0) + 16px);
-  background: var(--color-surface);
+  padding-bottom: max(var(--space-4), var(--bottom-nav-safe));
+  background: var(--color-background);
   min-height: 100svh;
   overflow-x: clip;
   box-sizing: border-box;
@@ -4459,10 +5007,12 @@ watch(shopSlug, () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0 14px;
+  gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-3);
   border-bottom: 1px solid var(--color-border);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .admin-title {
@@ -4482,6 +5032,28 @@ watch(shopSlug, () => {
   gap: 6px;
   flex-shrink: 0;
   min-height: var(--btn-secondary-height);
+}
+
+.admin-top-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.admin-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--btn-secondary-height);
+  color: var(--color-primary-dark);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  background: var(--color-primary-light);
+}
+
+.admin-share-btn:hover {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary-light) 80%, var(--color-primary) 20%);
 }
 
 .admin-tab-wrap {
@@ -4536,17 +5108,18 @@ watch(shopSlug, () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 12px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: all .15s;
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
+  min-height: var(--touch-min);
 }
 
 .admin-nav-item i {
@@ -4554,8 +5127,13 @@ watch(shopSlug, () => {
 }
 
 .admin-nav-item:hover {
-  border-color: #cbd5e1;
-  color: #334155;
+  border-color: var(--color-border-strong);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-elevated);
+}
+
+.admin-nav-item:active {
+  transform: scale(0.98);
 }
 
 .admin-nav-item.active {
@@ -4590,12 +5168,13 @@ watch(shopSlug, () => {
 }
 
 .admin-section {
-  border-radius: 14px;
-  padding: 18px;
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
   overflow-x: hidden;
+  box-shadow: var(--shadow-card);
 }
 
 .admin-form-row {
@@ -4677,6 +5256,13 @@ watch(shopSlug, () => {
   border: 1px solid #d1d5db;
   border-radius: 10px;
   padding: 8px 10px;
+}
+
+.register-pin-admin-input {
+  max-width: 160px;
+  letter-spacing: 0.35em;
+  font-weight: 700;
+  text-align: center;
 }
 
 .admin-action-btn {
@@ -5225,33 +5811,139 @@ watch(shopSlug, () => {
 
 .revenue-month-summary {
   margin-top: 20px;
-  padding: 16px 18px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px solid #e2e8f0;
 }
 
 .revenue-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
 }
 
-.revenue-summary-block {
+.revenue-summary-slot {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  text-align: center;
+}
+
+.revenue-summary-slot-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.revenue-summary-slot-head i {
+  font-size: 18px;
+  color: var(--color-text-muted);
+}
+
+.revenue-summary-slot--deposit {
+  border-color: color-mix(in srgb, var(--color-deposit) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-deposit) 10%, var(--color-surface-muted));
+}
+
+.revenue-summary-slot--deposit .revenue-summary-slot-head i,
+.revenue-summary-slot--deposit .revenue-summary-label {
+  color: var(--color-deposit);
+}
+
+.revenue-summary-slot--total {
+  border-color: color-mix(in srgb, var(--color-revenue) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-revenue) 10%, var(--color-surface-muted));
+}
+
+.revenue-summary-slot--total .revenue-summary-slot-head i,
+.revenue-summary-slot--total .revenue-summary-label {
+  color: var(--color-revenue);
+}
+
+.revenue-summary-slot--compare {
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.revenue-summary-slot--compare .revenue-summary-slot-head i,
+.revenue-summary-slot--compare .revenue-summary-label {
+  color: var(--color-text-muted);
+}
+
+.revenue-compare-ref {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
+.revenue-compare-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.revenue-compare-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.revenue-compare-metric {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.revenue-compare-row .revenue-change {
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .revenue-summary-deposit {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
-  color: #b45309;
+  color: var(--color-deposit);
+  line-height: 1.2;
 }
 
 .revenue-summary-sub {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.revenue-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
-  line-height: 1.4;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.revenue-change i {
+  font-size: 14px;
+}
+
+.revenue-change--up {
+  color: var(--color-success);
+}
+
+.revenue-change--down {
+  color: var(--color-error);
+}
+
+.revenue-change--flat {
+  color: var(--color-text-muted);
 }
 
 @media (max-width: 520px) {
@@ -5360,7 +6052,42 @@ watch(shopSlug, () => {
 
 @media (max-width: 520px) {
   .revenue-summary-grid {
-    grid-template-columns: 1fr;
+    flex-wrap: wrap;
+  }
+
+  .revenue-summary-slot--deposit,
+  .revenue-summary-slot--total {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    padding: var(--space-2);
+  }
+
+  .revenue-summary-slot--compare {
+    flex: 1 1 100%;
+  }
+
+  .revenue-summary-deposit,
+  .revenue-summary-total {
+    font-size: 18px;
+  }
+
+  .revenue-summary-label {
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .revenue-summary-sub {
+    font-size: 10px;
+  }
+
+  .revenue-compare-rows {
+    flex-direction: row;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  .revenue-compare-row {
+    flex: 0 1 auto;
   }
 }
 
@@ -5372,15 +6099,16 @@ watch(shopSlug, () => {
 }
 
 .revenue-summary-label {
-  font-size: 14px;
+  font-size: var(--text-caption);
   font-weight: 600;
-  color: #334155;
+  color: var(--color-text-muted);
 }
 
 .revenue-summary-total {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
-  color: #15803d;
+  color: var(--color-revenue);
+  line-height: 1.2;
 }
 
 .revenue-summary-stats {
@@ -5965,9 +6693,6 @@ watch(shopSlug, () => {
     min-width: 140px;
   }
 
-  .revenue-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .booking-edit-backdrop {
@@ -6110,6 +6835,232 @@ watch(shopSlug, () => {
   scroll-margin-top: 88px;
 }
 
+.admin-drawer-section {
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-drawer-shell {
+  display: flex;
+  min-height: 360px;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.admin-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  border: none;
+  padding: 0;
+  background: rgba(45, 36, 36, 0.35);
+  cursor: pointer;
+}
+
+.admin-drawer-backdrop-enter-active,
+.admin-drawer-backdrop-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.admin-drawer-backdrop-enter-from,
+.admin-drawer-backdrop-leave-to {
+  opacity: 0;
+}
+
+.admin-drawer-nav {
+  flex-shrink: 0;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface-elevated);
+  border-right: 1px solid var(--color-border);
+  z-index: 36;
+}
+
+.admin-drawer-nav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-drawer-nav-title {
+  margin: 0;
+  font-size: var(--text-h3);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.admin-drawer-close {
+  display: none;
+}
+
+.admin-drawer-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-drawer-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  min-height: var(--touch-min);
+}
+
+.admin-drawer-nav-item i {
+  flex-shrink: 0;
+  font-size: 16px;
+  opacity: 0.85;
+}
+
+.admin-drawer-nav-item:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+}
+
+.admin-drawer-nav-item.active {
+  background: var(--color-primary-light);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.admin-drawer-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.admin-drawer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.admin-drawer-toolbar-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-drawer-toolbar-text strong {
+  font-size: var(--text-body);
+  color: var(--color-text-primary);
+  line-height: var(--lh-tight);
+}
+
+.admin-drawer-toolbar-text .muted {
+  font-size: var(--text-caption);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-drawer-icon-btn {
+  width: var(--touch-min);
+  height: var(--touch-min);
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  padding: 0;
+}
+
+.admin-drawer-icon-btn:hover {
+  background: var(--color-surface-muted);
+}
+
+.admin-drawer-panel {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-drawer-panel .admin-settings-section h3,
+.admin-drawer-panel .ui-settings-group-title {
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .admin-drawer-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(88vw, 280px);
+    max-width: 280px;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 24px rgba(45, 36, 36, 0.12);
+  }
+
+  .admin-drawer-nav--open {
+    transform: translateX(0);
+  }
+
+  .admin-drawer-close {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 641px) {
+  .admin-drawer-nav:not(.admin-drawer-nav--open) {
+    width: 0;
+    overflow: hidden;
+    border-right: none;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .admin-drawer-nav--open {
+    width: 260px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .admin-shop-list {
   list-style: none;
   margin: 0;
@@ -6210,5 +7161,31 @@ watch(shopSlug, () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.ui-image-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-image-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  border: 2px solid var(--color-border);
+  gap: 6px;
+}
+
+.ui-image-upload-hint {
+  font-size: 12px;
+}
+
+.ui-image-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 </style>

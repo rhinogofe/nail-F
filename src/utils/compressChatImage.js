@@ -1,7 +1,7 @@
 /**
- * Resize and compress an image file for chat upload (max ~2MB server limit).
+ * Resize and compress an image file before upload.
  */
-export function compressChatImage(file, maxWidth = 1280, quality = 0.82) {
+export function compressImage(file, { maxWidth = 1280, quality = 0.82 } = {}) {
   return new Promise((resolve, reject) => {
     if (!file?.type?.startsWith('image/')) {
       reject(new Error('เลือกไฟล์รูปภาพเท่านั้น'))
@@ -49,4 +49,9 @@ export function compressChatImage(file, maxWidth = 1280, quality = 0.82) {
     }
     reader.readAsDataURL(file)
   })
+}
+
+/** @deprecated use compressImage */
+export function compressChatImage(file, maxWidth = 1280, quality = 0.82) {
+  return compressImage(file, { maxWidth, quality })
 }

@@ -168,20 +168,22 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="payment-page">
-    <header class="back-header">
-      <button type="button" class="back-btn" aria-label="กลับ" @click="backToBooking">
-        <i class="ti ti-arrow-left" aria-hidden="true"></i>
-      </button>
-      <h1 class="back-title">{{ paymentPageTitle }}</h1>
+  <div class="payment-page app-page app-page--standalone">
+    <header class="back-header app-header">
+      <div class="back-header-row">
+        <button type="button" class="back-btn-icon" aria-label="กลับ" @click="backToBooking">
+          <i class="ti ti-arrow-left" aria-hidden="true"></i>
+        </button>
+        <h1 class="back-title app-page-title">{{ paymentPageTitle }}</h1>
+      </div>
     </header>
 
     <main class="payment-content">
       <p v-if="paymentLoading" class="muted">กำลังโหลด...</p>
 
-      <div v-else-if="paymentError" class="payment-expired">
-        <i class="ti ti-clock-off" aria-hidden="true"></i>
-        <p>{{ paymentError }}</p>
+      <div v-else-if="paymentError" class="state-card payment-expired">
+        <i class="ti ti-clock-off state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">{{ paymentError }}</p>
         <button type="button" class="btn ghost back-link" @click="backToBooking">กลับหน้าจอง</button>
       </div>
 
@@ -201,9 +203,9 @@ onUnmounted(() => {
         </div>
         <div class="summary-deposit">
           <span class="deposit-label">ยอดมัดจำ</span>
-          <span class="deposit-amount">{{ depositAmount.toLocaleString('th-TH') }} บาท</span>
+          <span class="deposit-amount tabular-nums">{{ depositAmount.toLocaleString('th-TH') }} บาท</span>
         </div>
-        <p v-if="countdownText" class="payment-countdown">
+        <p v-if="countdownText" class="countdown-badge payment-countdown">
           <i class="ti ti-hourglass-low" aria-hidden="true"></i>
           ชำระภายใน {{ countdownText }}
         </p>
@@ -229,12 +231,12 @@ onUnmounted(() => {
         </span>
       </button>
 
-      <button type="button" class="line-cta" @click="openLine">
+      <button type="button" class="btn-line line-cta" @click="openLine">
         <i class="ti ti-brand-line" aria-hidden="true"></i>
         {{ lineButtonLabel }}
       </button>
 
-      <div class="payment-notice">
+      <div class="payment-notice alert-banner warning">
         <i class="ti ti-alert-triangle" aria-hidden="true"></i>
         <span>{{ paymentNoticeText }}</span>
       </div>
@@ -253,79 +255,45 @@ onUnmounted(() => {
 
 <style scoped>
 .payment-page {
-  min-height: 100svh;
-  max-width: 430px;
-  margin: 0 auto;
-  background: var(--color-surface);
-  padding-bottom: env(safe-area-inset-bottom, 16px);
-}
-
-.back-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px var(--page-padding-x);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: rgba(255, 251, 249, 0.9);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.back-btn {
-  width: var(--touch-min);
-  height: var(--touch-min);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface-elevated);
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 20px;
+  padding-bottom: max(var(--space-4), var(--bottom-nav-safe));
 }
 
 .back-title {
   margin: 0;
-  font-size: var(--text-h2);
-  font-weight: 600;
-  color: var(--color-text-primary);
+  min-width: 0;
 }
 
 .payment-content {
   padding: var(--page-padding-x);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .summary-card {
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  padding: 16px;
+  padding: var(--space-4);
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .summary-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
+  gap: var(--space-2);
+  font-size: var(--text-body);
 }
 
 .summary-label {
   color: var(--color-text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .summary-val {
@@ -334,8 +302,8 @@ onUnmounted(() => {
 }
 
 .summary-deposit {
-  margin-top: 6px;
-  padding-top: 12px;
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
@@ -343,7 +311,7 @@ onUnmounted(() => {
 }
 
 .deposit-label {
-  font-size: 14px;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
 }
 
@@ -354,32 +322,17 @@ onUnmounted(() => {
 }
 
 .payment-countdown {
-  margin: 8px 0 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #b45309;
-  font-variant-numeric: tabular-nums;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  margin: var(--space-2) 0 0;
+  width: 100%;
+  justify-content: center;
 }
 
-.payment-expired {
-  text-align: center;
-  padding: 32px 16px;
+.payment-expired .state-card-icon {
   color: var(--color-error);
 }
 
-.payment-expired i {
-  font-size: 40px;
-  display: block;
-  margin-bottom: 12px;
-}
-
-.payment-expired p {
-  margin: 0 0 16px;
-  font-size: 15px;
-  line-height: 1.5;
+.payment-expired .state-card-title {
+  color: var(--color-error);
 }
 
 .qr-panel {
@@ -387,8 +340,8 @@ onUnmounted(() => {
 }
 
 .qr-label {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -397,8 +350,8 @@ onUnmounted(() => {
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  padding: 20px;
-  box-shadow: var(--shadow-card);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-md);
   display: grid;
   place-items: center;
 }
@@ -406,12 +359,15 @@ onUnmounted(() => {
 .qr-image {
   width: 100%;
   max-width: 260px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
+  background: var(--color-on-primary);
+  padding: var(--space-2);
+  box-shadow: var(--shadow-sm);
 }
 
 .qr-error {
   color: var(--color-error);
-  font-size: 13px;
+  font-size: var(--text-caption);
   margin: 0;
 }
 
@@ -421,67 +377,56 @@ onUnmounted(() => {
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  padding: 14px 16px;
+  padding: var(--space-3) var(--space-4);
   cursor: pointer;
   font-family: inherit;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   box-shadow: var(--shadow-card);
-  transition: border-color var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  min-height: var(--touch-min);
+}
+
+.bank-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
 }
 
 .bank-card:active {
-  border-color: var(--color-primary);
+  transform: scale(0.99);
 }
 
 .bank-name {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--text-body);
   color: var(--color-text-primary);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .bank-detail,
 .bank-account {
   margin: 0 0 2px;
-  font-size: 13px;
+  font-size: var(--text-caption);
   color: var(--color-text-secondary);
 }
 
 .copy-action {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--text-label);
   color: var(--color-primary);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .copy-action i {
   font-size: 18px;
-}
-
-.line-cta {
-  width: 100%;
-  min-height: var(--btn-primary-height);
-  border: none;
-  border-radius: 12px;
-  background: #06C755;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
 }
 
 .line-cta i {
@@ -491,14 +436,7 @@ onUnmounted(() => {
 .payment-notice {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(196, 154, 60, 0.12);
-  border: 1px solid rgba(196, 154, 60, 0.35);
-  color: var(--color-warning);
-  font-size: 13px;
-  line-height: 1.45;
+  gap: var(--space-2);
 }
 
 .payment-notice i {
@@ -509,14 +447,14 @@ onUnmounted(() => {
 
 .payment-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-caption);
   line-height: 1.45;
 }
 
 .back-link {
   width: 100%;
   min-height: var(--btn-secondary-height);
-  font-size: 14px;
+  font-size: var(--text-body);
   cursor: pointer;
 }
 

@@ -2,6 +2,7 @@
 export function isDirectImageUrl(url) {
   const u = String(url || '').trim()
   if (!u) return false
+  if (/^\/api\/bookings\/ui-images\//i.test(u)) return true
   if (/^https?:\/\/i\.ibb\.co\//i.test(u)) return true
   if (/\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(u)) return true
   if (u.startsWith('/') && !u.startsWith('//')) return true
