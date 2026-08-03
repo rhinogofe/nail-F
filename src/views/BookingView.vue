@@ -926,7 +926,9 @@ onUnmounted(() => {
 
 <style scoped>
 .booking-page {
-  padding: 0;
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* ── HEADER ── */
