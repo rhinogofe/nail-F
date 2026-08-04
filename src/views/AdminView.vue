@@ -7,6 +7,13 @@ import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
+
+/** Above teleported admin modals (.booking-edit-backdrop z-index 2000) */
+const adminSwal = Swal.mixin({
+  customClass: {
+    container: 'swal-over-app-modal',
+  },
+})
 import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, getUsedHoursForDayWindows, availableStartHoursForDay, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
@@ -34,7 +41,7 @@ async function confirmAdminSave(title, message) {
   } else {
     opts.text = message || 'บันทึกการเปลี่ยนแปลงนี้ใช่ไหม'
   }
-  const result = await Swal.fire(opts)
+  const result = await adminSwal.fire(opts)
   return result.isConfirmed
 }
 
@@ -591,7 +598,7 @@ async function saveShopEdit() {
 
 async function deleteShopBranch(shop) {
   if (shop.slug === 'default') return
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ลบสาขา',
     html: `ลบสาขา <strong>${shop.name}</strong> (/${shop.slug})<br><span style="color:#64748b">ถ้ามีข้อมูลจองจะปิดใช้งานแทนการลบถาวร</span>`,
     icon: 'warning',
@@ -876,7 +883,7 @@ async function saveDayHourEntry() {
 }
 
 async function removeDayHourEntry(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันลบช่วงเวลา',
     text: 'ลบช่วงเวลาจองนี้ใช่ไหม',
     icon: 'warning',
@@ -1000,7 +1007,7 @@ async function loadUsers() {
 async function toggleAdmin(user) {
   const next = !user.is_admin
   if (next && !isSuperAdmin.value) return
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: next ? 'ให้สิทธิ์แอดมิน' : 'ถอดสิทธิ์แอดมิน',
     text: `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมินของ "${user.name}" ใช่ไหม`,
     icon: 'question', showCancelButton: true,
@@ -1022,7 +1029,7 @@ async function toggleAdmin(user) {
 }
 
 async function deleteUser(user) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ลบผู้ใช้',
     html: `ลบ <strong>${user.name}</strong> และข้อมูลการจองทั้งหมดของผู้ใช้นี้<br><span style="color:#b91c1c">การลบไม่สามารถยกเลิกได้</span>`,
     icon: 'warning',
@@ -1769,7 +1776,7 @@ async function createBulkBlocks() {
     ? `ปิดทั้งวัน ${bulkDays.value} วัน (${bulkStartDate.value} ถึง ${bulkEndDate.value})`
     : `ปิดเวลา ${bulkBlockStart.value}:00-${bulkBlockEnd.value}:00 จำนวน ${bulkDays.value} วัน (${bulkStartDate.value} ถึง ${bulkEndDate.value})`
 
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันปิดล่วงหน้า',
     text: rangeText,
     icon: 'warning',
@@ -1811,7 +1818,7 @@ async function createBlock() {
     }
   }
 
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันเพิ่มรายการปิด',
     text: 'ต้องการเพิ่มรายการปิดวัน/เวลาใช่ไหม',
     icon: 'question',
@@ -1842,7 +1849,7 @@ async function createBlock() {
 }
 
 async function removeBlock(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันลบรายการ',
     text: 'ลบรายการปิดวัน/เวลานี้ใช่ไหม',
     icon: 'warning',
@@ -1893,7 +1900,7 @@ async function createExtraHour() {
 }
 
 async function removeExtraHour(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันลบรายการ',
     text: 'ลบช่วงเปิดรับพิเศษนี้ใช่ไหม',
     icon: 'warning',
@@ -1924,7 +1931,7 @@ function formatBookingTotal(value) {
 async function markDone(id) {
   const pts = Number(couponCompletionPoints.value) || 0
   const pointsHint = pts > 0 ? `ลูกค้าจะได้รับ +${pts.toLocaleString('th-TH')} แต้ม` : 'ไม่มีการให้แต้ม'
-  const result = await Swal.fire({
+  const result = await adminSwal.fire({
     title: 'ทำคิวเสร็จ',
     text: `กรอกยอดเงินแล้วยืนยัน — ${pointsHint}`,
     input: 'number',
@@ -2090,7 +2097,7 @@ async function saveBookingEdit() {
 }
 
 async function confirmPayment(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันชำระเงิน',
     text: 'ลูกค้าโอนเงินแล้วใช่ไหม',
     icon: 'question',
@@ -2112,7 +2119,7 @@ async function confirmPayment(id) {
 }
 
 async function revertPayment(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'เปลี่ยนเป็นรอชำระเงิน',
     text: 'คิวจะกลับไปสถานะยังไม่ชำระ และเริ่มนับเวลาชำระใหม่',
     icon: 'warning',
@@ -2142,7 +2149,7 @@ async function useCoupon() {
     return
   }
 
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันใช้คูปอง',
     text: `ใช้คูปองรหัส ${code} ใช่ไหม`,
     icon: 'question',
@@ -2162,7 +2169,7 @@ async function useCoupon() {
 }
 
 async function cancelUnpaid(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันยกเลิกคิว',
     text: 'ลูกค้าไม่ชำระเงิน ต้องการยกเลิกคิวนี้ใช่ไหม',
     icon: 'warning',
@@ -2184,7 +2191,7 @@ async function cancelUnpaid(id) {
 }
 
 async function cancelPaid(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันยกเลิกคิวชำระแล้ว',
     html: 'ใช้กรณีลูกค้าขอเลื่อนวัน/ยกเลิกคิว<br>ช่วงเวลานี้จะว่างให้จองใหม่ได้',
     icon: 'warning',
@@ -2206,7 +2213,7 @@ async function cancelPaid(id) {
 }
 
 async function deleteBooking(id) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ลบรายการจอง',
     text: 'ลบคิวที่ยกเลิกแล้วออกจากระบบ ใช่ไหม? ไม่สามารถกู้คืนได้',
     icon: 'warning',
@@ -2229,7 +2236,7 @@ async function deleteBooking(id) {
 }
 
 async function restoreBooking(item) {
-  const result = await Swal.fire({
+  const result = await adminSwal.fire({
     title: 'คืนสถานะจอง',
     html: 'คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน<br><small class="muted">ถ้าเลือกรอชำระเงิน ระบบจะเริ่มนับเวลาชำระใหม่</small>',
     icon: 'question',
@@ -2551,7 +2558,7 @@ function locationExistsOnDay(name) {
 async function addLocationPreset(preset) {
   if (!selectedServiceDate.value) return
   if (locationExistsOnDay(preset.name)) {
-    await Swal.fire({
+    await adminSwal.fire({
       title: 'มีสถานที่นี้แล้ว',
       text: `วันนี้มี "${preset.name}" อยู่แล้ว`,
       icon: 'info',
@@ -2560,7 +2567,7 @@ async function addLocationPreset(preset) {
     return
   }
 
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'เพิ่มสถานที่',
     text: `เพิ่ม "${preset.name}" สำหรับ ${formatServiceDateLabel(selectedServiceDate.value)} ใช่ไหม`,
     icon: 'question',
@@ -2674,7 +2681,7 @@ async function saveServiceLocation() {
 }
 
 async function removeServiceLocation(item) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ลบสถานที่',
     text: `ลบ "${item.name}" จากรายการปุ่มลัด ใช่ไหม (บริการที่สร้างไปแล้วไม่หาย)`,
     icon: 'warning',
@@ -2770,7 +2777,7 @@ async function saveShowcaseClip() {
 }
 
 async function removeShowcaseClip(item) {
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ลบคลิป',
     text: 'ลบคลิปนี้ออกจากหน้ารีวิว ใช่ไหม',
     icon: 'warning',
@@ -2950,7 +2957,7 @@ async function saveNailOption() {
 
 async function removeNailOption(item) {
   const label = optionDeleteLabel(item)
-  const ok = await Swal.fire({
+  const ok = await adminSwal.fire({
     title: 'ยืนยันลบบริการ',
     text: `ลบ "${label}" ใช่ไหม`,
     icon: 'warning',
@@ -2973,7 +2980,7 @@ async function removeNailOption(item) {
   } catch (error) {
     const msg = error?.response?.data?.error || 'ลบบริการไม่สำเร็จ'
     errorMessage.value = msg
-    await Swal.fire({ title: 'ลบไม่สำเร็จ', text: msg, icon: 'error' })
+    await adminSwal.fire({ title: 'ลบไม่สำเร็จ', text: msg, icon: 'error' })
   }
 }
 
@@ -7079,7 +7086,7 @@ watch(shopSlug, () => {
 .booking-edit-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: var(--z-admin-modal, 2000);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7093,6 +7100,8 @@ watch(shopSlug, () => {
   overflow-y: auto;
   padding: 20px;
   margin: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .booking-edit-header {

@@ -65,7 +65,7 @@ router.beforeEach(async (to) => {
       }
     }
     if (!uiStore.loadedForSlug || uiStore.loadedForSlug !== shopSlug) {
-      await uiStore.fetch().catch(() => null)
+      await uiStore.fetch(shopStore.shopName).catch(() => null)
     }
   }
 

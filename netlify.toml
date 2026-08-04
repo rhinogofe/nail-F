@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "dist"
 
+[[edge_functions]]
+  path = "/*"
+  function = "share-preview"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
