@@ -328,7 +328,7 @@ export function buildAllSlots({
   dayWindows = [],
   blocks = [],
   bookings = [],
-  displayMode = 'normal',
+  displayMode = 'slots_2h',
   slotHours = DEFAULT_SLOT_HOURS,
   excludeBookingId = null,
 }) {

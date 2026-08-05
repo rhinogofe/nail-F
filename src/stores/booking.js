@@ -40,7 +40,7 @@ export const useBookingStore = defineStore('booking', {
     bookingSlotHours: 2,
     advanceDays: 30,
     bookUntilDate: '',
-    bookingDisplayMode: 'normal',
+    bookingDisplayMode: 'slots_2h',
     unpaidAutoCancelEnabled: true,
     unpaidExpireHours: 24,
   }),

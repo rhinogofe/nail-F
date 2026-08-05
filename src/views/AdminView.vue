@@ -188,8 +188,14 @@ const lineUsesOwnBot = ref(false)
 const lineUseOwnBot = ref(false)
 const lineCanEditUseOwnBot = ref(false)
 const lineWebhookPath = ref('/api/line/webhook')
+const lineEffectiveUsesOwnBot = computed(() =>
+  lineUsesOwnBot.value || (lineCanEditUseOwnBot.value && lineUseOwnBot.value)
+)
 const lineWebhookUrlHint = computed(() => {
   const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
+  if (lineEffectiveUsesOwnBot.value && shopSlug.value && shopSlug.value !== 'default') {
+    return `${base}/api/line/webhook/${shopSlug.value}`
+  }
   return `${base}${lineWebhookPath.value}`
 })
 const isSuperAdmin = computed(() => auth.isSuperAdmin)
@@ -1538,7 +1544,7 @@ async function loadRevenueSummary() {
 }
 
 // ── รูปแบบแสดงเวลาหน้าจองลูกค้า ─────────────
-const bookingDisplayMode = ref('normal')
+const bookingDisplayMode = ref('slots_2h')
 const bookingSlotHours = ref(2)
 
 const displaySlotPreview = computed(() => {
@@ -4266,18 +4272,18 @@ watch(shopSlug, () => {
       <p class="muted">
         ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
         <code>{{ lineWebhookUrlHint }}</code>
-        <template v-if="lineCentralBotEnabled && !lineUsesOwnBot">
+        <template v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot">
           แล้วให้ร้านทักบอทกลางพร้อม slug ร้านเพื่อผูกรับแจ้งเตือนอัตโนมัติ
         </template>
         <template v-else>
           แล้วทักบอทของสาขานี้เพื่อผูก User/Group ID อัตโนมัติ (ไม่ต้องพิมพ์ slug)
         </template>
       </p>
-      <div v-if="lineCentralBotEnabled && !lineUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
+      <div v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
         <i class="ti ti-robot" style="font-size:16px;color:var(--color-primary)"></i>
         บอทกลาง — Token + Secret ตั้งบน server แล้ว (<code>{{ lineTokenMasked }}</code>) · สาขานี้ตั้งแค่ User/Group ID
       </div>
-      <div v-else-if="lineCentralBotEnabled && lineUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
+      <div v-else-if="lineCentralBotEnabled && lineEffectiveUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
         <i class="ti ti-crown" style="font-size:16px;color:var(--color-primary)"></i>
         Premium — สาขานี้ใช้ LINE Bot ของตัวเอง · กรอก Token + Secret ด้านล่าง · Webhook แยกตาม slug
       </div>
@@ -4285,7 +4291,7 @@ watch(shopSlug, () => {
         <i class="ti ti-building-store" style="font-size:16px;color:var(--color-primary)"></i>
         โหมดบอทแยกร้าน — กรอก Channel Access Token + Channel Secret ของสาขานี้เอง
       </div>
-      <div v-if="lineCentralBotEnabled && !lineUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
+      <div v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
         <i class="ti ti-link" style="font-size:16px;color:var(--color-primary)"></i>
         slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทกลางด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
       </div>
@@ -4356,7 +4362,7 @@ watch(shopSlug, () => {
         <p v-else class="muted">ยังไม่มีสาขา</p>
       </div>
       <div class="admin-form-grid admin-option-grid">
-        <template v-if="lineUsesOwnBot">
+        <template v-if="lineEffectiveUsesOwnBot">
           <label>
             Channel Access Token
             <input
@@ -4378,13 +4384,13 @@ watch(shopSlug, () => {
             />
           </label>
         </template>
-        <label :style="lineUsesOwnBot ? '' : 'grid-column:1/-1'">
+        <label :style="lineEffectiveUsesOwnBot ? '' : 'grid-column:1/-1'">
           User ID / Group ID รับแจ้งเตือน
           <input
             v-model="linePushToId"
             type="text"
             class="admin-input"
-            :placeholder="lineCentralBotEnabled && !lineUsesOwnBot
+            :placeholder="lineCentralBotEnabled && !lineEffectiveUsesOwnBot
               ? 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทกลาง slug ร้านเพื่อผูกอัตโนมัติ'
               : 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทสาขานี้เพื่อผูกอัตโนมัติ'"
           />
@@ -4397,10 +4403,10 @@ watch(shopSlug, () => {
       <p class="muted" style="margin-top:8px">
         ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code>
       </p>
-      <p v-if="lineUsesOwnBot" class="muted" style="margin-top:8px">
+      <p v-if="lineEffectiveUsesOwnBot" class="muted" style="margin-top:8px">
         Token จาก Messaging API → Issue · Secret จาก Basic settings → Channel secret · Webhook ใน LINE Developers ต้องตรงกับ <code>{{ lineWebhookUrlHint }}</code>
       </p>
-      <p v-else-if="lineCentralBotEnabled && !lineUsesOwnBot" class="muted" style="margin-top:8px">
+      <p v-else-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="muted" style="margin-top:8px">
         หลังทักบอทกลาง slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · ร้าน Premium ให้แอดมินหลักติ๊ก “ใช้ LINE Bot ของร้านเอง” ด้านบน
       </p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
