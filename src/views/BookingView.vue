@@ -26,6 +26,10 @@ import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
 import BrandMark from '../components/BrandMark.vue'
+import {
+  buildBookableCategories,
+  optionsForCategory,
+} from '../utils/bookingOptionsResponse'
 
 const router = useRouter()
 const { shopPath } = useShopRoute()
@@ -47,6 +51,7 @@ const showModal = ref(false)
 const sheetStep = ref('confirm')
 const pendingSlot = ref(null)
 const selectedOptionIds = ref([])
+const selectedCategoryId = ref('')
 const serviceError = ref('')
 
 const isSlots2hMode = computed(() => bookingStore.bookingDisplayMode === 'slots_2h')
@@ -57,6 +62,19 @@ const extraHoursForDate = computed(() => bookingStore.extraHoursByDate[selectedD
 const dayHoursForDate = computed(() => bookingStore.dayHoursByDate[selectedDate.value] || [])
 const usesCustomDayHours = computed(() => dayHoursForDate.value.length > 0)
 const nailOptions = computed(() => bookingStore.nailOptions || [])
+const serviceCategories = computed(() => bookingStore.serviceCategories || [])
+const bookableCategories = computed(() =>
+  buildBookableCategories(serviceCategories.value, nailOptions.value)
+)
+const hasCategoryStep = computed(() => bookableCategories.value.length > 1)
+const selectedCategoryLabel = computed(() =>
+  bookableCategories.value.find((cat) => cat.id === selectedCategoryId.value)?.name || ''
+)
+const requiredOptions = computed(() => nailOptions.value.filter((opt) => opt.is_required))
+const categoryOptions = computed(() => {
+  if (!selectedCategoryId.value) return []
+  return optionsForCategory(nailOptions.value, selectedCategoryId.value)
+})
 const todayDate = startOfDay(new Date())
 // bookUntilDate = วันสิ้นสุดที่ล็อกตอนแอดมินกดบันทึก (ไม่เลื่อนตามวันนี้)
 const maxBookDate = computed(() => {
@@ -221,9 +239,15 @@ const requiredLocationLabel = computed(() =>
 )
 const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
 const canSubmitBooking = computed(() => {
-  const required = nailOptions.value.filter(opt => opt.is_required)
-  if (!required.length) return hasSelectedServices.value
-  return required.every(opt => selectedOptionIds.value.includes(opt.id))
+  const required = requiredOptions.value
+  const requiredOk = !required.length || required.every((opt) => selectedOptionIds.value.includes(opt.id))
+  if (!requiredOk) return false
+
+  if (categoryOptions.value.length > 0) {
+    return categoryOptions.value.some((opt) => selectedOptionIds.value.includes(opt.id))
+  }
+
+  return hasSelectedServices.value
 })
 
 function applyRequiredOptionDefaults() {
@@ -415,6 +439,7 @@ function openBookSheet(slot) {
   pendingSlot.value = slot
   sheetStep.value = 'confirm'
   selectedOptionIds.value = []
+  selectedCategoryId.value = ''
   serviceError.value = ''
   showModal.value = true
 }
@@ -423,6 +448,7 @@ function closeBookSheet() {
   showModal.value = false
   sheetStep.value = 'confirm'
   selectedOptionIds.value = []
+  selectedCategoryId.value = ''
   serviceError.value = ''
   pendingSlot.value = null
 }
@@ -440,14 +466,39 @@ async function goToServiceStep() {
       return
     }
     applyRequiredOptionDefaults()
-    sheetStep.value = 'services'
+    if (bookableCategories.value.length > 1) {
+      selectedCategoryId.value = ''
+      sheetStep.value = 'category'
+    } else if (bookableCategories.value.length === 1) {
+      selectedCategoryId.value = bookableCategories.value[0].id
+      sheetStep.value = 'services'
+    } else {
+      selectedCategoryId.value = ''
+      sheetStep.value = 'services'
+    }
   } finally {
     busy.value = false
   }
 }
 
+function selectBookingCategory(categoryId) {
+  selectedCategoryId.value = categoryId
+  serviceError.value = ''
+  applyRequiredOptionDefaults()
+  sheetStep.value = 'services'
+}
+
 function backToConfirmStep() {
   serviceError.value = ''
+  sheetStep.value = 'confirm'
+}
+
+function backFromServicesStep() {
+  serviceError.value = ''
+  if (hasCategoryStep.value) {
+    sheetStep.value = 'category'
+    return
+  }
   sheetStep.value = 'confirm'
 }
 
@@ -461,7 +512,13 @@ async function submitBooking() {
     return
   }
 
-  if (!selectedOptionIds.value.length) {
+  if (categoryOptions.value.length > 0) {
+    const pickedInCategory = categoryOptions.value.some((opt) => selectedOptionIds.value.includes(opt.id))
+    if (!pickedInCategory) {
+      serviceError.value = 'กรุณาเลือกบริการในหมวดนี้อย่างน้อย 1 รายการ'
+      return
+    }
+  } else if (!selectedOptionIds.value.length) {
     serviceError.value = 'กรุณาเลือกบริการอย่างน้อย 1 รายการ'
     return
   }
@@ -850,11 +907,49 @@ onUnmounted(() => {
             </div>
           </template>
 
-          <!-- Step 2: เลือกบริการ -->
+          <!-- Step 2: เลือกหมวดหมู่ -->
+          <template v-else-if="sheetStep === 'category'">
+            <h3 class="sheet-title">เลือกหมวดหมู่</h3>
+            <p class="sheet-sub">เลือกหมวดหมู่ก่อน แล้วค่อยเลือกบริการ</p>
+
+            <div class="sheet-info sheet-info-compact">
+              <div class="info-row">
+                <span class="info-label"><i class="ti ti-calendar info-ic" aria-hidden="true"></i>วันที่</span>
+                <span class="info-val">{{ selectedDateLabel }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label"><i class="ti ti-clock info-ic" aria-hidden="true"></i>เวลา</span>
+                <span class="info-val">{{ pendingTimeLabel }}</span>
+              </div>
+            </div>
+
+            <div class="category-list">
+              <button
+                v-for="cat in bookableCategories"
+                :key="cat.id"
+                type="button"
+                class="category-card"
+                @click="selectBookingCategory(cat.id)"
+              >
+                <span class="category-name">{{ cat.name }}</span>
+                <span v-if="cat.description" class="category-desc">{{ cat.description }}</span>
+                <span class="category-count">{{ cat.count }} บริการ</span>
+              </button>
+            </div>
+
+            <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>
+
+            <div class="sheet-actions">
+              <button type="button" class="btn-cancel" @click="backToConfirmStep">ย้อนกลับ</button>
+            </div>
+          </template>
+
+          <!-- Step 3: เลือกบริการ -->
           <template v-else>
             <h3 class="sheet-title">เลือกบริการ</h3>
             <p class="sheet-sub">
-              <template v-if="requiredLocationLabel">สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
+              <template v-if="selectedCategoryLabel">หมวด {{ selectedCategoryLabel }}</template>
+              <template v-else-if="requiredLocationLabel">สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
               <template v-else>เลือกบริการสำหรับคิวนี้</template>
             </p>
 
@@ -871,18 +966,16 @@ onUnmounted(() => {
 
             <div class="option-list">
               <label
-                v-for="opt in nailOptions"
-                :key="opt.id"
-                class="option-card"
-                :class="{ selected: selectedOptionIds.includes(opt.id), required: opt.is_required }"
+                v-for="opt in requiredOptions"
+                :key="`req-${opt.id}`"
+                class="option-card selected required"
               >
                 <input
                   v-model="selectedOptionIds"
                   type="checkbox"
                   class="option-input"
                   :value="opt.id"
-                  :disabled="opt.is_required"
-                  @change="serviceError = ''"
+                  disabled
                 />
                 <span class="option-check" aria-hidden="true">
                   <i class="ti ti-check"></i>
@@ -890,19 +983,40 @@ onUnmounted(() => {
                 <span class="option-body">
                   <span class="option-name">
                     {{ opt.option_name }}
-                    <span v-if="opt.is_required" class="option-required-tag">บังคับ</span>
+                    <span class="option-required-tag">บังคับ</span>
                   </span>
                   <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
                 </span>
+              </label>
+
+              <label
+                v-for="opt in categoryOptions"
+                :key="opt.id"
+                class="option-card"
+                :class="{ selected: selectedOptionIds.includes(opt.id) }"
+              >
+                <input
+                  v-model="selectedOptionIds"
+                  type="checkbox"
+                  class="option-input"
+                  :value="opt.id"
+                  @change="serviceError = ''"
+                />
+                <span class="option-check" aria-hidden="true">
+                  <i class="ti ti-check"></i>
+                </span>
+                <span class="option-body">
+                  <span class="option-name">{{ opt.option_name }}</span>
+                  <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
+                </span>
                 <span v-if="Number(opt.price) > 0" class="option-price"></span>
-                <!-- <span v-if="Number(opt.price) > 0" class="option-price">฿{{ Number(opt.price).toLocaleString('th-TH') }}</span> -->
               </label>
             </div>
 
             <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>
 
             <div class="sheet-actions">
-              <button type="button" class="btn-cancel" :disabled="busy" @click="backToConfirmStep">ย้อนกลับ</button>
+              <button type="button" class="btn-cancel" :disabled="busy" @click="backFromServicesStep">ย้อนกลับ</button>
               <button
                 type="button"
                 class="btn-confirm"
@@ -1246,6 +1360,48 @@ onUnmounted(() => {
   color: var(--color-error);
   font-size: 12px;
   font-weight: 500;
+}
+.category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+.category-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+.category-card:hover {
+  border-color: var(--color-primary-light);
+  background: var(--color-primary-light);
+}
+.category-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.category-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+.category-count {
+  font-size: 12px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
 }
 .option-list {
   display: flex;

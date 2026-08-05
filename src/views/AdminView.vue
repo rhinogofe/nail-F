@@ -21,6 +21,7 @@ import { imageUrlHint } from '../utils/imageUrl'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { compressImage } from '../utils/compressChatImage'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { normalizeBookingOptionsResponse } from '../utils/bookingOptionsResponse'
 
 const router = useRouter()
 const { shopPath, shopSlug } = useShopRoute()
@@ -190,6 +191,15 @@ const optionColorPresets = [
   { label: 'ส้ม', value: '#f97316' },
 ]
 const serviceLocations = ref([])
+const serviceCategories = ref([])
+const showCategoryPanel = ref(false)
+const categoryForm = ref({
+  id: null,
+  name: '',
+  description: '',
+  is_active: true,
+  sort_order: 0,
+})
 const showcaseClips = ref([])
 const showcaseThumbFailed = ref(new Set())
 const clipForm = ref({
@@ -217,6 +227,7 @@ const optionForm = ref({
   color: '#C4847A',
   show_from_date: '',
   show_to_date: '',
+  category_id: '',
 })
 const optionFormUseColor = ref(false)
 const loading = ref(false)
@@ -436,12 +447,54 @@ function selectBlocksSection(key) {
 const allShops = ref([])
 const newShopName = ref('')
 const newShopSlug = ref('')
+const newShopUsageLimitDays = ref('')
+const USAGE_PRESET_DAYS = [10, 15, 30]
+
+function parseUsageInputDays(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  const days = Math.floor(Number(raw))
+  if (!Number.isFinite(days) || days <= 0) return null
+  return Math.min(days, 3650)
+}
+
+function hasUsageLimitInput(value) {
+  return parseUsageInputDays(value) != null
+}
 const shopEditOpen = ref(false)
 const shopEditItem = ref(null)
 const shopEditName = ref('')
 const shopEditActive = ref(true)
+const shopEditUsageLimitDays = ref('')
+const shopEditResetUsage = ref(false)
 const shopEditSaving = ref(false)
 const shopEditError = ref('')
+
+const currentBranchUsage = computed(() => {
+  if (shopSlug.value === 'default') return null
+  return allShops.value.find((shop) => shop.slug === shopSlug.value) || shopStore.shop
+})
+
+function formatShopUsageBadge(shop) {
+  if (!shop?.usage_limit_days) return null
+  if (shop.usage_expired) return { text: 'หมดอายุ', tone: 'expired' }
+  if (shop.usage_days_remaining != null && shop.usage_days_remaining <= 3) {
+    return { text: `เหลือ ${shop.usage_days_remaining} วัน`, tone: 'warn' }
+  }
+  if (shop.usage_days_remaining != null) {
+    return { text: `เหลือ ${shop.usage_days_remaining} วัน`, tone: 'ok' }
+  }
+  return { text: `${shop.usage_limit_days} วัน`, tone: 'ok' }
+}
+
+function formatUsageExpiryDate(iso) {
+  if (!iso) return '-'
+  return new Date(iso).toLocaleDateString('th-TH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
 
 const branchShopOptions = computed(() =>
   allShops.value.filter((shop) => shop.slug !== 'default' && shop.is_active)
@@ -529,10 +582,20 @@ async function createShop() {
   }
   const ok = await confirmAdminSave('ยืนยันเพิ่มสาขา', `เพิ่มสาขา "${name}" (/${slug}) ใช่ไหม`)
   if (!ok) return
+  const limitDays = parseUsageInputDays(newShopUsageLimitDays.value)
+  if (String(newShopUsageLimitDays.value).trim() && limitDays == null) {
+    errorMessage.value = 'จำนวนวันใช้งานไม่ถูกต้อง (ต้องเป็นตัวเลขมากกว่า 0)'
+    return
+  }
   try {
-    await api.post('/api/shops', { name, slug })
+    const payload = { name, slug }
+    if (limitDays != null) {
+      payload.usage_limit_days = limitDays
+    }
+    await api.post('/api/shops', payload)
     newShopName.value = ''
     newShopSlug.value = ''
+    newShopUsageLimitDays.value = ''
     message.value = `สร้างร้าน ${name} แล้ว — URL: /${slug}/bookings`
     await loadAllShops()
   } catch (err) {
@@ -549,6 +612,8 @@ function openShopEdit(shop) {
   shopEditItem.value = shop
   shopEditName.value = shop.name || ''
   shopEditActive.value = shop.is_active !== false
+  shopEditUsageLimitDays.value = shop.usage_limit_days ?? ''
+  shopEditResetUsage.value = false
   shopEditError.value = ''
   shopEditOpen.value = true
   scrollToAdminSection('settings-shops')
@@ -574,15 +639,28 @@ async function saveShopEdit() {
     `บันทึกสาขา "${name}" (${shopEditActive.value ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}) ใช่ไหม`
   )
   if (!ok) return
+  const limitDays = parseUsageInputDays(shopEditUsageLimitDays.value)
+  if (String(shopEditUsageLimitDays.value).trim() && limitDays == null) {
+    shopEditError.value = 'จำนวนวันใช้งานไม่ถูกต้อง (ต้องเป็นตัวเลขมากกว่า 0)'
+    return
+  }
   shopEditSaving.value = true
   shopEditError.value = ''
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch(`/api/shops/${shopEditItem.value.slug}`, {
+    const originalLimit = shopEditItem.value.usage_limit_days ?? ''
+    const limitChanged = String(limitDays ?? '') !== String(originalLimit || '')
+    const payload = {
       name,
       is_active: shopEditActive.value,
-    })
+    }
+    if (limitChanged) {
+      payload.usage_limit_days = limitDays
+    } else if (shopEditResetUsage.value) {
+      payload.reset_usage_period = true
+    }
+    const { data } = await api.patch(`/api/shops/${shopEditItem.value.slug}`, payload)
     message.value = `บันทึกสาขา "${name}" แล้ว`
     await loadAllShops()
     if (data?.shop?.slug === shopSlug.value && data.shop.is_active === false) {
@@ -1976,7 +2054,7 @@ async function loadBookingEditDayData(date) {
     bookingEditDayHours.value = dayHoursRes.data || []
     bookingEditSlotBookings.value = dayRes.data?.bookings || []
     bookingEditSlotBlocks.value = dayRes.data?.blocks || []
-    bookingEditOptions.value = optionsRes.data || []
+    bookingEditOptions.value = normalizeBookingOptionsResponse(optionsRes.data).options
 
     const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
     let selected = bookingEditSelectedIds.value.filter((id) => availableIds.has(String(id)))
@@ -2314,7 +2392,7 @@ async function openBookingAdd() {
       slotHours: bookingSlotHours.value,
     })
     bookingAddSlotKey.value = hourOpts[0]?.key || ''
-    bookingAddOptions.value = optionsRes.data || []
+    bookingAddOptions.value = normalizeBookingOptionsResponse(optionsRes.data).options
     const selected = []
     for (const opt of bookingAddOptions.value) {
       if (opt.is_required && optionBookableOnDate(opt, selectedBookingDate.value)) {
@@ -2435,6 +2513,9 @@ const everyDayOptions = computed(() =>
 const activeLocationPresets = computed(() =>
   serviceLocations.value.filter((loc) => loc.is_active)
 )
+const activeServiceCategories = computed(() =>
+  serviceCategories.value.filter((cat) => cat.is_active)
+)
 
 function formatServiceDateLabel(iso) {
   if (!iso) return ''
@@ -2489,6 +2570,7 @@ function resetOptionForm() {
     color: '#C4847A',
     show_from_date: '',
     show_to_date: '',
+    category_id: '',
   }
 }
 
@@ -2505,6 +2587,7 @@ function resetOptionFormForDay() {
     color: '#C4847A',
     show_from_date: selectedServiceDate.value,
     show_to_date: selectedServiceDate.value,
+    category_id: '',
   }
 }
 
@@ -2613,6 +2696,97 @@ function resetLocationForm() {
 
 function setLocationColor(color) {
   locationForm.value.color = color
+}
+
+async function loadServiceCategories() {
+  try {
+    const { data } = await api.get('/api/admin/service-categories')
+    serviceCategories.value = data || []
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'โหลดหมวดหมู่ไม่สำเร็จ'
+  }
+}
+
+function resetCategoryForm() {
+  categoryForm.value = {
+    id: null,
+    name: '',
+    description: '',
+    is_active: true,
+    sort_order: serviceCategories.value.length,
+  }
+}
+
+function startEditCategory(item) {
+  categoryForm.value = {
+    id: item.id,
+    name: item.name,
+    description: item.description || '',
+    is_active: Boolean(item.is_active),
+    sort_order: Number(item.sort_order) || 0,
+  }
+  showCategoryPanel.value = true
+}
+
+async function saveServiceCategory() {
+  const name = String(categoryForm.value.name || '').trim()
+  if (!name) {
+    errorMessage.value = 'กรุณาระบุชื่อหมวดหมู่'
+    return
+  }
+
+  const isEdit = Boolean(categoryForm.value.id)
+  const ok = await confirmAdminSave(
+    isEdit ? 'ยืนยันแก้ไขหมวดหมู่' : 'ยืนยันเพิ่มหมวดหมู่',
+    `${isEdit ? 'แก้ไข' : 'เพิ่ม'} "${name}" ใช่ไหม`
+  )
+  if (!ok) return
+
+  message.value = ''
+  errorMessage.value = ''
+  const payload = {
+    name,
+    description: String(categoryForm.value.description || '').trim() || null,
+    is_active: Boolean(categoryForm.value.is_active),
+    sort_order: Number(categoryForm.value.sort_order) || 0,
+  }
+
+  try {
+    if (isEdit) {
+      await api.patch(`/api/admin/service-categories/${categoryForm.value.id}`, payload)
+      message.value = 'แก้ไขหมวดหมู่แล้ว'
+    } else {
+      await api.post('/api/admin/service-categories', payload)
+      message.value = 'เพิ่มหมวดหมู่แล้ว'
+    }
+    resetCategoryForm()
+    await loadServiceCategories()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกหมวดหมู่ไม่สำเร็จ'
+  }
+}
+
+async function removeServiceCategory(item) {
+  const ok = await adminSwal.fire({
+    title: 'ยืนยันลบหมวดหมู่',
+    text: `ลบ "${item.name}" ใช่ไหม (บริการในหมวดนี้จะไม่มีหมวด)`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบ',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.delete(`/api/admin/service-categories/${item.id}`)
+    message.value = 'ลบหมวดหมู่แล้ว'
+    if (categoryForm.value.id === item.id) resetCategoryForm()
+    await Promise.all([loadServiceCategories(), loadNailOptions()])
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'ลบหมวดหมู่ไม่สำเร็จ'
+  }
 }
 
 async function loadServiceLocations() {
@@ -2874,6 +3048,7 @@ function startEditOption(item) {
     color: item.color && isValidHexColor(item.color) ? item.color : '#C4847A',
     show_from_date: from || '',
     show_to_date: to || '',
+    category_id: item.category_id || '',
   }
   if (!from && !to) {
     showEveryDayForm.value = true
@@ -2936,6 +3111,7 @@ async function saveNailOption() {
     color: optionFormUseColor.value ? colorValue : null,
     show_from_date: showFrom || null,
     show_to_date: showTo || null,
+    category_id: optionForm.value.category_id || null,
   }
 
   try {
@@ -3041,6 +3217,7 @@ onMounted(loadLinePushSetting)
 onMounted(loadUnpaidAutoCancelSetting)
 onMounted(loadNailOptions)
 onMounted(loadServiceLocations)
+onMounted(loadServiceCategories)
 onMounted(loadShopHours)
 onMounted(loadDayHoursMonth)
 onMounted(loadAdvanceDays)
@@ -3102,6 +3279,19 @@ watch(shopSlug, () => {
 
     <p v-if="message" class="alert success">{{ message }}</p>
     <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+    <p
+      v-if="currentBranchUsage?.usage_expired"
+      class="alert error"
+    >
+      สาขานี้หมดระยะเวลาใช้งานแล้ว ({{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }}) — ลูกค้าไม่สามารถจองได้ กรุณาติดต่อแอดมินหลักเพื่อต่ออายุ
+    </p>
+    <p
+      v-else-if="currentBranchUsage?.usage_limit_days && currentBranchUsage.usage_days_remaining != null"
+      class="alert"
+      :class="currentBranchUsage.usage_days_remaining <= 3 ? 'error' : 'success'"
+    >
+      ระยะเวลาใช้งานเหลือ {{ currentBranchUsage.usage_days_remaining }} วัน (หมดอายุ {{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }})
+    </p>
 
     <section v-show="activeTab === 'bookings'" class="card admin-section">
       <template v-if="!selectedBookingDate">
@@ -3412,6 +3602,72 @@ watch(shopSlug, () => {
     </section>
 
     <section v-show="activeTab === 'services'" class="card admin-section">
+      <div class="service-categories-section">
+        <div class="service-everyday-head">
+          <div>
+            <h3>หมวดหมู่บริการ</h3>
+            <p class="muted">ลูกค้าจะเลือกหมวดหมู่ก่อน แล้วค่อยเลือกบริการในหมวดนั้น</p>
+          </div>
+          <button type="button" class="btn" @click="showCategoryPanel = !showCategoryPanel">
+            {{ showCategoryPanel ? 'ซ่อน' : 'จัดการหมวดหมู่' }}
+          </button>
+        </div>
+
+        <div v-if="serviceCategories.length" class="service-category-chips">
+          <span v-for="cat in serviceCategories" :key="cat.id" class="service-category-chip" :class="{ inactive: !cat.is_active }">
+            {{ cat.name }}
+          </span>
+        </div>
+        <p v-else class="muted">ยังไม่มีหมวดหมู่ — ถ้าไม่สร้าง ลูกค้าจะเลือกบริการแบบเดิม</p>
+
+        <div v-if="showCategoryPanel" class="service-option-form card-inner" style="margin-top:12px">
+          <h4>{{ categoryForm.id ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่' }}</h4>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              ชื่อหมวดหมู่ *
+              <input v-model="categoryForm.name" type="text" class="admin-input" placeholder="เช่น มือ, เท้า, ต่อเล็บ" />
+            </label>
+            <label>
+              รายละเอียด
+              <input v-model="categoryForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+            </label>
+            <label>
+              ลำดับแสดง
+              <input v-model.number="categoryForm.sort_order" type="number" min="0" step="1" class="admin-input" />
+            </label>
+          </div>
+          <div class="admin-form-row">
+            <label class="admin-checkbox">
+              <input v-model="categoryForm.is_active" type="checkbox" />
+              เปิดใช้งาน
+            </label>
+            <button type="button" class="btn primary admin-action-btn" @click="saveServiceCategory">
+              {{ categoryForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มหมวดหมู่' }}
+            </button>
+            <button v-if="categoryForm.id" type="button" class="btn admin-action-btn" @click="resetCategoryForm">ยกเลิกแก้ไข</button>
+          </div>
+
+          <div v-if="serviceCategories.length" style="margin-top:16px">
+            <div v-for="item in serviceCategories" :key="item.id" class="admin-item">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
+                  {{ item.is_active ? 'เปิด' : 'ปิด' }}
+                </span>
+                <p class="muted">{{ item.description || '-' }}</p>
+                <p class="muted">ลำดับ {{ item.sort_order }}</p>
+              </div>
+              <div class="row">
+                <button type="button" class="btn" @click="startEditCategory(item)">แก้ไข</button>
+                <button type="button" class="btn danger" @click="removeServiceCategory(item)">ลบ</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="admin-divider" />
+
       <!-- ปฏิทินเลือกวัน -->
       <template v-if="!selectedServiceDate">
         <div class="service-cal-header">
@@ -3476,6 +3732,15 @@ watch(shopSlug, () => {
                 <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
               </label>
               <label>
+                หมวดหมู่
+                <select v-model="optionForm.category_id" class="admin-input">
+                  <option value="">— ไม่ระบุ —</option>
+                  <option v-for="cat in activeServiceCategories" :key="cat.id" :value="cat.id">
+                    {{ cat.name }}
+                  </option>
+                </select>
+              </label>
+              <label>
                 ราคา (บาท)
                 <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
               </label>
@@ -3533,6 +3798,7 @@ watch(shopSlug, () => {
           <div v-for="(item, index) in everyDayOptions" :key="item.id" class="admin-item">
             <div>
               <strong>{{ item.option_name }}</strong>
+              <span v-if="item.category_name" class="badge-category">{{ item.category_name }}</span>
               <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
               <span v-else class="badge-no-color">ไม่ใช้สี</span>
               <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
@@ -3617,6 +3883,15 @@ watch(shopSlug, () => {
               <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
             </label>
             <label>
+              หมวดหมู่
+              <select v-model="optionForm.category_id" class="admin-input">
+                <option value="">— ไม่ระบุ —</option>
+                <option v-for="cat in activeServiceCategories" :key="cat.id" :value="cat.id">
+                  {{ cat.name }}
+                </option>
+              </select>
+            </label>
+            <label>
               ราคา (บาท)
               <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
             </label>
@@ -3675,6 +3950,7 @@ watch(shopSlug, () => {
         <div v-for="(item, index) in selectedDayOptions" :key="item.id" class="admin-item">
           <div>
             <strong>{{ item.option_name }}</strong>
+            <span v-if="item.category_name" class="badge-category">{{ item.category_name }}</span>
             <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
             <span v-else class="badge-no-color">ไม่ใช้สี</span>
             <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
@@ -3916,6 +4192,13 @@ watch(shopSlug, () => {
             <span>{{ shop.name }}</span>
             <span class="muted">/{{ shop.slug }}</span>
             <span v-if="!shop.is_active" class="shop-inactive-badge">ปิด</span>
+            <span
+              v-else-if="formatShopUsageBadge(shop)"
+              class="shop-usage-badge"
+              :class="`shop-usage-badge--${formatShopUsageBadge(shop).tone}`"
+            >
+              {{ formatShopUsageBadge(shop).text }}
+            </span>
           </button>
           <div v-else class="admin-shop-item active">
             <span>{{ shop.name }}</span>
@@ -3942,6 +4225,29 @@ watch(shopSlug, () => {
         <label class="admin-label-grow">
           slug (URL)
           <input v-model="newShopSlug" class="admin-input" placeholder="เช่น chula" />
+        </label>
+        <label class="admin-label-grow">
+          จำกัดเวลาใช้งาน (วัน)
+          <input
+            v-model="newShopUsageLimitDays"
+            type="number"
+            min="1"
+            max="3650"
+            class="admin-input"
+            placeholder="ว่าง = ไม่จำกัด"
+          />
+          <span class="usage-preset-row">
+            <button type="button" class="btn usage-preset-btn" @click="newShopUsageLimitDays = ''">ไม่จำกัด</button>
+            <button
+              v-for="days in USAGE_PRESET_DAYS"
+              :key="`new-usage-${days}`"
+              type="button"
+              class="btn usage-preset-btn"
+              @click="newShopUsageLimitDays = String(days)"
+            >
+              {{ days }} ว.
+            </button>
+          </span>
         </label>
         <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="createShop">
           เพิ่มร้าน
@@ -4847,6 +5153,40 @@ watch(shopSlug, () => {
           <label class="admin-checkbox">
             <input v-model="shopEditActive" type="checkbox" />
             เปิดใช้งาน
+          </label>
+          <label class="booking-edit-field">
+            จำกัดเวลาใช้งาน (วัน)
+            <input
+              v-model="shopEditUsageLimitDays"
+              type="number"
+              min="1"
+              max="3650"
+              class="admin-input"
+              placeholder="ว่าง = ไม่จำกัด"
+              @input="shopEditError = ''"
+            />
+            <span class="usage-preset-row">
+              <button type="button" class="btn usage-preset-btn" @click="shopEditUsageLimitDays = ''">ไม่จำกัด</button>
+              <button
+                v-for="days in USAGE_PRESET_DAYS"
+                :key="`edit-usage-${days}`"
+                type="button"
+                class="btn usage-preset-btn"
+                @click="shopEditUsageLimitDays = String(days)"
+              >
+                {{ days }} ว.
+              </button>
+            </span>
+          </label>
+          <p v-if="shopEditItem?.usage_expires_at" class="muted booking-edit-meta">
+            หมดอายุ: {{ formatUsageExpiryDate(shopEditItem.usage_expires_at) }}
+            <template v-if="shopEditItem.usage_days_remaining != null">
+              · เหลือ {{ shopEditItem.usage_days_remaining }} วัน
+            </template>
+          </p>
+          <label v-if="hasUsageLimitInput(shopEditUsageLimitDays)" class="admin-checkbox">
+            <input v-model="shopEditResetUsage" type="checkbox" />
+            เริ่มนับระยะเวลาใหม่ (จากวันนี้)
           </label>
           <p v-if="shopEditError" class="alert error">{{ shopEditError }}</p>
           <div class="booking-edit-actions">
@@ -5782,6 +6122,37 @@ watch(shopSlug, () => {
   font-weight: 600;
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.badge-category {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fdf2f8;
+  color: #be185d;
+}
+
+.service-category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.service-category-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.service-category-chip.inactive {
+  opacity: 0.55;
 }
 
 .badge-no-color {
@@ -7489,6 +7860,43 @@ watch(shopSlug, () => {
   color: #b91c1c;
   font-size: 11px;
   font-weight: 700;
+}
+
+.shop-usage-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shop-usage-badge--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.shop-usage-badge--warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.shop-usage-badge--expired {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.usage-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.usage-preset-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .admin-shop-item {

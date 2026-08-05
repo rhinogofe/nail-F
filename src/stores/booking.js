@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '../api/axios'
+import { normalizeBookingOptionsResponse } from '../utils/bookingOptionsResponse'
 import { normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours } from '../utils/bookingSlots'
 
 function toLocalYmd(date) {
@@ -31,6 +32,7 @@ export const useBookingStore = defineStore('booking', {
     dayHoursByDate: {},
     nailOptions: [],
     allNailOptions: [],
+    serviceCategories: [],
     myBookings: [],
     loading: false,
     shopOpenHour: 9,
@@ -140,13 +142,16 @@ export const useBookingStore = defineStore('booking', {
     async fetchNailOptions(date) {
       const params = date ? { date } : {}
       const { data } = await api.get('/api/bookings/options', { params })
-      this.nailOptions = data || []
+      const normalized = normalizeBookingOptionsResponse(data)
+      this.serviceCategories = normalized.categories
+      this.nailOptions = normalized.options
       return this.nailOptions
     },
     async fetchAllNailOptions() {
       try {
         const { data } = await api.get('/api/bookings/options')
-        this.allNailOptions = data || []
+        const normalized = normalizeBookingOptionsResponse(data)
+        this.allNailOptions = normalized.options
         return this.allNailOptions
       } catch {
         return this.allNailOptions

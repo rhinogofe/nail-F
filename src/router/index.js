@@ -67,6 +67,20 @@ router.beforeEach(async (to) => {
     if (!uiStore.loadedForSlug || uiStore.loadedForSlug !== shopSlug) {
       await uiStore.fetch(shopStore.shopName).catch(() => null)
     }
+
+    if (shopStore.shop?.usage_expired) {
+      const isAdminPath = to.path.endsWith('/admin')
+      if (!isAdminPath) {
+        if (auth.token && !auth.user) {
+          await auth.fetchMe().catch(() => null)
+        }
+        const canAdmin = auth.canAccessShopAdmin(shopSlug)
+        if (!canAdmin && !to.meta.guest && !to.meta.registerShop) {
+          shopStore.error = 'สาขานี้หมดระยะเวลาใช้งานแล้ว กรุณาติดต่อผู้ดูแลระบบ'
+          return shopPath(shopSlug, '/login')
+        }
+      }
+    }
   }
 
   if (auth.token && !auth.user) {

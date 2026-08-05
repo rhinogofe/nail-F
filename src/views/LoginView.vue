@@ -30,6 +30,9 @@ const displayName = computed(() => {
   return shopStore.shopName || main
 })
 
+const shopExpired = computed(() => Boolean(shopStore.shop?.usage_expired))
+const shopExpiryMessage = computed(() => shopStore.error || 'สาขานี้หมดระยะเวลาใช้งานแล้ว กรุณาติดต่อผู้ดูแลระบบ')
+
 const providers = [
   { key: 'line', label: 'เข้าสู่ระบบด้วย LINE', icon: 'L' },
   { key: 'facebook', label: 'เข้าสู่ระบบด้วย Facebook', icon: 'f' },
@@ -107,6 +110,8 @@ async function loginWithPhone() {
         </div>
 
         <div class="login-form">
+          <p v-if="shopExpired" class="alert-banner error">{{ shopExpiryMessage }}</p>
+          <template v-else>
           <label class="field">
             <i class="ti ti-user field-icon" aria-hidden="true"></i>
             <input v-model="name" type="text" placeholder="ชื่อผู้จอง" />
@@ -137,6 +142,7 @@ async function loginWithPhone() {
 
           <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
           <p class="login-privacy">ข้อมูลของคุณใช้เพื่อยืนยันตัวตนและติดต่อการจองเท่านั้น</p>
+          </template>
         </div>
       </div>
     </section>
