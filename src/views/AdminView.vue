@@ -21,7 +21,12 @@ import { imageUrlHint } from '../utils/imageUrl'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { compressImage } from '../utils/compressChatImage'
 import { useUiSettingsStore } from '../stores/uiSettings'
-import { normalizeBookingOptionsResponse } from '../utils/bookingOptionsResponse'
+import {
+  normalizeBookingOptionsResponse,
+  buildBookableCategories,
+  optionsForCategory,
+  UNCategorized_CATEGORY_ID,
+} from '../utils/bookingOptionsResponse'
 
 const router = useRouter()
 const { shopPath, shopSlug } = useShopRoute()
@@ -269,6 +274,36 @@ const bookingAddExtraHours = ref([])
 const bookingAddDayHours = ref([])
 const bookingAddSlotBookings = ref([])
 const bookingAddSlotBlocks = ref([])
+const bookingAddCategories = ref([])
+const bookingAddSelectedCategoryId = ref('')
+const bookingEditCategories = ref([])
+const bookingEditSelectedCategoryId = ref('')
+
+function bookableOptionsOnDate(options, dateIso) {
+  return options.filter((opt) => optionBookableOnDate(opt, dateIso))
+}
+
+function syncCategorySelection(categories, options, dateIso, selectedRef, selectedIds = []) {
+  const bookable = bookableOptionsOnDate(options, dateIso)
+  const cats = buildBookableCategories(categories, bookable)
+  if (!cats.length) {
+    selectedRef.value = ''
+    return
+  }
+  const optionalSelected = bookable.filter(
+    (opt) => !opt.is_required && selectedIds.includes(String(opt.id))
+  )
+  if (optionalSelected.length) {
+    const catId = optionalSelected[0].category_id || UNCategorized_CATEGORY_ID
+    if (cats.some((cat) => cat.id === catId)) {
+      selectedRef.value = catId
+      return
+    }
+  }
+  if (!cats.some((cat) => cat.id === selectedRef.value)) {
+    selectedRef.value = cats[0].id
+  }
+}
 
 const bookingEditOrphaned = computed(() => {
   if (!bookingEditItem.value) return []
@@ -290,6 +325,46 @@ const bookingAddHourOptions = computed(() =>
     slotHours: bookingSlotHours.value,
   })
 )
+
+const bookingAddBookableCategories = computed(() =>
+  buildBookableCategories(
+    bookingAddCategories.value,
+    bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value)
+  )
+)
+
+const bookingAddRequiredOptions = computed(() =>
+  bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value).filter((opt) => opt.is_required)
+)
+
+const bookingAddCategoryOptions = computed(() => {
+  const bookable = bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value)
+  if (!bookingAddBookableCategories.value.length) {
+    return bookable.filter((opt) => !opt.is_required)
+  }
+  if (!bookingAddSelectedCategoryId.value) return []
+  return optionsForCategory(bookable, bookingAddSelectedCategoryId.value)
+})
+
+const bookingEditBookableCategories = computed(() =>
+  buildBookableCategories(
+    bookingEditCategories.value,
+    bookableOptionsOnDate(bookingEditOptions.value, bookingEditDate.value)
+  )
+)
+
+const bookingEditRequiredOptions = computed(() =>
+  bookableOptionsOnDate(bookingEditOptions.value, bookingEditDate.value).filter((opt) => opt.is_required)
+)
+
+const bookingEditCategoryOptions = computed(() => {
+  const bookable = bookableOptionsOnDate(bookingEditOptions.value, bookingEditDate.value)
+  if (!bookingEditBookableCategories.value.length) {
+    return bookable.filter((opt) => !opt.is_required)
+  }
+  if (!bookingEditSelectedCategoryId.value) return []
+  return optionsForCategory(bookable, bookingEditSelectedCategoryId.value)
+})
 
 const bookingEditHourOptions = computed(() => {
   const sameDay = bookingEditDate.value === bookingEditOriginalDate.value
@@ -2054,7 +2129,9 @@ async function loadBookingEditDayData(date) {
     bookingEditDayHours.value = dayHoursRes.data || []
     bookingEditSlotBookings.value = dayRes.data?.bookings || []
     bookingEditSlotBlocks.value = dayRes.data?.blocks || []
-    bookingEditOptions.value = normalizeBookingOptionsResponse(optionsRes.data).options
+    const normalized = normalizeBookingOptionsResponse(optionsRes.data)
+    bookingEditOptions.value = normalized.options
+    bookingEditCategories.value = normalized.categories
 
     const availableIds = new Set(bookingEditOptions.value.map((o) => String(o.id)))
     let selected = bookingEditSelectedIds.value.filter((id) => availableIds.has(String(id)))
@@ -2069,6 +2146,13 @@ async function loadBookingEditDayData(date) {
     }
     bookingEditSelectedIds.value = selected
     bookingEditMoveToSlotKey.value = ''
+    syncCategorySelection(
+      bookingEditCategories.value,
+      bookingEditOptions.value,
+      bookingEditDate.value,
+      bookingEditSelectedCategoryId,
+      bookingEditSelectedIds.value
+    )
   } catch (error) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดข้อมูลวันจองไม่สำเร็จ'
   } finally {
@@ -2096,6 +2180,8 @@ async function editBooking(item) {
   bookingEditSlotBlocks.value = []
   bookingEditSelectedIds.value = (item.nail_options || []).map((o) => String(o.id))
   bookingEditOptions.value = []
+  bookingEditCategories.value = []
+  bookingEditSelectedCategoryId.value = ''
   bookingEditError.value = ''
   bookingEditLoading.value = true
   bookingEditOpen.value = true
@@ -2349,6 +2435,8 @@ async function openBookingAdd() {
   bookingAddTotal.value = ''
   bookingAddSelectedIds.value = []
   bookingAddOptions.value = []
+  bookingAddCategories.value = []
+  bookingAddSelectedCategoryId.value = ''
   bookingAddExtraHours.value = []
   bookingAddDayHours.value = []
   bookingAddSlotBookings.value = []
@@ -2392,7 +2480,9 @@ async function openBookingAdd() {
       slotHours: bookingSlotHours.value,
     })
     bookingAddSlotKey.value = hourOpts[0]?.key || ''
-    bookingAddOptions.value = normalizeBookingOptionsResponse(optionsRes.data).options
+    const normalized = normalizeBookingOptionsResponse(optionsRes.data)
+    bookingAddOptions.value = normalized.options
+    bookingAddCategories.value = normalized.categories
     const selected = []
     for (const opt of bookingAddOptions.value) {
       if (opt.is_required && optionBookableOnDate(opt, selectedBookingDate.value)) {
@@ -2400,6 +2490,12 @@ async function openBookingAdd() {
       }
     }
     bookingAddSelectedIds.value = selected
+    syncCategorySelection(
+      bookingAddCategories.value,
+      bookingAddOptions.value,
+      selectedBookingDate.value,
+      bookingAddSelectedCategoryId
+    )
   } catch (error) {
     bookingAddError.value = error?.response?.data?.error || 'โหลดข้อมูลไม่สำเร็จ'
   } finally {
@@ -5489,38 +5585,67 @@ watch(shopSlug, () => {
 
           <div class="booking-edit-services">
             <p class="booking-edit-label">บริการ</p>
-            <p class="muted booking-edit-hint">แสดงบริการของวันจอง · สถานที่แสดงเฉพาะวันนั้น</p>
+            <p class="muted booking-edit-hint">เลือกหมวดหมู่ก่อน แล้วเลือกบริการ · แสดงเฉพาะวันจองนี้</p>
             <p v-if="bookingAddLoading" class="muted">กำลังโหลดรายการบริการ...</p>
             <template v-else>
-              <div v-if="bookingAddOptions.length" class="booking-edit-option-list">
+              <div v-if="bookingAddRequiredOptions.length" class="booking-edit-option-list booking-edit-required-list">
+                <p class="booking-edit-sub-label">บริการบังคับ</p>
                 <label
-                  v-for="opt in bookingAddOptions"
-                  :key="opt.id"
-                  class="booking-edit-option"
-                  :class="{
-                    selected: bookingAddSelectedIds.includes(String(opt.id)),
-                    required: opt.is_required && optionBookableOnDate(opt, bookingAddDate),
-                  }"
+                  v-for="opt in bookingAddRequiredOptions"
+                  :key="`add-req-${opt.id}`"
+                  class="booking-edit-option required selected"
                 >
                   <input
                     v-model="bookingAddSelectedIds"
                     type="checkbox"
                     class="booking-edit-option-input"
                     :value="String(opt.id)"
-                    :disabled="opt.is_required && optionBookableOnDate(opt, bookingAddDate)"
-                    @change="bookingAddError = ''"
+                    disabled
                   />
                   <span class="booking-edit-option-name">
                     {{ opt.option_name }}
-                    <span
-                      v-if="opt.is_required && optionBookableOnDate(opt, bookingAddDate)"
-                      class="booking-edit-required"
-                    >บังคับ</span>
+                    <span class="booking-edit-required">บังคับ</span>
                   </span>
                   <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
                 </label>
               </div>
-              <p v-else class="muted">ไม่มีบริการให้เลือก</p>
+
+              <div v-if="bookingAddBookableCategories.length > 1" class="admin-booking-category-row">
+                <button
+                  v-for="cat in bookingAddBookableCategories"
+                  :key="`add-cat-${cat.id}`"
+                  type="button"
+                  class="admin-booking-category-btn"
+                  :class="{ active: bookingAddSelectedCategoryId === cat.id }"
+                  @click="bookingAddSelectedCategoryId = cat.id; bookingAddError = ''"
+                >
+                  {{ cat.name }}
+                  <span class="admin-booking-category-count">({{ cat.count }})</span>
+                </button>
+              </div>
+              <p v-else-if="bookingAddBookableCategories.length === 1" class="muted booking-edit-sub-label">
+                หมวด {{ bookingAddBookableCategories[0].name }}
+              </p>
+
+              <div v-if="bookingAddCategoryOptions.length" class="booking-edit-option-list">
+                <label
+                  v-for="opt in bookingAddCategoryOptions"
+                  :key="opt.id"
+                  class="booking-edit-option"
+                  :class="{ selected: bookingAddSelectedIds.includes(String(opt.id)) }"
+                >
+                  <input
+                    v-model="bookingAddSelectedIds"
+                    type="checkbox"
+                    class="booking-edit-option-input"
+                    :value="String(opt.id)"
+                    @change="bookingAddError = ''"
+                  />
+                  <span class="booking-edit-option-name">{{ opt.option_name }}</span>
+                  <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
+                </label>
+              </div>
+              <p v-else-if="!bookingAddRequiredOptions.length" class="muted">ไม่มีบริการให้เลือก</p>
             </template>
           </div>
 
@@ -5623,42 +5748,72 @@ watch(shopSlug, () => {
 
           <div class="booking-edit-services">
             <p class="booking-edit-label">บริการ</p>
-            <p class="muted booking-edit-hint">แสดงบริการของวันจอง · สถานที่แสดงเฉพาะวันนั้น</p>
+            <p class="muted booking-edit-hint">เลือกหมวดหมู่ก่อน แล้วเลือกบริการ · แสดงเฉพาะวันจองนี้</p>
             <p v-if="bookingEditLoading" class="muted">กำลังโหลดรายการบริการ...</p>
             <template v-else>
               <p v-if="bookingEditOrphaned.length" class="booking-edit-orphaned">
                 บริการเดิมที่ถูกลบแล้ว (จะถูกเอาออกเมื่อบันทึก):
                 {{ bookingEditOrphaned.map((o) => o.option_name).join(', ') }}
               </p>
-              <div v-if="bookingEditOptions.length" class="booking-edit-option-list">
+
+              <div v-if="bookingEditRequiredOptions.length" class="booking-edit-option-list booking-edit-required-list">
+                <p class="booking-edit-sub-label">บริการบังคับ</p>
                 <label
-                  v-for="opt in bookingEditOptions"
-                  :key="opt.id"
-                  class="booking-edit-option"
-                  :class="{
-                    selected: bookingEditSelectedIds.includes(String(opt.id)),
-                    required: opt.is_required && optionBookableOnDate(opt, bookingEditDate),
-                  }"
+                  v-for="opt in bookingEditRequiredOptions"
+                  :key="`edit-req-${opt.id}`"
+                  class="booking-edit-option required selected"
                 >
                   <input
                     v-model="bookingEditSelectedIds"
                     type="checkbox"
                     class="booking-edit-option-input"
                     :value="String(opt.id)"
-                    :disabled="opt.is_required && optionBookableOnDate(opt, bookingEditDate)"
-                    @change="bookingEditError = ''"
+                    disabled
                   />
                   <span class="booking-edit-option-name">
                     {{ opt.option_name }}
-                    <span
-                      v-if="opt.is_required && optionBookableOnDate(opt, bookingEditDate)"
-                      class="booking-edit-required"
-                    >บังคับ</span>
+                    <span class="booking-edit-required">บังคับ</span>
                   </span>
                   <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
                 </label>
               </div>
-              <p v-else class="muted">ไม่มีบริการให้เลือกในวันนี้</p>
+
+              <div v-if="bookingEditBookableCategories.length > 1" class="admin-booking-category-row">
+                <button
+                  v-for="cat in bookingEditBookableCategories"
+                  :key="`edit-cat-${cat.id}`"
+                  type="button"
+                  class="admin-booking-category-btn"
+                  :class="{ active: bookingEditSelectedCategoryId === cat.id }"
+                  @click="bookingEditSelectedCategoryId = cat.id; bookingEditError = ''"
+                >
+                  {{ cat.name }}
+                  <span class="admin-booking-category-count">({{ cat.count }})</span>
+                </button>
+              </div>
+              <p v-else-if="bookingEditBookableCategories.length === 1" class="muted booking-edit-sub-label">
+                หมวด {{ bookingEditBookableCategories[0].name }}
+              </p>
+
+              <div v-if="bookingEditCategoryOptions.length" class="booking-edit-option-list">
+                <label
+                  v-for="opt in bookingEditCategoryOptions"
+                  :key="opt.id"
+                  class="booking-edit-option"
+                  :class="{ selected: bookingEditSelectedIds.includes(String(opt.id)) }"
+                >
+                  <input
+                    v-model="bookingEditSelectedIds"
+                    type="checkbox"
+                    class="booking-edit-option-input"
+                    :value="String(opt.id)"
+                    @change="bookingEditError = ''"
+                  />
+                  <span class="booking-edit-option-name">{{ opt.option_name }}</span>
+                  <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
+                </label>
+              </div>
+              <p v-else-if="!bookingEditRequiredOptions.length" class="muted">ไม่มีบริการให้เลือกในวันนี้</p>
             </template>
           </div>
 
@@ -7520,6 +7675,50 @@ watch(shopSlug, () => {
 .booking-edit-hint {
   margin: 0 0 10px;
   font-size: 12px;
+}
+
+.booking-edit-sub-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.booking-edit-required-list {
+  margin-bottom: 12px;
+}
+
+.admin-booking-category-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.admin-booking-category-btn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  color: #334155;
+}
+
+.admin-booking-category-btn.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.admin-booking-category-btn.active .admin-booking-category-count {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.admin-booking-category-count {
+  font-size: 12px;
+  color: #64748b;
 }
 
 .booking-edit-orphaned {
