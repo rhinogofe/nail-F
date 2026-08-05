@@ -169,15 +169,28 @@ const couponDiscountPercent = ref(20)
 const couponRequiredPoints = ref(100)
 const couponCompletionPoints = ref(10)
 const linePushEnabled = ref(false)
+const lineCanEditEnabled = ref(false)
 const linePushToId = ref('')
 const lineChannelToken = ref('')
+const lineChannelSecret = ref('')
 const lineNotifyTemplate = ref('')
+const lineBranchToggling = ref('')
+
+const lineBranchShops = computed(() =>
+  allShops.value.filter((shop) => shop.slug !== 'default')
+)
 const lineTokenConfigured = ref(false)
 const lineTokenMasked = ref('')
-const lineTokenFromEnv = ref(false)
+const lineSecretConfigured = ref(false)
+const lineSecretMasked = ref('')
+const lineCentralBotEnabled = ref(false)
+const lineUsesOwnBot = ref(false)
+const lineUseOwnBot = ref(false)
+const lineCanEditUseOwnBot = ref(false)
+const lineWebhookPath = ref('/api/line/webhook')
 const lineWebhookUrlHint = computed(() => {
   const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '')
-  return `${base}/api/line/webhook`
+  return `${base}${lineWebhookPath.value}`
 })
 const isSuperAdmin = computed(() => auth.isSuperAdmin)
 const unpaidAutoCancelEnabled = ref(true)
@@ -1776,15 +1789,29 @@ async function loadLinePushSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/line-push')
     linePushEnabled.value = data.enabled !== false
+    lineCanEditEnabled.value = data.can_edit_enabled === true
     linePushToId.value = data.push_to_id || ''
     lineTokenConfigured.value = Boolean(data.token_configured)
     lineTokenMasked.value = data.token_masked || ''
-    lineTokenFromEnv.value = Boolean(data.token_from_env)
+    lineSecretConfigured.value = Boolean(data.secret_configured)
+    lineSecretMasked.value = data.secret_masked || ''
+    lineCentralBotEnabled.value = Boolean(data.central_bot_enabled)
+    lineUsesOwnBot.value = Boolean(data.uses_own_bot)
+    lineUseOwnBot.value = Boolean(data.use_own_bot)
+    lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
+    lineWebhookPath.value = data.webhook_url || '/api/line/webhook'
     lineNotifyTemplate.value = data.notify_template || data.default_template || ''
     lineChannelToken.value = ''
+    lineChannelSecret.value = ''
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่า LINE แจ้งเตือนไม่สำเร็จ'
   }
+}
+
+function syncShopLinePushInList(slug, patch) {
+  const shop = allShops.value.find((item) => item.slug === slug)
+  if (!shop) return
+  Object.assign(shop, patch)
 }
 
 async function saveLinePushSetting() {
@@ -1794,24 +1821,73 @@ async function saveLinePushSetting() {
   errorMessage.value = ''
   try {
     const payload = {
-      enabled: linePushEnabled.value,
       push_to_id: linePushToId.value.trim(),
       notify_template: lineNotifyTemplate.value,
     }
-    if (!lineTokenFromEnv.value && lineChannelToken.value.trim()) {
-      payload.channel_access_token = lineChannelToken.value.trim()
+    if (isSuperAdmin.value) {
+      payload.enabled = linePushEnabled.value
+    }
+    if (lineCanEditUseOwnBot.value) {
+      payload.use_own_bot = lineUseOwnBot.value
+    }
+    if (lineUsesOwnBot.value || lineUseOwnBot.value) {
+      if (lineChannelToken.value.trim()) {
+        payload.channel_access_token = lineChannelToken.value.trim()
+      }
+      if (lineChannelSecret.value.trim()) {
+        payload.channel_secret = lineChannelSecret.value.trim()
+      }
     }
     const { data } = await api.patch('/api/admin/settings/line-push', payload)
     linePushEnabled.value = data.enabled !== false
     linePushToId.value = data.push_to_id || ''
     lineTokenConfigured.value = Boolean(data.token_configured)
     lineTokenMasked.value = data.token_masked || ''
-    lineTokenFromEnv.value = Boolean(data.token_from_env)
+    lineSecretConfigured.value = Boolean(data.secret_configured)
+    lineSecretMasked.value = data.secret_masked || ''
+    lineCentralBotEnabled.value = Boolean(data.central_bot_enabled)
+    lineUsesOwnBot.value = Boolean(data.uses_own_bot)
+    lineUseOwnBot.value = Boolean(data.use_own_bot)
+    lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
+    lineWebhookPath.value = data.webhook_url || lineWebhookPath.value
     lineNotifyTemplate.value = data.notify_template || lineNotifyTemplate.value
     lineChannelToken.value = ''
+    lineChannelSecret.value = ''
     message.value = 'บันทึกการแจ้งเตือน LINE แล้ว'
+    const configured = lineUsesOwnBot.value
+      ? Boolean(data.token_configured && data.secret_configured && data.push_to_id)
+      : Boolean(data.token_configured && data.push_to_id)
+    syncShopLinePushInList(shopSlug.value, {
+      line_push_enabled: data.enabled !== false,
+      line_push_configured: configured,
+      line_push_ready: data.enabled !== false && configured,
+      line_use_own_bot: Boolean(data.use_own_bot),
+    })
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึก LINE แจ้งเตือนไม่สำเร็จ'
+  }
+}
+
+async function toggleShopLinePush(shop, enabled) {
+  if (!shop?.slug || shop.slug === 'default') return
+  lineBranchToggling.value = shop.slug
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(`/api/admin/shops/${shop.slug}/line-push-enabled`, { enabled })
+    syncShopLinePushInList(shop.slug, {
+      line_push_enabled: data.line_push_enabled,
+      line_push_configured: data.line_push_configured,
+      line_push_ready: data.line_push_ready,
+    })
+    if (shop.slug === shopSlug.value) {
+      linePushEnabled.value = data.line_push_enabled !== false
+    }
+    message.value = `${enabled ? 'เปิด' : 'ปิด'} LINE แจ้งเตือน — ${shop.name}`
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'เปลี่ยนสถานะ LINE ไม่สำเร็จ'
+  } finally {
+    lineBranchToggling.value = ''
   }
 }
 
@@ -4190,34 +4266,128 @@ watch(shopSlug, () => {
       <p class="muted">
         ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
         <code>{{ lineWebhookUrlHint }}</code>
-        แล้วให้ร้านทักบอท slug ร้านเพื่อผูกรับแจ้งเตือนอัตโนมัติ
+        <template v-if="lineCentralBotEnabled && !lineUsesOwnBot">
+          แล้วให้ร้านทักบอทกลางพร้อม slug ร้านเพื่อผูกรับแจ้งเตือนอัตโนมัติ
+        </template>
+        <template v-else>
+          แล้วทักบอทของสาขานี้เพื่อผูก User/Group ID อัตโนมัติ (ไม่ต้องพิมพ์ slug)
+        </template>
       </p>
-      <div class="shop-hours-preview" style="margin-bottom:12px">
-        <i class="ti ti-link" style="font-size:16px;color:var(--color-primary)"></i>
-        slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
+      <div v-if="lineCentralBotEnabled && !lineUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
+        <i class="ti ti-robot" style="font-size:16px;color:var(--color-primary)"></i>
+        บอทกลาง — Token + Secret ตั้งบน server แล้ว (<code>{{ lineTokenMasked }}</code>) · สาขานี้ตั้งแค่ User/Group ID
       </div>
-      <label class="admin-checkbox admin-label-grow" style="margin-bottom:12px">
+      <div v-else-if="lineCentralBotEnabled && lineUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
+        <i class="ti ti-crown" style="font-size:16px;color:var(--color-primary)"></i>
+        Premium — สาขานี้ใช้ LINE Bot ของตัวเอง · กรอก Token + Secret ด้านล่าง · Webhook แยกตาม slug
+      </div>
+      <div v-else class="shop-hours-preview" style="margin-bottom:12px">
+        <i class="ti ti-building-store" style="font-size:16px;color:var(--color-primary)"></i>
+        โหมดบอทแยกร้าน — กรอก Channel Access Token + Channel Secret ของสาขานี้เอง
+      </div>
+      <div v-if="lineCentralBotEnabled && !lineUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
+        <i class="ti ti-link" style="font-size:16px;color:var(--color-primary)"></i>
+        slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทกลางด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
+      </div>
+      <label
+        v-if="lineCanEditUseOwnBot"
+        class="admin-checkbox admin-label-grow"
+        style="margin-bottom:12px"
+      >
+        <input v-model="lineUseOwnBot" type="checkbox" />
+        ใช้ LINE Bot ของร้านเอง (Premium)
+        <span class="muted">— override บอทกลางสำหรับสาขานี้</span>
+      </label>
+      <div v-else-if="lineCentralBotEnabled && lineUsesOwnBot && shopSlug !== 'default'" class="shop-hours-preview" style="margin-bottom:12px">
+        <i class="ti ti-crown" style="font-size:16px;color:var(--color-primary)"></i>
+        สาขานี้อยู่ในโหมด Premium (บอทของร้านเอง) — ตั้งค่า Token/Secret ด้านล่าง
+      </div>
+      <label v-if="lineCanEditEnabled && shopSlug !== 'default'" class="admin-checkbox admin-label-grow" style="margin-bottom:12px">
         <input v-model="linePushEnabled" type="checkbox" />
         เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว
+        <span class="muted">(สาขา {{ shopStore.shopName || shopSlug }})</span>
       </label>
+      <div v-else-if="!isSuperAdmin && shopSlug !== 'default'" class="shop-hours-preview line-push-status-banner" style="margin-bottom:12px">
+        <i class="ti ti-brand-line" style="font-size:16px;color:var(--color-primary)"></i>
+        <template v-if="linePushEnabled">
+          แจ้งเตือน LINE: <strong>เปิด</strong> (กำหนดโดยแอดมินหลัก)
+        </template>
+        <template v-else>
+          แจ้งเตือน LINE: <strong class="line-push-status-off">ปิด</strong> — ติดต่อแอดมินหลักเพื่อเปิด · คุณตั้ง ID และข้อความได้ด้านล่าง
+        </template>
+      </div>
+
+      <div v-if="isSuperAdmin && shopSlug === 'default'" class="line-branch-panel">
+        <h4 class="line-branch-title">เปิด/ปิดแจ้งเตือนตามสาขา</h4>
+        <p class="muted line-branch-hint">
+          เปิด/ปิดแจ้งเตือนได้เฉพาะแอดมินหลัก — สาขาเปิดเองไม่ได้ · สลับไปสาขาเพื่อตั้ง ID และข้อความ
+        </p>
+        <ul v-if="lineBranchShops.length" class="line-branch-list">
+          <li v-for="shop in lineBranchShops" :key="`line-branch-${shop.id}`" class="line-branch-row">
+            <div class="line-branch-info">
+              <strong>{{ shop.name }}</strong>
+              <span class="muted">/{{ shop.slug }}</span>
+              <span v-if="!shop.is_active" class="shop-inactive-badge">ปิด</span>
+            </div>
+            <label class="admin-checkbox line-branch-toggle">
+              <input
+                type="checkbox"
+                :checked="shop.line_push_enabled !== false"
+                :disabled="lineBranchToggling === shop.slug || !shop.is_active"
+                @change="toggleShopLinePush(shop, $event.target.checked)"
+              />
+              แจ้งเตือน
+            </label>
+            <span v-if="shop.line_use_own_bot" class="shop-line-badge shop-line-badge--premium">Premium</span>
+            <span v-if="shop.line_push_ready" class="shop-line-badge shop-line-badge--on">พร้อมส่ง</span>
+            <span v-else-if="shop.line_push_enabled && shop.line_push_configured" class="shop-line-badge shop-line-badge--warn">เปิด · ยังไม่ครบ</span>
+            <span v-else-if="shop.line_push_enabled" class="shop-line-badge shop-line-badge--warn">เปิด · ยังไม่ตั้ง ID</span>
+            <span v-else class="shop-line-badge">ปิด</span>
+            <button
+              v-if="shop.is_active"
+              type="button"
+              class="btn line-branch-setup-btn"
+              @click="switchShopAdmin(shop.slug); activeSettingsSection = 'line'"
+            >
+              ตั้งค่า
+            </button>
+          </li>
+        </ul>
+        <p v-else class="muted">ยังไม่มีสาขา</p>
+      </div>
       <div class="admin-form-grid admin-option-grid">
-        <div v-if="lineTokenFromEnv" class="shop-hours-preview" style="grid-column:1/-1">
-          <i class="ti ti-robot" style="font-size:16px;color:var(--color-primary)"></i>
-          บอทกลาง — Token ตั้งบน server แล้ว (<code>{{ lineTokenMasked }}</code>) ไม่ต้องใส่ในแอดมิน
-        </div>
-        <label v-else>
-          Channel Access Token
-          <input
-            v-model="lineChannelToken"
-            type="password"
-            class="admin-input"
-            :placeholder="lineTokenConfigured ? `ตั้งแล้ว (${lineTokenMasked}) — ใส่ใหม่เพื่อเปลี่ยน` : 'ใส่ Channel Access Token'"
-            autocomplete="off"
-          />
-        </label>
-        <label>
+        <template v-if="lineUsesOwnBot">
+          <label>
+            Channel Access Token
+            <input
+              v-model="lineChannelToken"
+              type="password"
+              class="admin-input"
+              :placeholder="lineTokenConfigured ? `ตั้งแล้ว (${lineTokenMasked}) — ใส่ใหม่เพื่อเปลี่ยน` : 'ใส่ Channel Access Token'"
+              autocomplete="off"
+            />
+          </label>
+          <label>
+            Channel Secret
+            <input
+              v-model="lineChannelSecret"
+              type="password"
+              class="admin-input"
+              :placeholder="lineSecretConfigured ? `ตั้งแล้ว (${lineSecretMasked}) — ใส่ใหม่เพื่อเปลี่ยน` : 'ใส่ Channel Secret (32 ตัวอักษร)'"
+              autocomplete="off"
+            />
+          </label>
+        </template>
+        <label :style="lineUsesOwnBot ? '' : 'grid-column:1/-1'">
           User ID / Group ID รับแจ้งเตือน
-          <input v-model="linePushToId" type="text" class="admin-input" placeholder="Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอท slug ร้านเพื่อผูกอัตโนมัติ" />
+          <input
+            v-model="linePushToId"
+            type="text"
+            class="admin-input"
+            :placeholder="lineCentralBotEnabled && !lineUsesOwnBot
+              ? 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทกลาง slug ร้านเพื่อผูกอัตโนมัติ'
+              : 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทสาขานี้เพื่อผูกอัตโนมัติ'"
+          />
         </label>
         <label style="grid-column:1/-1">
           ข้อความแจ้งเตือน (template)
@@ -4227,13 +4397,23 @@ watch(shopSlug, () => {
       <p class="muted" style="margin-top:8px">
         ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code>
       </p>
-      <p v-if="!lineTokenFromEnv" class="muted" style="margin-top:8px">
-        หลังร้านทักบอท slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · หรือตั้ง
-        <code>LINE_BOT_CHANNEL_ACCESS_TOKEN</code> บน Render ครั้งเดียวใช้ทุกร้าน
+      <p v-if="lineUsesOwnBot" class="muted" style="margin-top:8px">
+        Token จาก Messaging API → Issue · Secret จาก Basic settings → Channel secret · Webhook ใน LINE Developers ต้องตรงกับ <code>{{ lineWebhookUrlHint }}</code>
+      </p>
+      <p v-else-if="lineCentralBotEnabled && !lineUsesOwnBot" class="muted" style="margin-top:8px">
+        หลังทักบอทกลาง slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · ร้าน Premium ให้แอดมินหลักติ๊ก “ใช้ LINE Bot ของร้านเอง” ด้านบน
       </p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
         <button type="button" class="btn primary admin-action-btn" @click="saveLinePushSetting">บันทึก LINE แจ้งเตือน</button>
-        <button type="button" class="btn ghost admin-action-btn" @click="testLinePushSetting">ส่งทดสอบ</button>
+        <button
+          type="button"
+          class="btn ghost admin-action-btn"
+          :disabled="!isSuperAdmin && !linePushEnabled"
+          :title="!isSuperAdmin && !linePushEnabled ? 'แอดมินหลักปิดแจ้งเตือนไว้' : ''"
+          @click="testLinePushSetting"
+        >
+          ส่งทดสอบ
+        </button>
       </div>
       </div>
 
@@ -4301,6 +4481,19 @@ watch(shopSlug, () => {
             <span class="muted">/{{ shop.slug }}</span>
           </div>
           <div v-if="isSuperAdmin" class="admin-shop-actions">
+            <label
+              v-if="shop.slug !== 'default'"
+              class="admin-checkbox admin-shop-line-toggle"
+              :title="shop.line_push_ready ? 'LINE แจ้งเตือนเปิดและพร้อมส่ง' : 'เปิด/ปิด LINE แจ้งเตือนสาขานี้'"
+            >
+              <input
+                type="checkbox"
+                :checked="shop.line_push_enabled !== false"
+                :disabled="lineBranchToggling === shop.slug || !shop.is_active"
+                @change="toggleShopLinePush(shop, $event.target.checked)"
+              />
+              LINE
+            </label>
             <button type="button" class="btn" @click="openShopEdit(shop)">แก้ไข</button>
             <button
               v-if="shop.slug !== 'default'"
@@ -8096,6 +8289,97 @@ watch(shopSlug, () => {
   padding: 4px 10px;
   font-size: 12px;
   line-height: 1.2;
+}
+
+.line-branch-panel {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.line-branch-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.line-branch-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.line-branch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.line-branch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.line-branch-info {
+  flex: 1 1 160px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.line-branch-toggle {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.line-branch-setup-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.admin-shop-line-toggle {
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.shop-line-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.shop-line-badge--on {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.shop-line-badge--warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.shop-line-badge--premium {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.line-push-status-off {
+  color: #b91c1c;
 }
 
 .admin-shop-item {
