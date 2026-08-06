@@ -4588,7 +4588,7 @@ watch(shopSlug, () => {
       <div v-show="activeSettingsSection === 'chat-notify'" id="settings-chat-notify" class="admin-settings-section">
       <h3>แจ้งเตือนในแอป (แชท)</h3>
       <p class="muted">
-        แจ้งเตือนผ่าน toast บนหน้าเว็บ — แอดมินและลูกค้าต้องล็อกอินและเปิดเว็บอยู่ · ตรวจสอบทุก 5 นาที (คิวใกล้ถึง)
+        แจ้งเตือนผ่าน toast บนหน้าเว็บ — แอดมินและลูกค้าต้องล็อกอินและเปิดเว็บอยู่ · แจ้งก่อนถึงคิวตรวจทุก 1 นาที (toast โผล่ภายใน ~12 วินาทีหลังส่ง)
       </p>
       <div class="admin-form-row" style="flex-wrap:wrap;gap:12px;margin-bottom:12px">
         <label class="admin-checkbox admin-label-grow">
