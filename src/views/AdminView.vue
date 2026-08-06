@@ -2163,14 +2163,70 @@ function formatBookingTotal(value) {
   return `${n.toLocaleString('th-TH')} บาท`
 }
 
-async function markDone(id) {
+function sumBookingOptionPrices(booking) {
+  const opts = booking?.nail_options || []
+  if (!opts.length) return null
+  let sum = 0
+  let hasPrice = false
+  for (const opt of opts) {
+    const price = Number(opt.price)
+    if (Number.isFinite(price)) {
+      sum += price
+      hasPrice = true
+    }
+  }
+  return hasPrice ? sum : null
+}
+
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function bookingNetAfterDeposit(booking) {
+  const totalPrice = sumBookingOptionPrices(booking)
+  const deposit = Number(depositAmount.value) || 0
+  if (totalPrice == null) return null
+  return Math.max(0, totalPrice - deposit)
+}
+
+function buildMarkDoneSummaryHtml(booking) {
+  const opts = booking?.nail_options || []
+  const services = opts.length
+    ? opts.map((opt) => {
+        const price = Number(opt.price)
+        const priceLabel = Number.isFinite(price) ? ` (${price.toLocaleString('th-TH')} บาท)` : ''
+        return `${escapeHtml(opt.option_name)}${priceLabel}`
+      }).join('<br>')
+    : '-'
+  const totalPrice = sumBookingOptionPrices(booking)
+  const deposit = Number(depositAmount.value) || 0
+  const netTotal = bookingNetAfterDeposit(booking)
+  return `
+    <div style="text-align:left;font-size:14px;line-height:1.55;margin-bottom:12px">
+      <p style="margin:0 0 10px"><strong>บริการที่ทำ</strong><br>${services}</p>
+      <p style="margin:0 0 6px"><strong>ราคา</strong> ${totalPrice != null ? `${totalPrice.toLocaleString('th-TH')} บาท` : '-'}</p>
+      <p style="margin:0 0 6px"><strong>มัดจำ</strong> ${deposit.toLocaleString('th-TH')} บาท</p>
+      <p style="margin:0"><strong>ราคารวมหักมัดจำแล้ว</strong> ${netTotal != null ? `${netTotal.toLocaleString('th-TH')} บาท` : '-'}</p>
+    </div>
+  `
+}
+
+async function markDone(booking) {
+  const item = booking && typeof booking === 'object' ? booking : bookings.value.find((row) => row.id === booking)
+  if (!item?.id) return
   const pts = Number(couponCompletionPoints.value) || 0
   const pointsHint = pts > 0 ? `ลูกค้าจะได้รับ +${pts.toLocaleString('th-TH')} แต้ม` : 'ไม่มีการให้แต้ม'
+  const suggestedTotal = bookingNetAfterDeposit(item)
   const result = await adminSwal.fire({
     title: 'ทำคิวเสร็จ',
-    text: `กรอกยอดเงินแล้วยืนยัน — ${pointsHint}`,
+    html: `${buildMarkDoneSummaryHtml(item)}<p style="margin:12px 0 0;font-size:13px;color:#64748b">กรอกยอดเงินแล้วยืนยัน — ${pointsHint}</p>`,
     input: 'number',
     inputLabel: 'ยอดเงิน (บาท)',
+    inputValue: suggestedTotal != null ? String(suggestedTotal) : '',
     inputAttributes: { min: 0, step: 1 },
     showCancelButton: true,
     confirmButtonText: 'บันทึก',
@@ -2186,7 +2242,7 @@ async function markDone(id) {
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch(`/api/admin/bookings/${id}/complete`, {
+    const { data } = await api.patch(`/api/admin/bookings/${item.id}/complete`, {
       total: Number(result.value),
     })
     message.value = data?.message || 'อัปเดตสำเร็จ'
@@ -3634,7 +3690,7 @@ watch(shopSlug, () => {
             <button
               v-if="item.status === 'pending'"
               class="btn primary"
-              @click="markDone(item.id)"
+              @click="markDone(item)"
             >
               ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
             </button>
