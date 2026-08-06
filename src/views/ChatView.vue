@@ -499,7 +499,7 @@ watch(
                 v-for="msg in messages"
                 :key="msg.id"
                 class="chat-bubble-row"
-                :class="msg.sender_role === 'admin' ? 'mine' : 'theirs'"
+                :class="msg.sender_role === 'admin' || msg.sender_role === 'system' ? 'mine' : 'theirs'"
               >
                 <div class="chat-bubble" :class="{ 'chat-bubble--image': msg.image_url }">
                   <ChatImage

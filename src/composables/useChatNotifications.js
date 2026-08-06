@@ -41,7 +41,7 @@ export function useChatNotifications() {
     seenIds.value.add(item.id)
 
     const title = isAdminForShop.value
-      ? (item.user_name || 'ลูกค้า')
+      ? (item.notification_title || item.user_name || 'ลูกค้า')
       : (shopStore.shopName || 'แอดมิน')
 
     notifications.value = [

@@ -188,6 +188,13 @@ const lineUsesOwnBot = ref(false)
 const lineUseOwnBot = ref(false)
 const lineCanEditUseOwnBot = ref(false)
 const lineWebhookPath = ref('/api/line/webhook')
+const chatNotifyNewBookingEnabled = ref(true)
+const chatNotifyUpcomingAdminEnabled = ref(true)
+const chatNotifyUpcomingCustomerEnabled = ref(true)
+const chatNotifyUpcomingMinutes = ref(30)
+const chatNotifyNewBookingTemplate = ref('')
+const chatNotifyUpcomingAdminTemplate = ref('')
+const chatNotifyUpcomingCustomerTemplate = ref('')
 const lineEffectiveUsesOwnBot = computed(() =>
   lineUsesOwnBot.value || (lineCanEditUseOwnBot.value && lineUseOwnBot.value)
 )
@@ -444,6 +451,7 @@ const settingsSections = [
   { key: 'deposit', id: 'settings-deposit', label: 'มัดจำ', icon: 'ti-cash' },
   { key: 'coupon', id: 'settings-coupon', label: 'คูปองแลกแต้ม', icon: 'ti-ticket' },
   { key: 'line', id: 'settings-line', label: 'LINE แจ้งเตือน', icon: 'ti-brand-line' },
+  { key: 'chat-notify', id: 'settings-chat-notify', label: 'แจ้งเตือนในแอป', icon: 'ti-bell' },
   { key: 'unpaid', id: 'settings-unpaid', label: 'ยกเลิกอัตโนมัติ', icon: 'ti-clock-pause' },
   { key: 'shops', id: 'settings-shops', label: 'ร้าน / สาขา', icon: 'ti-building-store' },
   { key: 'register-pin', id: 'settings-register-pin', label: 'รหัสสร้างร้านค้า', icon: 'ti-lock', superAdminOnly: true },
@@ -1904,6 +1912,62 @@ async function testLinePushSetting() {
     message.value = data.message || 'ส่งข้อความทดสอบแล้ว'
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ส่งทดสอบ LINE ไม่สำเร็จ'
+  }
+}
+
+async function loadChatNotifySetting() {
+  try {
+    const { data } = await api.get('/api/admin/settings/chat-notify')
+    chatNotifyNewBookingEnabled.value = data.new_booking_enabled !== false
+    chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
+    chatNotifyUpcomingCustomerEnabled.value = data.upcoming_customer_enabled !== false
+    chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || 30
+    chatNotifyNewBookingTemplate.value = data.new_booking_template
+      || data.default_new_booking_template
+      || ''
+    chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template
+      || data.default_upcoming_admin_template
+      || ''
+    chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template
+      || data.default_upcoming_customer_template
+      || ''
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าแจ้งเตือนในแอปไม่สำเร็จ'
+  }
+}
+
+async function saveChatNotifySetting() {
+  const minutes = Number(chatNotifyUpcomingMinutes.value)
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+    errorMessage.value = 'เวลาแจ้งเตือนก่อนคิวต้องเป็น 1–1440 นาที'
+    return
+  }
+
+  const ok = await confirmAdminSave('ยืนยันบันทึก', 'บันทึกการตั้งค่าแจ้งเตือนในแอปใช่ไหม')
+  if (!ok) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/chat-notify', {
+      new_booking_enabled: chatNotifyNewBookingEnabled.value,
+      upcoming_admin_enabled: chatNotifyUpcomingAdminEnabled.value,
+      upcoming_customer_enabled: chatNotifyUpcomingCustomerEnabled.value,
+      upcoming_minutes: minutes,
+      new_booking_template: chatNotifyNewBookingTemplate.value,
+      upcoming_admin_template: chatNotifyUpcomingAdminTemplate.value,
+      upcoming_customer_template: chatNotifyUpcomingCustomerTemplate.value,
+    })
+    chatNotifyNewBookingEnabled.value = data.new_booking_enabled !== false
+    chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
+    chatNotifyUpcomingCustomerEnabled.value = data.upcoming_customer_enabled !== false
+    chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || minutes
+    chatNotifyNewBookingTemplate.value = data.new_booking_template || chatNotifyNewBookingTemplate.value
+    chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template || chatNotifyUpcomingAdminTemplate.value
+    chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template || chatNotifyUpcomingCustomerTemplate.value
+    message.value = 'บันทึกการแจ้งเตือนในแอปแล้ว'
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || 'บันทึกแจ้งเตือนในแอปไม่สำเร็จ'
   }
 }
 
@@ -3448,6 +3512,7 @@ onMounted(loadDepositSetting)
 onMounted(loadRegisterShopPinSetting)
 onMounted(loadCouponSetting)
 onMounted(loadLinePushSetting)
+onMounted(loadChatNotifySetting)
 onMounted(loadUnpaidAutoCancelSetting)
 onMounted(loadNailOptions)
 onMounted(loadServiceLocations)
@@ -3471,6 +3536,7 @@ watch(shopSlug, () => {
   loadUiSettingsAdmin()
   loadCouponSetting()
   loadLinePushSetting()
+  loadChatNotifySetting()
   loadRegisterShopPinSetting()
 })
 </script>
@@ -4476,6 +4542,61 @@ watch(shopSlug, () => {
         >
           ส่งทดสอบ
         </button>
+      </div>
+      </div>
+
+      <div v-show="activeSettingsSection === 'chat-notify'" id="settings-chat-notify" class="admin-settings-section">
+      <h3>แจ้งเตือนในแอป (แชท)</h3>
+      <p class="muted">
+        แจ้งเตือนผ่าน toast บนหน้าเว็บ — แอดมินและลูกค้าต้องล็อกอินและเปิดเว็บอยู่ · ตรวจสอบทุก 5 นาที (คิวใกล้ถึง)
+      </p>
+      <div class="admin-form-row" style="flex-wrap:wrap;gap:12px;margin-bottom:12px">
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyNewBookingEnabled" type="checkbox" />
+          แจ้งแอดมินเมื่อมีคิวจองใหม่
+          <span class="muted">(เหมือน LINE — “มีคิวจองมา”)</span>
+        </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyUpcomingAdminEnabled" type="checkbox" />
+          แจ้งแอดมินก่อนถึงคิว
+          <span class="muted">(เหมือน LINE — “มีคิวใน X นาที”)</span>
+        </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyUpcomingCustomerEnabled" type="checkbox" />
+          แจ้งลูกค้าก่อนถึงคิว
+          <span class="muted">(“อีก X นาทีถึงคิวของคุณ”)</span>
+        </label>
+      </div>
+      <label class="admin-label-grow" style="display:block;margin-bottom:12px;max-width:240px">
+        แจ้งเตือนก่อนถึงคิว (นาที)
+        <input
+          v-model.number="chatNotifyUpcomingMinutes"
+          type="number"
+          min="1"
+          max="1440"
+          step="1"
+          class="admin-input"
+        />
+      </label>
+      <div class="admin-form-grid admin-option-grid">
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งแอดมิน — คิวจองใหม่
+          <textarea v-model="chatNotifyNewBookingTemplate" class="admin-input" rows="6" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งแอดมิน — ใกล้ถึงคิว
+          <textarea v-model="chatNotifyUpcomingAdminTemplate" class="admin-input" rows="6" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งลูกค้า — ใกล้ถึงคิว
+          <textarea v-model="chatNotifyUpcomingCustomerTemplate" class="admin-input" rows="5" />
+        </label>
+      </div>
+      <p class="muted" style="margin-top:8px">
+        ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code> <code>{minutesUntil}</code>
+      </p>
+      <div class="admin-form-row" style="margin-top:12px">
+        <button type="button" class="btn primary admin-action-btn" @click="saveChatNotifySetting">บันทึกแจ้งเตือนในแอป</button>
       </div>
       </div>
 
