@@ -195,6 +195,14 @@ const chatNotifyUpcomingMinutes = ref(30)
 const chatNotifyNewBookingTemplate = ref('')
 const chatNotifyUpcomingAdminTemplate = ref('')
 const chatNotifyUpcomingCustomerTemplate = ref('')
+const chatNotifyCancelAdminEnabled = ref(true)
+const chatNotifyCancelCustomerEnabled = ref(true)
+const chatNotifyPaidAdminEnabled = ref(true)
+const chatNotifyPaidCustomerEnabled = ref(true)
+const chatNotifyCancelAdminTemplate = ref('')
+const chatNotifyCancelCustomerTemplate = ref('')
+const chatNotifyPaidAdminTemplate = ref('')
+const chatNotifyPaidCustomerTemplate = ref('')
 const lineEffectiveUsesOwnBot = computed(() =>
   lineUsesOwnBot.value || (lineCanEditUseOwnBot.value && lineUseOwnBot.value)
 )
@@ -1931,6 +1939,22 @@ async function loadChatNotifySetting() {
     chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template
       || data.default_upcoming_customer_template
       || ''
+    chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
+    chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
+    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled !== false
+    chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
+    chatNotifyCancelAdminTemplate.value = data.cancel_admin_template
+      || data.default_cancel_admin_template
+      || ''
+    chatNotifyCancelCustomerTemplate.value = data.cancel_customer_template
+      || data.default_cancel_customer_template
+      || ''
+    chatNotifyPaidAdminTemplate.value = data.paid_admin_template
+      || data.default_paid_admin_template
+      || ''
+    chatNotifyPaidCustomerTemplate.value = data.paid_customer_template
+      || data.default_paid_customer_template
+      || ''
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าแจ้งเตือนในแอปไม่สำเร็จ'
   }
@@ -1954,17 +1978,33 @@ async function saveChatNotifySetting() {
       upcoming_admin_enabled: chatNotifyUpcomingAdminEnabled.value,
       upcoming_customer_enabled: chatNotifyUpcomingCustomerEnabled.value,
       upcoming_minutes: minutes,
+      cancel_admin_enabled: chatNotifyCancelAdminEnabled.value,
+      cancel_customer_enabled: chatNotifyCancelCustomerEnabled.value,
+      paid_admin_enabled: chatNotifyPaidAdminEnabled.value,
+      paid_customer_enabled: chatNotifyPaidCustomerEnabled.value,
       new_booking_template: chatNotifyNewBookingTemplate.value,
       upcoming_admin_template: chatNotifyUpcomingAdminTemplate.value,
       upcoming_customer_template: chatNotifyUpcomingCustomerTemplate.value,
+      cancel_admin_template: chatNotifyCancelAdminTemplate.value,
+      cancel_customer_template: chatNotifyCancelCustomerTemplate.value,
+      paid_admin_template: chatNotifyPaidAdminTemplate.value,
+      paid_customer_template: chatNotifyPaidCustomerTemplate.value,
     })
     chatNotifyNewBookingEnabled.value = data.new_booking_enabled !== false
     chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
     chatNotifyUpcomingCustomerEnabled.value = data.upcoming_customer_enabled !== false
     chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || minutes
+    chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
+    chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
+    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled !== false
+    chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
     chatNotifyNewBookingTemplate.value = data.new_booking_template || chatNotifyNewBookingTemplate.value
     chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template || chatNotifyUpcomingAdminTemplate.value
     chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template || chatNotifyUpcomingCustomerTemplate.value
+    chatNotifyCancelAdminTemplate.value = data.cancel_admin_template || chatNotifyCancelAdminTemplate.value
+    chatNotifyCancelCustomerTemplate.value = data.cancel_customer_template || chatNotifyCancelCustomerTemplate.value
+    chatNotifyPaidAdminTemplate.value = data.paid_admin_template || chatNotifyPaidAdminTemplate.value
+    chatNotifyPaidCustomerTemplate.value = data.paid_customer_template || chatNotifyPaidCustomerTemplate.value
     message.value = 'บันทึกการแจ้งเตือนในแอปแล้ว'
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกแจ้งเตือนในแอปไม่สำเร็จ'
@@ -4566,6 +4606,22 @@ watch(shopSlug, () => {
           แจ้งลูกค้าก่อนถึงคิว
           <span class="muted">(“อีก X นาทีถึงคิวของคุณ”)</span>
         </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyCancelAdminEnabled" type="checkbox" />
+          แจ้งแอดมินเมื่อคิวถูกยกเลิก
+        </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyCancelCustomerEnabled" type="checkbox" />
+          แจ้งลูกค้าเมื่อคิวถูกยกเลิก
+        </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyPaidAdminEnabled" type="checkbox" />
+          แจ้งแอดมินเมื่อชำระเงินแล้ว
+        </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input v-model="chatNotifyPaidCustomerEnabled" type="checkbox" />
+          แจ้งลูกค้าเมื่อชำระเงินแล้ว
+        </label>
       </div>
       <label class="admin-label-grow" style="display:block;margin-bottom:12px;max-width:240px">
         แจ้งเตือนก่อนถึงคิว (นาที)
@@ -4590,6 +4646,22 @@ watch(shopSlug, () => {
         <label style="grid-column:1/-1">
           ข้อความแจ้งลูกค้า — ใกล้ถึงคิว
           <textarea v-model="chatNotifyUpcomingCustomerTemplate" class="admin-input" rows="5" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งแอดมิน — คิวถูกยกเลิก
+          <textarea v-model="chatNotifyCancelAdminTemplate" class="admin-input" rows="5" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งลูกค้า — คิวถูกยกเลิก
+          <textarea v-model="chatNotifyCancelCustomerTemplate" class="admin-input" rows="4" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งแอดมิน — ชำระเงินแล้ว
+          <textarea v-model="chatNotifyPaidAdminTemplate" class="admin-input" rows="5" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งลูกค้า — ชำระเงินแล้ว
+          <textarea v-model="chatNotifyPaidCustomerTemplate" class="admin-input" rows="4" />
         </label>
       </div>
       <p class="muted" style="margin-top:8px">
