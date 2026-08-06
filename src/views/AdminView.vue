@@ -197,7 +197,7 @@ const chatNotifyUpcomingAdminTemplate = ref('')
 const chatNotifyUpcomingCustomerTemplate = ref('')
 const chatNotifyCancelAdminEnabled = ref(true)
 const chatNotifyCancelCustomerEnabled = ref(true)
-const chatNotifyPaidAdminEnabled = ref(true)
+const chatNotifyPaidAdminEnabled = ref(false)
 const chatNotifyPaidCustomerEnabled = ref(true)
 const chatNotifyCancelAdminTemplate = ref('')
 const chatNotifyCancelCustomerTemplate = ref('')
@@ -1941,7 +1941,7 @@ async function loadChatNotifySetting() {
       || ''
     chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
     chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
-    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled !== false
+    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
     chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
     chatNotifyCancelAdminTemplate.value = data.cancel_admin_template
       || data.default_cancel_admin_template
@@ -1996,7 +1996,7 @@ async function saveChatNotifySetting() {
     chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || minutes
     chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
     chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
-    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled !== false
+    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
     chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
     chatNotifyNewBookingTemplate.value = data.new_booking_template || chatNotifyNewBookingTemplate.value
     chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template || chatNotifyUpcomingAdminTemplate.value

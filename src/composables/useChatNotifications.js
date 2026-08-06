@@ -32,6 +32,7 @@ export function useChatNotifications() {
     if (isOnChatPage.value) {
       if (!isAdminForShop.value) return false
       if (activeChatUserId.value && item.user_id === activeChatUserId.value) return false
+      if (activeChatUserId.value && item.related_user_id === activeChatUserId.value) return false
     }
     return true
   }
@@ -48,6 +49,8 @@ export function useChatNotifications() {
       {
         id: item.id,
         user_id: item.user_id || null,
+        related_user_id: item.related_user_id || null,
+        is_system_thread: Boolean(item.is_system_thread),
         title,
         body: item.body,
         image_url: item.image_url,

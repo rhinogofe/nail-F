@@ -41,16 +41,29 @@ let mobileMq = null
 
 const filteredConversations = computed(() => {
   const q = conversationSearch.value.trim().toLowerCase()
-  if (!q) return conversations.value
-  return conversations.value.filter(
-    (c) =>
-      String(c.name || '').toLowerCase().includes(q)
-      || String(c.email || '').toLowerCase().includes(q)
-  )
+  const system = conversations.value.find((c) => c.is_system)
+  const customers = conversations.value.filter((c) => !c.is_system)
+  const filteredCustomers = q
+    ? customers.filter(
+        (c) =>
+          String(c.name || '').toLowerCase().includes(q)
+          || String(c.email || '').toLowerCase().includes(q)
+      )
+    : customers
+  if (!system) return filteredCustomers
+  const showSystem = !q
+    || 'ระบบ'.includes(q)
+    || 'แจ้งเตือน'.includes(q)
+    || String(system.email || '').toLowerCase().includes(q)
+  return showSystem ? [system, ...filteredCustomers] : filteredCustomers
 })
 
 const selectedConversation = computed(() =>
   conversations.value.find((c) => c.id === selectedUserId.value) || activeUser.value
+)
+
+const selectedIsSystem = computed(() =>
+  Boolean(selectedConversation.value?.is_system || activeUser.value?.is_system)
 )
 
 const totalUnread = computed(() =>
@@ -59,6 +72,7 @@ const totalUnread = computed(() =>
 
 const emptyHint = computed(() => {
   if (loading.value) return 'กำลังโหลด...'
+  if (isAdminMode.value && selectedIsSystem.value) return 'ยังไม่มีแจ้งเตือน'
   return isAdminMode.value
     ? 'ยังไม่มีข้อความ — เลือกลูกค้าหรือส่งจากหน้าแอดมิน'
     : 'ยังไม่มีข้อความ — ส่งข้อความหาแอดมินได้เลย'
@@ -92,7 +106,8 @@ function formatConvTime(value) {
   return dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
 }
 
-function userInitials(name) {
+function userInitials(name, isSystem = false) {
+  if (isSystem) return '⚙'
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
   if (!parts.length) return '?'
   return parts.map((p) => p[0]).join('').toUpperCase().slice(0, 2)
@@ -196,7 +211,7 @@ async function sendChatPayload({ body = '', imageData = null, imageMime = null }
 }
 
 async function deleteConversation() {
-  if (!selectedUserId.value || !selectedConversation.value) return
+  if (!selectedUserId.value || !selectedConversation.value || selectedIsSystem.value) return
   const name = selectedConversation.value.name || 'ลูกค้า'
   if (!window.confirm(`ลบประวัติแชทกับ "${name}" ทั้งหมดใช่ไหม?\nการลบไม่สามารถยกเลิกได้`)) return
 
@@ -303,6 +318,12 @@ function selectConversation(conv) {
   closeSidebarOnMobile()
 }
 
+function openCustomerChat(userId) {
+  if (!userId) return
+  loadAdminMessages(String(userId))
+  closeSidebarOnMobile()
+}
+
 async function sendMessage() {
   const body = draft.value.trim()
   if (!body || sending.value || uploading.value) return
@@ -318,6 +339,7 @@ function onKeydown(event) {
 }
 
 const canSend = computed(() => {
+  if (selectedIsSystem.value) return false
   if (sending.value || uploading.value || !draft.value.trim()) return false
   if (isAdminMode.value) return Boolean(selectedUserId.value)
   return true
@@ -429,10 +451,10 @@ watch(
               :key="conv.id"
               type="button"
               class="chat-conv"
-              :class="{ active: selectedUserId === conv.id }"
+              :class="{ active: selectedUserId === conv.id, 'chat-conv--system': conv.is_system }"
               @click="selectConversation(conv)"
             >
-              <span class="chat-avatar" aria-hidden="true">{{ userInitials(conv.name) }}</span>
+              <span class="chat-avatar" :class="{ 'chat-avatar--system': conv.is_system }" aria-hidden="true">{{ userInitials(conv.name, conv.is_system) }}</span>
               <span class="chat-conv-body">
                 <span class="chat-conv-row">
                   <strong class="chat-conv-name">{{ conv.name }}</strong>
@@ -466,10 +488,12 @@ watch(
               </span>
             </button>
             <div v-if="selectedConversation" class="chat-thread-info">
-              <span class="chat-thread-avatar">{{ userInitials(selectedConversation.name) }}</span>
+              <span class="chat-thread-avatar" :class="{ 'chat-avatar--system': selectedIsSystem }">{{ userInitials(selectedConversation.name, selectedIsSystem) }}</span>
               <div>
                 <strong class="chat-thread-name">{{ selectedConversation.name }}</strong>
-                <p class="chat-thread-meta muted">{{ selectedConversation.email || 'ลูกค้า' }}</p>
+                <p class="chat-thread-meta muted">
+                  {{ selectedIsSystem ? 'แจ้งเตือนการจอง · คิว · ชำระเงิน' : (selectedConversation.email || 'ลูกค้า') }}
+                </p>
               </div>
             </div>
             <div v-else class="chat-thread-info">
@@ -477,7 +501,7 @@ watch(
               <p class="chat-thread-meta muted">เลือกลูกค้าเพื่อตอบข้อความ</p>
             </div>
             <button
-              v-if="selectedUserId"
+              v-if="selectedUserId && !selectedIsSystem"
               type="button"
               class="chat-icon-btn chat-delete-btn"
               aria-label="ลบประวัติแชท"
@@ -499,21 +523,31 @@ watch(
                 v-for="msg in messages"
                 :key="msg.id"
                 class="chat-bubble-row"
-                :class="msg.sender_role === 'admin' || msg.sender_role === 'system' ? 'mine' : 'theirs'"
+                :class="selectedIsSystem
+                  ? 'system-notify'
+                  : (msg.sender_role === 'admin' ? 'mine' : 'theirs')"
               >
-                <div class="chat-bubble" :class="{ 'chat-bubble--image': msg.image_url }">
+                <div class="chat-bubble" :class="{ 'chat-bubble--image': msg.image_url, 'chat-bubble--system': selectedIsSystem }">
                   <ChatImage
                     v-if="msg.image_url"
                     :filename="msg.image_url"
                     @open="openLightbox"
                   />
                   <p v-if="msg.body" class="chat-body">{{ msg.body }}</p>
+                  <button
+                    v-if="selectedIsSystem && msg.related_user_id"
+                    type="button"
+                    class="chat-related-link"
+                    @click="openCustomerChat(msg.related_user_id)"
+                  >
+                    เปิดแชท{{ msg.related_user_name ? ` · ${msg.related_user_name}` : '' }}
+                  </button>
                   <time class="chat-time">{{ formatTime(msg.created_at) }}</time>
                 </div>
               </div>
             </div>
 
-            <form class="chat-compose" @submit.prevent="sendMessage">
+            <form v-if="!selectedIsSystem" class="chat-compose" @submit.prevent="sendMessage">
               <input
                 ref="imageInputRef"
                 type="file"
@@ -1256,5 +1290,46 @@ watch(
   .chat-list-toggle {
     display: inline-flex;
   }
+}
+
+.chat-conv--system {
+  background: rgba(100, 116, 139, 0.06);
+}
+
+.chat-avatar--system {
+  background: linear-gradient(145deg, #64748b, #475569);
+  font-size: 16px;
+}
+
+.chat-bubble-row.system-notify {
+  justify-content: flex-start;
+}
+
+.chat-bubble--system {
+  background: rgba(100, 116, 139, 0.1);
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  max-width: min(100%, 420px);
+}
+
+.chat-bubble--system .chat-body {
+  white-space: pre-wrap;
+}
+
+.chat-related-link {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.chat-related-link:hover {
+  filter: brightness(1.05);
 }
 </style>

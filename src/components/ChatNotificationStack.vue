@@ -41,6 +41,20 @@ function initials(name) {
 function openNotification(item) {
   dismissNotification(item.id)
   const base = `/${shopSlug.value}/chat`
+  if (auth.canAccessShopAdmin(shopSlug.value)) {
+    if (item.is_system_thread && item.user_id) {
+      router.push(`${base}?userId=${item.user_id}`)
+      return
+    }
+    if (item.related_user_id) {
+      router.push(`${base}?userId=${item.related_user_id}`)
+      return
+    }
+    if (item.user_id) {
+      router.push(`${base}?userId=${item.user_id}`)
+      return
+    }
+  }
   if (item.user_id) {
     router.push(`${base}?userId=${item.user_id}`)
     return
