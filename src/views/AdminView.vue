@@ -231,6 +231,10 @@ const canManageShopAdmins = computed(() => isSuperAdmin.value || shopSlug.value 
 const staffAddBtnLabel = computed(() => uiSettingsStore.get('ui_admin_add_staff_btn', 'เพิ่มช่าง'))
 const unpaidAutoCancelEnabled = ref(true)
 const unpaidExpireHours = ref(24)
+// Auto-saving the enable switch must not persist an unsaved edit in the hours
+// field, so keep the last value the server actually confirmed.
+const unpaidExpireHoursSaved = ref(24)
+const settingToggleSaving = ref('')
 const useCouponCode = ref('')
 const nailOptions = ref([])
 const serviceMonth = ref(todayYm())
@@ -2327,6 +2331,116 @@ async function testLinePushSetting() {
   }
 }
 
+// Boolean settings save the moment they are switched. Only the toggled field is
+// sent, so pending edits in the text/number fields next to it stay unsaved until
+// their own Save button is pressed.
+async function autoSaveSettingToggle({ key, url, payload, label, nextValue, revert, apply }) {
+  if (settingToggleSaving.value) {
+    revert()
+    return
+  }
+  settingToggleSaving.value = key
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch(url, payload)
+    apply?.(data)
+    message.value = `${nextValue ? 'เปิด' : 'ปิด'} — ${label}`
+  } catch (error) {
+    revert()
+    errorMessage.value = error?.response?.data?.error || `บันทึก "${label}" ไม่สำเร็จ`
+  } finally {
+    settingToggleSaving.value = ''
+  }
+}
+
+const chatNotifyToggles = {
+  new_booking_enabled: { model: chatNotifyNewBookingEnabled, label: 'แจ้งแอดมินเมื่อมีคิวจองใหม่' },
+  upcoming_admin_enabled: { model: chatNotifyUpcomingAdminEnabled, label: 'แจ้งแอดมินก่อนถึงคิว' },
+  upcoming_customer_enabled: { model: chatNotifyUpcomingCustomerEnabled, label: 'แจ้งลูกค้าก่อนถึงคิว' },
+  cancel_admin_enabled: { model: chatNotifyCancelAdminEnabled, label: 'แจ้งแอดมินเมื่อคิวถูกยกเลิก' },
+  cancel_customer_enabled: { model: chatNotifyCancelCustomerEnabled, label: 'แจ้งลูกค้าเมื่อคิวถูกยกเลิก' },
+  paid_admin_enabled: { model: chatNotifyPaidAdminEnabled, label: 'แจ้งแอดมินเมื่อชำระเงินแล้ว' },
+  paid_customer_enabled: { model: chatNotifyPaidCustomerEnabled, label: 'แจ้งลูกค้าเมื่อชำระเงินแล้ว' },
+}
+
+async function saveChatNotifyToggle(field) {
+  const entry = chatNotifyToggles[field]
+  if (!entry) return
+  const nextValue = entry.model.value
+  await autoSaveSettingToggle({
+    key: `chat-notify:${field}`,
+    url: '/api/admin/settings/chat-notify',
+    payload: { [field]: nextValue },
+    label: entry.label,
+    nextValue,
+    revert: () => { entry.model.value = !nextValue },
+    apply: (data) => {
+      if (typeof data?.[field] === 'boolean') entry.model.value = data[field]
+    },
+  })
+}
+
+async function saveLinePushToggle(field) {
+  const model = field === 'enabled' ? linePushEnabled : lineUseOwnBot
+  const label = field === 'enabled'
+    ? 'แจ้งเตือน LINE เมื่อลูกค้าจองคิว'
+    : 'ใช้ LINE Bot ของร้านเอง (Premium)'
+  const nextValue = model.value
+  await autoSaveSettingToggle({
+    key: `line-push:${field}`,
+    url: '/api/admin/settings/line-push',
+    payload: { [field]: nextValue },
+    label,
+    nextValue,
+    revert: () => { model.value = !nextValue },
+    apply: (data) => {
+      linePushEnabled.value = data.enabled !== false
+      lineUsesOwnBot.value = Boolean(data.uses_own_bot)
+      lineUseOwnBot.value = Boolean(data.use_own_bot)
+      lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
+      lineWebhookPath.value = data.webhook_url || lineWebhookPath.value
+      syncShopLinePushInList(shopSlug.value, {
+        line_push_enabled: data.enabled !== false,
+        line_use_own_bot: Boolean(data.use_own_bot),
+      })
+    },
+  })
+}
+
+async function saveUnpaidAutoCancelToggle() {
+  const nextValue = unpaidAutoCancelEnabled.value
+  await autoSaveSettingToggle({
+    key: 'unpaid:enabled',
+    url: '/api/admin/settings/unpaid-auto-cancel',
+    payload: { enabled: nextValue, expire_hours: unpaidExpireHoursSaved.value },
+    label: 'ยกเลิกคิวรอชำระอัตโนมัติ',
+    nextValue,
+    revert: () => { unpaidAutoCancelEnabled.value = !nextValue },
+    apply: (data) => { unpaidAutoCancelEnabled.value = data.enabled !== false },
+  })
+}
+
+async function saveExtendBookingToggle(field) {
+  const model = field === 'enabled' ? extendBookingByServices : extendBookingPastClose
+  const label = field === 'enabled'
+    ? 'ขยายเวลาจองตามบริการ'
+    : 'ขยายเวลาเกินเวลาปิดร้าน'
+  const nextValue = model.value
+  await autoSaveSettingToggle({
+    key: `extend-booking:${field}`,
+    url: '/api/admin/settings/extend-booking-by-services',
+    payload: { [field === 'enabled' ? 'enabled' : 'past_close_enabled']: nextValue },
+    label,
+    nextValue,
+    revert: () => { model.value = !nextValue },
+    apply: (data) => {
+      extendBookingByServices.value = data.enabled === true
+      extendBookingPastClose.value = data.past_close_enabled === true
+    },
+  })
+}
+
 async function loadChatNotifySetting() {
   try {
     const { data } = await api.get('/api/admin/settings/chat-notify')
@@ -2420,6 +2534,7 @@ async function loadUnpaidAutoCancelSetting() {
     const { data } = await api.get('/api/admin/settings/unpaid-auto-cancel')
     unpaidAutoCancelEnabled.value = data.enabled !== false
     unpaidExpireHours.value = Number(data.expire_hours) || 24
+    unpaidExpireHoursSaved.value = unpaidExpireHours.value
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่ายกเลิกอัตโนมัติไม่สำเร็จ'
   }
@@ -2449,6 +2564,7 @@ async function saveUnpaidAutoCancelSetting() {
     })
     unpaidAutoCancelEnabled.value = data.enabled !== false
     unpaidExpireHours.value = Number(data.expire_hours) || hours
+    unpaidExpireHoursSaved.value = unpaidExpireHours.value
     message.value = unpaidAutoCancelEnabled.value
       ? `บันทึกแล้ว: ยกเลิกอัตโนมัติหลัง ${unpaidExpireHours.value} ชม.`
       : 'บันทึกแล้ว: ปิดยกเลิกอัตโนมัติ'
@@ -3422,7 +3538,7 @@ async function addLocationPreset(preset) {
       option_name: preset.name,
       description: preset.description || `สถานที่ให้บริการ ${preset.name}`,
       price: 0,
-      duration_min: 60,
+      duration_min: 0,
       is_active: true,
       is_required: true,
       color: preset.color,
@@ -4610,7 +4726,7 @@ watch(shopSlug, () => {
               </label>
               <label>
                 ระยะเวลา (นาที)
-                <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
+                <input v-model.number="optionForm.duration_min" type="number" min="0" step="1" class="admin-input" />
               </label>
               <label class="admin-color-field admin-color-field-full">
                 <span class="admin-color-label-row">
@@ -4671,7 +4787,11 @@ watch(shopSlug, () => {
               <span v-if="item.is_required" class="badge-required">บังคับเลือก</span>
               <span class="badge-everyday">ทุกวัน</span>
               <p class="muted">{{ item.description || '-' }}</p>
-              <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
+              <p class="muted">
+                ราคา {{ Number(item.price) }} บาท
+                <template v-if="Number(item.duration_min) > 0"> · {{ item.duration_min }} นาที</template>
+                <template v-else> · ไม่กินเวลาคิว</template>
+              </p>
               <p class="muted">ลำดับแสดง {{ index + 1 }}</p>
             </div>
             <div class="row">
@@ -4762,7 +4882,7 @@ watch(shopSlug, () => {
             </label>
             <label>
               ระยะเวลา (นาที)
-              <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
+              <input v-model.number="optionForm.duration_min" type="number" min="0" step="1" class="admin-input" />
             </label>
             <label class="admin-color-field admin-color-field-full">
               <span class="admin-color-label-row">
@@ -4824,7 +4944,11 @@ watch(shopSlug, () => {
             <span v-if="isLocationPresetName(item.option_name)" class="badge-location">สถานที่</span>
             <span v-if="!formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date)" class="badge-everyday">ทุกวัน</span>
             <p class="muted">{{ item.description || '-' }}</p>
-            <p class="muted">ราคา {{ Number(item.price) }} บาท · {{ item.duration_min }} นาที</p>
+            <p class="muted">
+              ราคา {{ Number(item.price) }} บาท
+              <template v-if="Number(item.duration_min) > 0"> · {{ item.duration_min }} นาที</template>
+              <template v-else> · ไม่กินเวลาคิว</template>
+            </p>
             <p v-if="formatDateKey(item.show_from_date) || formatDateKey(item.show_to_date)" class="muted">
               {{ optionShowRangeText(item) }}
             </p>
@@ -4986,7 +5110,12 @@ watch(shopSlug, () => {
         class="admin-checkbox admin-label-grow"
         style="margin-bottom:12px"
       >
-        <input v-model="lineUseOwnBot" type="checkbox" />
+        <input
+          v-model="lineUseOwnBot"
+          type="checkbox"
+          :disabled="settingToggleSaving === 'line-push:use_own_bot'"
+          @change="saveLinePushToggle('use_own_bot')"
+        />
         ใช้ LINE Bot ของร้านเอง (Premium)
         <span class="muted">— override บอทกลางสำหรับสาขานี้</span>
       </label>
@@ -4995,7 +5124,12 @@ watch(shopSlug, () => {
         สาขานี้อยู่ในโหมด Premium (บอทของร้านเอง) — ตั้งค่า Token/Secret ด้านล่าง
       </div>
       <label v-if="lineCanEditEnabled && shopSlug !== 'default'" class="admin-checkbox admin-label-grow" style="margin-bottom:12px">
-        <input v-model="linePushEnabled" type="checkbox" />
+        <input
+          v-model="linePushEnabled"
+          type="checkbox"
+          :disabled="settingToggleSaving === 'line-push:enabled'"
+          @change="saveLinePushToggle('enabled')"
+        />
         เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว
         <span class="muted">(สาขา {{ shopStore.shopName || shopSlug }})</span>
       </label>
@@ -5095,6 +5229,7 @@ watch(shopSlug, () => {
       <p v-else-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="muted" style="margin-top:8px">
         หลังทักบอทกลาง slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · ร้าน Premium ให้แอดมินหลักติ๊ก “ใช้ LINE Bot ของร้านเอง” ด้านบน
       </p>
+      <p class="muted" style="margin-top:8px">ช่องติ๊กด้านบนบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึก ID, Token และข้อความ</p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
         <button type="button" class="btn primary admin-action-btn" @click="saveLinePushSetting">บันทึก LINE แจ้งเตือน</button>
         <button
@@ -5116,34 +5251,69 @@ watch(shopSlug, () => {
       </p>
       <div class="admin-form-row" style="flex-wrap:wrap;gap:12px;margin-bottom:12px">
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyNewBookingEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyNewBookingEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:new_booking_enabled'"
+            @change="saveChatNotifyToggle('new_booking_enabled')"
+          />
           แจ้งแอดมินเมื่อมีคิวจองใหม่
           <span class="muted">(เหมือน LINE — “มีคิวจองมา”)</span>
         </label>
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyUpcomingAdminEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyUpcomingAdminEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:upcoming_admin_enabled'"
+            @change="saveChatNotifyToggle('upcoming_admin_enabled')"
+          />
           แจ้งแอดมินก่อนถึงคิว
           <span class="muted">(เหมือน LINE — “มีคิวใน X นาที”)</span>
         </label>
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyUpcomingCustomerEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyUpcomingCustomerEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:upcoming_customer_enabled'"
+            @change="saveChatNotifyToggle('upcoming_customer_enabled')"
+          />
           แจ้งลูกค้าก่อนถึงคิว
           <span class="muted">(“อีก X นาทีถึงคิวของคุณ”)</span>
         </label>
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyCancelAdminEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyCancelAdminEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:cancel_admin_enabled'"
+            @change="saveChatNotifyToggle('cancel_admin_enabled')"
+          />
           แจ้งแอดมินเมื่อคิวถูกยกเลิก
         </label>
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyCancelCustomerEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyCancelCustomerEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:cancel_customer_enabled'"
+            @change="saveChatNotifyToggle('cancel_customer_enabled')"
+          />
           แจ้งลูกค้าเมื่อคิวถูกยกเลิก
         </label>
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyPaidAdminEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyPaidAdminEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:paid_admin_enabled'"
+            @change="saveChatNotifyToggle('paid_admin_enabled')"
+          />
           แจ้งแอดมินเมื่อชำระเงินแล้ว
         </label>
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="chatNotifyPaidCustomerEnabled" type="checkbox" />
+          <input
+            v-model="chatNotifyPaidCustomerEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:paid_customer_enabled'"
+            @change="saveChatNotifyToggle('paid_customer_enabled')"
+          />
           แจ้งลูกค้าเมื่อชำระเงินแล้ว
         </label>
       </div>
@@ -5191,6 +5361,7 @@ watch(shopSlug, () => {
       <p class="muted" style="margin-top:8px">
         ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code> <code>{minutesUntil}</code>
       </p>
+      <p class="muted" style="margin-top:8px">ช่องติ๊กด้านบนบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึกเวลาแจ้งเตือนและข้อความ</p>
       <div class="admin-form-row" style="margin-top:12px">
         <button type="button" class="btn primary admin-action-btn" @click="saveChatNotifySetting">บันทึกแจ้งเตือนในแอป</button>
       </div>
@@ -5203,7 +5374,12 @@ watch(shopSlug, () => {
       </p>
       <div class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end">
         <label class="admin-checkbox admin-label-grow">
-          <input v-model="unpaidAutoCancelEnabled" type="checkbox" />
+          <input
+            v-model="unpaidAutoCancelEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'unpaid:enabled'"
+            @change="saveUnpaidAutoCancelToggle"
+          />
           เปิดใช้งานยกเลิกอัตโนมัติ
         </label>
         <label class="admin-label-grow" :class="{ muted: !unpaidAutoCancelEnabled }">
@@ -5220,6 +5396,7 @@ watch(shopSlug, () => {
         </label>
         <button class="btn primary admin-action-btn" @click="saveUnpaidAutoCancelSetting">บันทึก</button>
       </div>
+      <p class="muted" style="margin:8px 0 0">ช่องติ๊กบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึกจำนวนชั่วโมง</p>
       <div class="shop-hours-preview">
         <i class="ti ti-clock-pause" style="font-size:16px;color:var(--color-primary)"></i>
         <template v-if="unpaidAutoCancelEnabled">
@@ -5832,7 +6009,12 @@ watch(shopSlug, () => {
                   เมื่อเปิด ระยะเวลารวมของบริการที่ลูกค้าเลือกจะขยายเวลาคิว · คิวถัดไปเลื่อนตามเวลาจริง · ช่องว่าง 1 ชม. ก่อนปิดร้านเปิดเป็นคิวสั้นได้
                 </p>
                 <label class="admin-checkbox">
-                  <input v-model="extendBookingByServices" type="checkbox" />
+                  <input
+                    v-model="extendBookingByServices"
+                    type="checkbox"
+                    :disabled="settingToggleSaving === 'extend-booking:enabled'"
+                    @change="saveExtendBookingToggle('enabled')"
+                  />
                   เปิดใช้งานขยายเวลาจองตามบริการ
                 </label>
                 <label
@@ -5840,7 +6022,12 @@ watch(shopSlug, () => {
                   class="admin-checkbox"
                   style="margin-top:10px"
                 >
-                  <input v-model="extendBookingPastClose" type="checkbox" />
+                  <input
+                    v-model="extendBookingPastClose"
+                    type="checkbox"
+                    :disabled="settingToggleSaving === 'extend-booking:past_close_enabled'"
+                    @change="saveExtendBookingToggle('past_close_enabled')"
+                  />
                   อนุญาตให้ขยายเวลาเกินเวลาปิดร้าน
                 </label>
                 <p v-if="extendBookingByServices" class="muted" style="margin:6px 0 0">
@@ -5873,6 +6060,7 @@ watch(shopSlug, () => {
                     ></textarea>
                   </label>
                 </template>
+                <p class="muted" style="margin:8px 0 0">ช่องติ๊กบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึกข้อความเตือน</p>
                 <div class="admin-form-row" style="margin-top:12px">
                   <button type="button" class="btn primary admin-action-btn" @click="saveExtendBookingByServices">
                     บันทึก
@@ -7101,7 +7289,7 @@ watch(shopSlug, () => {
             </label>
             <label>
               ระยะเวลา (นาที)
-              <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
+              <input v-model.number="optionForm.duration_min" type="number" min="0" step="1" class="admin-input" />
             </label>
             <label class="admin-color-field admin-color-field-full">
               <span class="admin-color-label-row">

@@ -1213,7 +1213,7 @@ onUnmounted(() => {
                       class="selected-service-item"
                     >
                       <span class="selected-service-name">{{ opt.option_name }}</span>
-                      <span class="selected-service-duration">{{ formatOptionDuration(opt) }}</span>
+                      <span v-if="Number(opt.duration_min) > 0" class="selected-service-duration">{{ formatOptionDuration(opt) }}</span>
                       <span v-if="Number(opt.price) > 0" class="selected-service-price">
                         {{ Number(opt.price).toLocaleString('th-TH') }} บ.
                       </span>
@@ -1283,7 +1283,7 @@ onUnmounted(() => {
                   <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
                 </span>
                 <span class="option-meta">
-                  <span class="option-duration">{{ formatOptionDuration(opt) }}</span>
+                  <span v-if="Number(opt.duration_min) > 0" class="option-duration">{{ formatOptionDuration(opt) }}</span>
                 </span>
               </label>
 
@@ -1308,7 +1308,7 @@ onUnmounted(() => {
                   <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
                 </span>
                 <span class="option-meta">
-                  <span class="option-duration">{{ formatOptionDuration(opt) }}</span>
+                  <span v-if="Number(opt.duration_min) > 0" class="option-duration">{{ formatOptionDuration(opt) }}</span>
                   <span v-if="Number(opt.price) > 0" class="option-price">
                     {{ Number(opt.price).toLocaleString('th-TH') }} บ.
                   </span>
