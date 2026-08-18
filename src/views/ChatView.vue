@@ -239,8 +239,8 @@ function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
 }
 
-function closeSidebarOnMobile() {
-  if (isMobile.value) sidebarOpen.value = false
+function closeSidebarAfterSelect() {
+  sidebarOpen.value = false
 }
 
 async function loadCustomerMessages() {
@@ -315,13 +315,13 @@ async function refreshChat(silent = false) {
 function selectConversation(conv) {
   if (!conv?.id) return
   loadAdminMessages(conv.id)
-  closeSidebarOnMobile()
+  closeSidebarAfterSelect()
 }
 
 function openCustomerChat(userId) {
   if (!userId) return
   loadAdminMessages(String(userId))
-  closeSidebarOnMobile()
+  closeSidebarAfterSelect()
 }
 
 async function sendMessage() {
@@ -354,7 +354,7 @@ function startPolling() {
 
 function syncSidebarForViewport() {
   if (!isAdminMode.value) return
-  sidebarOpen.value = !isMobile.value || !selectedUserId.value
+  sidebarOpen.value = !selectedUserId.value
 }
 
 function onViewportChange() {
@@ -369,10 +369,11 @@ onMounted(async () => {
 
   const userId = route.query.userId
   if (isAdminMode.value) {
-    sidebarOpen.value = !isMobile.value || !userId
+    sidebarOpen.value = !userId
     if (userId) {
       await loadConversations()
       await loadAdminMessages(String(userId))
+      closeSidebarAfterSelect()
     } else {
       await refreshChat()
     }
@@ -397,7 +398,7 @@ watch(
   (userId) => {
     if (isAdminMode.value && userId) {
       loadAdminMessages(String(userId))
-      closeSidebarOnMobile()
+      closeSidebarAfterSelect()
     }
   }
 )
