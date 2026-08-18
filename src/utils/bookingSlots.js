@@ -13,7 +13,25 @@ export function bookingEndHour(startHour, slotHours = DEFAULT_SLOT_HOURS) {
 }
 
 export function toHourLabel(hour) {
-  return `${hour}:00`
+  return formatHmLabel(hour, 0)
+}
+
+export function formatHmLabel(hour, minute = 0) {
+  const h = Number(hour)
+  const m = Number(minute ?? 0)
+  const min = Number.isInteger(m) && m >= 0 && m <= 59 ? m : 0
+  if (!Number.isFinite(h)) return `${hour}:${String(min).padStart(2, '0')}`
+  if (h >= 24) {
+    const clockH = h % 24
+    return `${String(clockH).padStart(2, '0')}:${String(min).padStart(2, '0')} (วันถัดไป)`
+  }
+  if (!Number.isInteger(h) || h < 0 || h > 23) return `${hour}:${String(min).padStart(2, '0')}`
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+}
+
+export function formatLastBookingOptionLabel(hour, slotHours = DEFAULT_SLOT_HOURS) {
+  const slot = normalizeBookingSlotHours(slotHours)
+  return `${formatHmLabel(hour, 0)} (ปิด ${formatHmLabel(Number(hour) + slot, 0)})`
 }
 
 export function slotTimeLabel(hour, isSlotsBlockMode, slotHours = DEFAULT_SLOT_HOURS) {
@@ -38,10 +56,6 @@ export function normalizeShopLastBookingHour(value, openHour = 9, slotHours = DE
 
 export function toMinutesFromHm(hour, minute = 0) {
   return Number(hour) * 60 + Number(minute)
-}
-
-export function formatHmLabel(hour, minute = 0) {
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
 export function makeBookingSlot(startHour, startMinute, endHour, endMinute) {

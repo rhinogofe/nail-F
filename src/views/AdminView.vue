@@ -14,7 +14,7 @@ const adminSwal = Swal.mixin({
     container: 'swal-over-app-modal',
   },
 })
-import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey } from '../utils/bookingSlots'
+import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
 import { imageUrlHint } from '../utils/imageUrl'
@@ -1052,7 +1052,7 @@ async function saveShopHours() {
   }
   const ok = await confirmAdminSave(
     'ยืนยันบันทึกเวลาร้าน',
-    `เปิด ${String(shopOpenHour.value).padStart(2, '0')}:00 – จองสุดท้าย ${String(shopLastBookingHour.value).padStart(2, '0')}:00 ใช่ไหม`
+    `เปิด ${formatHmLabel(shopOpenHour.value, 0)} – จองสุดท้าย ${formatHmLabel(shopLastBookingHour.value, 0)} ใช่ไหม`
   )
   if (!ok) return
   message.value = ''
@@ -1062,7 +1062,7 @@ async function saveShopHours() {
       open_hour: shopOpenHour.value,
       last_booking_hour: shopLastBookingHour.value,
     })
-    message.value = `บันทึกเวลาร้านแล้ว: เปิด ${shopOpenHour.value}:00 – จองสุดท้าย ${shopLastBookingHour.value}:00 (ปิด ${shopLastBookingHour.value + bookingSlotHours.value}:00)`
+    message.value = `บันทึกเวลาร้านแล้ว: เปิด ${formatHmLabel(shopOpenHour.value, 0)} – จองสุดท้าย ${formatHmLabel(shopLastBookingHour.value, 0)} (ปิด ${formatHmLabel(shopLastBookingHour.value + bookingSlotHours.value, 0)})`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกเวลาร้านไม่สำเร็จ'
   }
@@ -1943,7 +1943,7 @@ const displaySlotPreview = computed(() => {
   const result = []
   const step = bookingDisplayMode.value === 'slots_2h' ? slot : 1
   for (let h = shopOpenHour.value; h <= shopLastBookingHour.value; h += step) {
-    result.push(`${String(h).padStart(2, '0')}:00–${String(h + slot).padStart(2, '0')}:00`)
+    result.push(slotTimeLabel(h, true, slot))
   }
   return result.join(' · ')
 })
@@ -5646,14 +5646,14 @@ watch(shopSlug, () => {
                 <label class="admin-label-grow">
                   เวลาเปิดร้าน
                   <select v-model.number="shopOpenHour" class="admin-input">
-                    <option v-for="h in hourOptions" :key="`open-${h}`" :value="h">{{ String(h).padStart(2,'0') }}:00</option>
+                    <option v-for="h in hourOptions" :key="`open-${h}`" :value="h">{{ formatHmLabel(h, 0) }}</option>
                   </select>
                 </label>
                 <label class="admin-label-grow">
                   จองสุดท้ายได้ถึง
                   <select v-model.number="shopLastBookingHour" class="admin-input">
                     <option v-for="h in hourOptions" :key="`last-${h}`" :value="h">
-                      {{ String(h).padStart(2,'0') }}:00 (ปิด {{ String(h + bookingSlotHours).padStart(2,'0') }}:00)
+                      {{ formatLastBookingOptionLabel(h, bookingSlotHours) }}
                     </option>
                   </select>
                 </label>
@@ -5662,8 +5662,8 @@ watch(shopSlug, () => {
               <div class="shop-hours-preview">
                 <i class="ti ti-clock" style="font-size:16px;color:var(--color-primary)"></i>
                 ลูกค้าจะเห็นช่วง
-                <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
-                (ปิดรับ {{ String(shopLastBookingHour + bookingSlotHours).padStart(2,'0') }}:00)
+                <strong>{{ formatHmLabel(shopOpenHour, 0) }} – {{ formatHmLabel(shopLastBookingHour, 0) }}</strong>
+                (ปิดรับ {{ formatHmLabel(shopLastBookingHour + bookingSlotHours, 0) }})
               </div>
             </div>
 
