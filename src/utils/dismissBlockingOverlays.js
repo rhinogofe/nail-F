@@ -1,4 +1,5 @@
 import Swal from 'sweetalert2'
+import { releaseAllBodyScrollLocks } from './bodyScrollLock'
 
 let overlayCleanupTimers = []
 
@@ -17,6 +18,7 @@ export function dismissBlockingOverlays() {
   document.documentElement.style.removeProperty('pointer-events')
 
   document.querySelectorAll('.swal2-container').forEach((el) => el.remove())
+  releaseAllBodyScrollLocks()
 }
 
 export function scheduleOverlayCleanup(delaysMs = [0, 80, 200, 500, 1000]) {

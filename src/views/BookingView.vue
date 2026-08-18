@@ -3,6 +3,7 @@ import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } f
 import { useRoute, useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
+import { lockBodyScroll, releaseAllBodyScrollLocks, unlockBodyScroll } from '../utils/bodyScrollLock'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import { useCoupons } from '../composables/useCoupons'
@@ -638,6 +639,7 @@ function resetStripDragState() {
 function resetInteractionBlockers() {
   closeBookSheet()
   pendingCancelId.value = null
+  releaseAllBodyScrollLocks()
   busy.value = false
   cancelInFlight.value = null
   submitInFlight = false
@@ -872,6 +874,14 @@ watch(unpaidCountdown.nowMs, () => {
   })
 })
 
+const anySheetOpen = computed(() => showModal.value || Boolean(pendingCancelId.value))
+
+watch(anySheetOpen, (open, wasOpen) => {
+  if (open === wasOpen) return
+  if (open) lockBodyScroll()
+  else unlockBodyScroll()
+})
+
 onActivated(() => {
   resetInteractionBlockers()
 })
@@ -913,6 +923,7 @@ async function bootstrapBookingPage() {
 onUnmounted(() => {
   submitInFlight = false
   busy.value = false
+  releaseAllBodyScrollLocks()
   resetInteractionBlockers()
   window.removeEventListener('resize', scheduleStripMeasure)
   document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -1092,6 +1103,7 @@ onUnmounted(() => {
     </main>
 
     <!-- ── BOTTOM SHEET MODAL ── -->
+    <Teleport to="body">
     <Transition name="fade">
       <div v-if="showModal" class="overlay" @click.self="closeBookSheet">
         <div class="sheet" role="dialog" aria-modal="true">
@@ -1298,8 +1310,10 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
+    </Teleport>
 
     <!-- ── CANCEL CONFIRM (iOS-safe, no SweetAlert) ── -->
+    <Teleport to="body">
     <Transition name="fade">
       <div v-if="pendingCancelId" class="overlay cancel-overlay" @click.self="closeCancelConfirm">
         <div class="sheet cancel-sheet" role="dialog" aria-modal="true" aria-labelledby="cancel-sheet-title">
@@ -1320,6 +1334,7 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
+    </Teleport>
 
     <!-- ── BOTTOM NAV ── -->
     <BottomNav active="bookings" />
@@ -1609,9 +1624,11 @@ onUnmounted(() => {
 .overlay {
   position: fixed; inset: 0; background: rgba(45, 36, 36, 0.4);
   display: flex; align-items: flex-end; z-index: 50;
+  height: 100dvh;
+  overscroll-behavior: contain;
 }
 .cancel-overlay { z-index: 60; }
-.cancel-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0)); }
+.cancel-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 .btn-confirm-danger {
   background: #b45309;
 }
@@ -1619,8 +1636,12 @@ onUnmounted(() => {
 .sheet {
   background: var(--color-surface-elevated); width: 100%; max-width: 430px; margin: 0 auto;
   border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
-  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0));
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow-sheet);
+  max-height: 88dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .sheet-handle {
   width: 36px; height: 4px; background: var(--color-border);

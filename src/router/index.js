@@ -12,6 +12,7 @@ import AdminView from '../views/AdminView.vue'
 import PaymentView from '../views/PaymentView.vue'
 import ChatView from '../views/ChatView.vue'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
+import { releaseAllBodyScrollLocks } from '../utils/bodyScrollLock'
 
 const shopChildren = [
   { path: 'login', component: LoginView, meta: { guest: true } },
@@ -28,6 +29,11 @@ const shopChildren = [
 
 const router = createRouter({
   history: createWebHistory(),
+  // iOS PWA restores stale scroll offsets on back navigation, which leaves the
+  // sticky header pushed off-screen and swallows taps until the user scrolls.
+  scrollBehavior() {
+    return { left: 0, top: 0 }
+  },
   routes: [
     { path: '/', component: ShopPickerView },
     {
@@ -52,6 +58,7 @@ function shopPath(shopSlug, suffix) {
 }
 
 router.beforeEach(async (to) => {
+  releaseAllBodyScrollLocks()
   dismissBlockingOverlays()
   const auth = useAuthStore()
   const shopStore = useShopStore()
@@ -111,8 +118,10 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach(() => {
+  releaseAllBodyScrollLocks()
   dismissBlockingOverlays()
   scheduleOverlayCleanup()
+  window.scrollTo(0, 0)
 })
 
 export default router
