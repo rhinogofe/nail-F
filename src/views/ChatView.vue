@@ -229,9 +229,16 @@ async function deleteConversation() {
 }
 
 function scrollToBottom() {
-  nextTick(() => {
+  const run = () => {
     const el = messagesRef.value
     if (el) el.scrollTop = el.scrollHeight
+  }
+  nextTick(() => {
+    run()
+    requestAnimationFrame(() => {
+      run()
+      requestAnimationFrame(run)
+    })
   })
 }
 
@@ -281,12 +288,12 @@ async function loadAdminMessages(userId, silent = false) {
     activeUser.value = data.user
     messages.value = data.messages || []
     selectedUserId.value = userId
-    scrollToBottom()
     await loadConversations()
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดข้อความไม่สำเร็จ'
   } finally {
     if (!silent) loading.value = false
+    if (!silent) scrollToBottom()
   }
 }
 
@@ -303,25 +310,25 @@ async function refreshChat(silent = false) {
       }
     } else {
       await loadCustomerMessages()
-      scrollToBottom()
     }
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดข้อความไม่สำเร็จ'
   } finally {
     if (!silent) loading.value = false
+    if (!isAdminMode.value || selectedUserId.value) scrollToBottom()
   }
 }
 
-function selectConversation(conv) {
+async function selectConversation(conv) {
   if (!conv?.id) return
-  loadAdminMessages(conv.id)
   closeSidebarAfterSelect()
+  await loadAdminMessages(conv.id)
 }
 
-function openCustomerChat(userId) {
+async function openCustomerChat(userId) {
   if (!userId) return
-  loadAdminMessages(String(userId))
   closeSidebarAfterSelect()
+  await loadAdminMessages(String(userId))
 }
 
 async function sendMessage() {
@@ -395,10 +402,10 @@ watch(
 
 watch(
   () => route.query.userId,
-  (userId) => {
+  async (userId) => {
     if (isAdminMode.value && userId) {
-      loadAdminMessages(String(userId))
       closeSidebarAfterSelect()
+      await loadAdminMessages(String(userId))
     }
   }
 )
