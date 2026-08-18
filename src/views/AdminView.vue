@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
+import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 
 /** Above teleported admin modals (.booking-edit-backdrop z-index 2000) */
 const adminSwal = Swal.mixin({
@@ -3994,6 +3995,7 @@ watch(shopSlug, () => {
         <p class="muted admin-sub">{{ shopStore.shopName || shopSlug }} · {{ auth.user?.name || '-' }}</p>
       </div>
       <div class="admin-top-actions">
+        <AccountMenuDrawer />
         <button type="button" class="btn admin-share-btn" @click="shareShopLink">
           <i class="ti ti-share-2" aria-hidden="true"></i>
           แชร์ลิงก์ร้าน

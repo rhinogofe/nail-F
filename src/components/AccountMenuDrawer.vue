@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import PushNotificationToggle from './PushNotificationToggle.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -113,6 +114,10 @@ onUnmounted(() => {
           <button type="button" class="account-menu-close" aria-label="ปิดเมนู" @click="closeMenu">
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
+        </div>
+
+        <div v-if="auth.isLoggedIn" class="account-menu-push">
+          <PushNotificationToggle />
         </div>
 
         <nav class="account-menu-actions">
@@ -254,6 +259,10 @@ onUnmounted(() => {
   flex-direction: column;
   gap: var(--space-3);
   margin-top: auto;
+}
+
+.account-menu-push {
+  margin-bottom: var(--space-4);
 }
 
 .account-menu-line {

@@ -5,6 +5,7 @@ import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
 import BrandMark from '../components/BrandMark.vue'
 import ChatImage from '../components/ChatImage.vue'
+import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
@@ -569,6 +570,7 @@ watch(
             >
               <i class="ti ti-trash" aria-hidden="true"></i>
             </button>
+            <AccountMenuDrawer />
           </header>
 
           <p v-if="errorMessage" class="alert error chat-alert">{{ errorMessage }}</p>
@@ -661,6 +663,7 @@ watch(
           <h1>{{ ui.get('ui_chat_title', 'แชท') }}</h1>
           <p class="muted">พูดคุยกับแอดมินร้าน</p>
         </div>
+        <AccountMenuDrawer />
       </header>
 
       <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
@@ -1121,6 +1124,11 @@ watch(
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-elevated);
   flex-shrink: 0;
+}
+
+.chat-header-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .chat-header-text h1 {

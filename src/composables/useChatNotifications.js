@@ -3,6 +3,7 @@ import { useRoute } from 'vue-router'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
+import { showOsNotificationForChatItem } from '../utils/pushNotifications'
 
 const POLL_MS = 12000
 const AUTO_DISMISS_MS = 7000
@@ -37,6 +38,26 @@ export function useChatNotifications() {
     return true
   }
 
+  function buildChatNotificationUrl(item) {
+    const base = `/${shopSlug.value}/chat`
+    if (isAdminForShop.value) {
+      if (item.is_system_thread && item.user_id) {
+        return `${base}?userId=${item.user_id}`
+      }
+      if (item.related_user_id) {
+        return `${base}?userId=${item.related_user_id}`
+      }
+      if (item.user_id) {
+        return `${base}?userId=${item.user_id}`
+      }
+      return base
+    }
+    if (item.user_id) {
+      return `${base}?userId=${item.user_id}`
+    }
+    return base
+  }
+
   function pushNotification(item) {
     if (seenIds.value.has(item.id)) return
     seenIds.value.add(item.id)
@@ -58,6 +79,15 @@ export function useChatNotifications() {
       },
       ...notifications.value,
     ].slice(0, 5)
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      showOsNotificationForChatItem({
+        title,
+        body: item.body,
+        url: buildChatNotificationUrl(item),
+        messageId: item.id,
+      })
+    }
 
     if (dismissTimers.has(item.id)) {
       clearTimeout(dismissTimers.get(item.id))

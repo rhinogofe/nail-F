@@ -1,10 +1,40 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ChatNotificationStack from './components/ChatNotificationStack.vue'
+import { useAuthStore } from './stores/auth'
+import {
+  initPushNotificationsWhenReady,
+} from './utils/pushNotifications'
 
 const route = useRoute()
+const auth = useAuthStore()
 const isAdminRoute = computed(() => /\/admin$/.test(route.path))
+
+let stopPushListener = null
+
+function syncPushListener() {
+  stopPushListener?.()
+  stopPushListener = null
+  if (!auth.isLoggedIn) return
+  initPushNotificationsWhenReady()
+    .then((stop) => {
+      if (typeof stop === 'function') stopPushListener = stop
+    })
+    .catch(() => {})
+}
+
+onMounted(() => {
+  syncPushListener()
+})
+
+onUnmounted(() => {
+  stopPushListener?.()
+})
+
+watch(() => auth.isLoggedIn, () => {
+  syncPushListener()
+})
 </script>
 
 <template>
