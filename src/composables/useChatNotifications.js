@@ -12,7 +12,7 @@ import {
 
 const POLL_MS = 12000
 const POLL_MS_PUSH = 45000
-const AUTO_DISMISS_MS = 7000
+const AUTO_DISMISS_MS = 2000
 
 function getPollIntervalMs() {
   return getStoredFcmToken() ? POLL_MS_PUSH : POLL_MS
