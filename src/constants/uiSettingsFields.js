@@ -48,6 +48,10 @@ export const UI_FORM_DEFAULTS = {
   ui_date_nav_hint: 'ลากเลื่อนหรือกด … เพื่อดูวันถัดไป',
   ui_no_open_days: 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง',
   ui_slot_taken_error: 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น',
+  ui_extend_blocked_next_booking:
+    'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากมีคิวต่อถัดไปไม่สามารถขยายเวลาได้',
+  ui_extend_blocked_closing:
+    'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากชนเวลาปิดร้านไม่สามารถขยายเวลาได้',
   ui_profile_title: 'บัญชีของฉัน',
   ui_profile_subtitle: 'แก้ไขข้อมูลและดูประวัติการจอง',
   ui_reviews_title: 'รีวิว',
@@ -56,6 +60,7 @@ export const UI_FORM_DEFAULTS = {
   ui_reviews_empty_hint: 'รอแอดมินเพิ่มลิงก์ TikTok หรือ Instagram',
   ui_shop_picker_title: 'เลือกร้าน',
   ui_shop_picker_subtitle: 'เลือกสาขาที่ต้องการจองคิว',
+  ui_admin_add_staff_btn: 'เพิ่มช่าง',
   ui_color_primary: '#C4847A',
   ui_color_primary_dark: '#A66B62',
   ui_color_primary_light: '#F5E8E6',
@@ -125,6 +130,18 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_date_nav_hint', label: 'คำใบ้เลื่อนดูวัน' },
       { key: 'ui_no_open_days', label: 'ไม่มีวันเปิดรับคิว' },
       { key: 'ui_slot_taken_error', label: 'เวลาถูกจองแล้ว' },
+      {
+        key: 'ui_extend_blocked_next_booking',
+        label: 'ขยายเวลาไม่ได้ — มีคิวถัดไป',
+        multiline: true,
+        rows: 2,
+      },
+      {
+        key: 'ui_extend_blocked_closing',
+        label: 'ขยายเวลาไม่ได้ — ชนเวลาปิดร้าน',
+        multiline: true,
+        rows: 2,
+      },
     ],
   },
   {
@@ -138,6 +155,12 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_reviews_empty_hint', label: 'คำใบ้ไม่มีคลิป' },
       { key: 'ui_shop_picker_title', label: 'หัวข้อเลือกร้าน' },
       { key: 'ui_shop_picker_subtitle', label: 'คำบรรยายเลือกร้าน' },
+    ],
+  },
+  {
+    title: 'แอดมิน',
+    fields: [
+      { key: 'ui_admin_add_staff_btn', label: 'ปุ่มเพิ่มช่าง (หน้าแอดมิน > ผู้ใช้)', placeholder: 'เพิ่มช่าง' },
     ],
   },
   {

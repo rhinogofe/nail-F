@@ -85,6 +85,217 @@ export function formatSlotDuration(slot, fallbackSlotHours = DEFAULT_SLOT_HOURS)
   return `${mins} นาที`
 }
 
+export function sumOptionDurationMinutes(options, optionIds) {
+  const ids = new Set((optionIds || []).map(String))
+  return (options || [])
+    .filter((opt) => ids.has(String(opt.id)))
+    .reduce((sum, opt) => sum + Math.max(0, Number(opt.duration_min) || 0), 0)
+}
+
+export function formatDurationMinutes(minutes) {
+  const mins = Math.max(0, Number(minutes) || 0)
+  if (!mins) return '0 นาที'
+  const hours = Math.floor(mins / 60)
+  const rem = mins % 60
+  if (hours && rem) return `${hours} ชม. ${rem} น.`
+  if (hours) return `${hours} ชม.`
+  return `${rem} น.`
+}
+
+export const MIN_GAP_SLOT_MINUTES = 60
+
+export function getOfferedSlotMinutes(baseSlot, slotHours = DEFAULT_SLOT_HOURS) {
+  const startM = slotStartMinutes(baseSlot)
+  const endM = slotEndMinutes(baseSlot)
+  if (endM > startM) return endM - startM
+  return normalizeBookingSlotHours(slotHours) * 60
+}
+
+export function applyServiceDurationToSlot(baseSlot, totalServiceMinutes, slotHours = DEFAULT_SLOT_HOURS) {
+  if (!baseSlot) return null
+  const minMinutes = getOfferedSlotMinutes(baseSlot, slotHours)
+  const serviceMinutes = Math.max(0, Number(totalServiceMinutes) || 0)
+  const effectiveMinutes = Math.max(minMinutes, serviceMinutes)
+  const startM = slotStartMinutes(baseSlot)
+  const endM = startM + effectiveMinutes
+  if (endM > 24 * 60) return null
+  const endHour = Math.floor(endM / 60)
+  const endMinute = endM % 60
+  if (endHour > 23 || (endHour === 23 && endMinute > 59)) return null
+  return makeBookingSlot(baseSlot.startHour, baseSlot.startMinute ?? 0, endHour, endMinute)
+}
+
+function mergeOccupiedIntervals(intervals) {
+  const sorted = [...intervals]
+    .filter((i) => i.endM > i.startM)
+    .sort((a, b) => a.startM - b.startM)
+  const merged = []
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1]
+    if (!last || interval.startM > last.endM) {
+      merged.push({ ...interval })
+    } else if (interval.endM > last.endM) {
+      last.endM = interval.endM
+    }
+  }
+  return merged
+}
+
+function dynamicBlockIntervals(blocks) {
+  const result = []
+  for (const block of blocks || []) {
+    if (block.is_full_day) return [{ startM: 0, endM: 24 * 60, fullDay: true }]
+    if (block.start_hour == null || block.end_hour == null) continue
+    result.push({
+      startM: Number(block.start_hour) * 60,
+      endM: Number(block.end_hour) * 60,
+    })
+  }
+  return result
+}
+
+function dynamicBookingIntervals(bookings, slotHours, excludeBookingId) {
+  return (bookings || [])
+    .filter((b) => b.status !== 'cancelled' && String(b.id) !== String(excludeBookingId ?? ''))
+    .map((b) => {
+      const slot = bookingRowToSlot(b, slotHours)
+      return { startM: slotStartMinutes(slot), endM: slotEndMinutes(slot) }
+    })
+}
+
+function makeDynamicSlot(startM, endM, baseDurationMinutes) {
+  const hour = Math.floor(startM / 60)
+  const minute = startM % 60
+  const endHour = Math.floor(endM / 60)
+  const endMinute = endM % 60
+  return makeBookingSlot(hour, minute, endHour, endMinute)
+}
+
+export function buildDynamicBookableSlots({
+  slotHours = DEFAULT_SLOT_HOURS,
+  bookings = [],
+  blocks = [],
+  dayWindows = [],
+  openHour = 9,
+  lastBookingHour = 18,
+  excludeBookingId = null,
+  minGapMinutes = MIN_GAP_SLOT_MINUTES,
+}) {
+  const slot = normalizeBookingSlotHours(slotHours)
+  const slotLenM = slot * 60
+  const maxEndM = getMaxEndMinutesForDay({
+    dayWindows,
+    openHour,
+    lastBookingHour,
+    slotHours: slot,
+  })
+  const timelineStartM = dayWindows?.length
+    ? Math.min(...normalizeDayWindows(dayWindows).map((w) => toMinutesFromHm(w.start_hour, w.start_minute)))
+    : normalizeShopOpenHour(openHour) * 60
+
+  const occupied = mergeOccupiedIntervals([
+    ...dynamicBookingIntervals(bookings, slot, excludeBookingId),
+    ...dynamicBlockIntervals(blocks),
+  ])
+  if (occupied.some((o) => o.fullDay)) return []
+
+  const result = []
+  let cursor = timelineStartM
+
+  while (cursor < maxEndM) {
+    const inside = occupied.find((o) => cursor >= o.startM && cursor < o.endM)
+    if (inside) {
+      cursor = inside.endM
+      continue
+    }
+
+    const nextStart = occupied
+      .filter((o) => o.startM > cursor)
+      .reduce((min, o) => Math.min(min, o.startM), maxEndM)
+
+    const space = nextStart - cursor
+    if (space >= slotLenM) {
+      result.push(makeDynamicSlot(cursor, cursor + slotLenM))
+      cursor += slotLenM
+    } else if (space >= minGapMinutes) {
+      result.push(makeDynamicSlot(cursor, cursor + space))
+      cursor += space
+    } else {
+      cursor = nextStart
+    }
+  }
+
+  return result
+}
+
+export function buildDynamicTimelineSlots(params) {
+  const slot = normalizeBookingSlotHours(params.slotHours)
+  const booked = (params.bookings || [])
+    .filter((b) => b.status !== 'cancelled' && String(b.id) !== String(params.excludeBookingId ?? ''))
+    .map((b) => bookingRowToSlot(b, slot))
+  const available = buildDynamicBookableSlots(params)
+  return {
+    booked,
+    available,
+    all: [...booked, ...available].sort((a, b) => slotStartMinutes(a) - slotStartMinutes(b)),
+  }
+}
+
+export function isDynamicSlotAvailable(slot, params) {
+  const { available } = buildDynamicTimelineSlots(params)
+  return available.some((s) => slotKey(s) === slotKey(slot))
+}
+
+export function getMaxEndMinutesForDay({ dayWindows = [], openHour = 9, lastBookingHour = 18, slotHours = DEFAULT_SLOT_HOURS }) {
+  const windows = normalizeDayWindows(dayWindows)
+  if (windows.length) {
+    return Math.max(...windows.map((w) => toMinutesFromHm(w.end_hour, w.end_minute)))
+  }
+  const slot = normalizeBookingSlotHours(slotHours)
+  const open = normalizeShopOpenHour(openHour)
+  const last = normalizeShopLastBookingHour(lastBookingHour, open, slot)
+  return toMinutesFromHm(last + slot, 0)
+}
+
+export function getExtendedSlotBlockReason(baseSlot, extendedSlot, params = {}) {
+  if (!baseSlot || !extendedSlot) return null
+  if (slotStartMinutes(extendedSlot) !== slotStartMinutes(baseSlot)) return null
+  if (slotKey(baseSlot) === slotKey(extendedSlot)) return null
+
+  const {
+    blocks = [],
+    bookings = [],
+    excludeBookingId = null,
+    dayWindows = [],
+    openHour = 9,
+    lastBookingHour = 18,
+    slotHours = DEFAULT_SLOT_HOURS,
+    allowPastClose = false,
+  } = params
+
+  if (isSlotBlockedByMinutes(extendedSlot, blocks)) return 'blocked'
+  if (hasBookingOverlapForSlot(extendedSlot, bookings, excludeBookingId)) return 'next_booking'
+
+  const maxEnd = getMaxEndMinutesForDay({ dayWindows, openHour, lastBookingHour, slotHours })
+  if (!allowPastClose && slotEndMinutes(extendedSlot) > maxEnd) return 'closing_time'
+
+  return null
+}
+
+export function canBookExtendedSlot(baseSlot, extendedSlot, params = {}) {
+  if (!baseSlot || !extendedSlot) return false
+  if (slotStartMinutes(extendedSlot) !== slotStartMinutes(baseSlot)) return false
+  if (slotKey(baseSlot) === slotKey(extendedSlot)) return true
+  return getExtendedSlotBlockReason(baseSlot, extendedSlot, params) === null
+}
+
+export function computeEffectiveBookingSlot(baseSlot, options, optionIds, slotHours, extendEnabled = true) {
+  if (!baseSlot) return null
+  if (!extendEnabled) return baseSlot
+  const totalMinutes = sumOptionDurationMinutes(options, optionIds)
+  return applyServiceDurationToSlot(baseSlot, totalMinutes, slotHours) || baseSlot
+}
+
 export function bookingRowToSlot(booking, slotHours = DEFAULT_SLOT_HOURS) {
   const slot = normalizeBookingSlotHours(slotHours)
   const startHour = Number(booking.start_hour)
@@ -155,9 +366,77 @@ export function getUsedHoursForDayWindows(dayWindows) {
   return used
 }
 
+function dayWindowOccupiedIntervals(dayWindows) {
+  return normalizeDayWindows(dayWindows)
+    .map((window) => ({
+      startM: toMinutesFromHm(window.start_hour, window.start_minute),
+      endM: toMinutesFromHm(window.end_hour, window.end_minute),
+    }))
+    .filter((i) => i.endM > i.startM)
+    .sort((a, b) => a.startM - b.startM)
+}
+
+function isMinuteInsideOccupied(minute, intervals) {
+  return intervals.some((i) => minute >= i.startM && minute < i.endM)
+}
+
+const MAX_DAY_END_MINUTE = 23 * 60 + 59
+
+export function maxEndMinutesForDayHourStart(startM, dayWindows) {
+  const start = Number(startM)
+  const intervals = dayWindowOccupiedIntervals(dayWindows)
+  const next = intervals.find((i) => i.startM > start)
+  return next ? next.startM : MAX_DAY_END_MINUTE
+}
+
+/** When editing, allow extending end into the next touching slot (cascade) up to just before that slot's end. */
+export function maxEndMinutesForDayHourEdit(startM, dayWindowsExceptEditing, { editingId, originalEndM, allWindows }) {
+  const baseMax = maxEndMinutesForDayHourStart(startM, dayWindowsExceptEditing)
+  if (editingId == null || originalEndM == null) return baseMax
+
+  const sorted = normalizeDayWindows(allWindows || dayWindowsExceptEditing)
+    .slice()
+    .sort(
+      (a, b) =>
+        toMinutesFromHm(a.start_hour, a.start_minute)
+        - toMinutesFromHm(b.start_hour, b.start_minute),
+    )
+
+  const idx = sorted.findIndex((w) => String(w.id) === String(editingId))
+  if (idx < 0) return baseMax
+
+  const next = sorted[idx + 1]
+  if (!next) return baseMax
+
+  const nextStartM = toMinutesFromHm(next.start_hour, next.start_minute ?? 0)
+  const nextEndM = toMinutesFromHm(next.end_hour, next.end_minute ?? 0)
+  if (nextStartM === originalEndM && nextEndM > originalEndM) {
+    return Math.min(nextEndM - 1, MAX_DAY_END_MINUTE)
+  }
+
+  return baseMax
+}
+
+export function availableStartMinutesForHour(hour, dayWindows) {
+  const intervals = dayWindowOccupiedIntervals(dayWindows)
+  const result = []
+  const hourStart = Number(hour) * 60
+  for (let m = 0; m <= 59; m += 1) {
+    const startM = hourStart + m
+    if (startM >= MAX_DAY_END_MINUTE) break
+    if (!isMinuteInsideOccupied(startM, intervals)) {
+      result.push(m)
+    }
+  }
+  return result
+}
+
 export function availableStartHoursForDay(dayWindows) {
-  const used = getUsedHoursForDayWindows(dayWindows)
-  return Array.from({ length: 24 }, (_, h) => h).filter((h) => !used.has(h))
+  const hours = []
+  for (let h = 0; h <= 23; h += 1) {
+    if (availableStartMinutesForHour(h, dayWindows).length) hours.push(h)
+  }
+  return hours
 }
 
 function normalizeDayWindow(window) {
@@ -419,6 +698,38 @@ export function buildBookingSlotSelectOptions(params, { excludeSlotKey = null, i
   const windows = normalizeDayWindows(params.dayWindows)
   const slot = normalizeBookingSlotHours(params.slotHours)
   const isSlotsBlockMode = params.displayMode === 'slots_2h'
+
+  if (params.extendByServices) {
+    let slots = buildDynamicBookableSlots(params)
+    if (excludeSlotKey) {
+      slots = slots.filter((s) => slotKey(s) !== excludeSlotKey)
+    }
+    const options = slots.map((s) => ({
+      key: slotKey(s),
+      hour: s.startHour,
+      startMinute: s.startMinute,
+      endHour: s.endHour,
+      endMinute: s.endMinute,
+      slot: s,
+      label: slotLabel(s),
+    }))
+    if (includeSlotKey && !options.some((o) => o.key === includeSlotKey)) {
+      const parsed = parseSlotKey(includeSlotKey)
+      if (parsed) {
+        options.push({
+          key: includeSlotKey,
+          hour: parsed.startHour,
+          startMinute: parsed.startMinute,
+          endHour: parsed.endHour,
+          endMinute: parsed.endMinute,
+          slot: parsed,
+          label: slotLabel(parsed),
+        })
+        options.sort((a, b) => slotStartMinutes(a.slot) - slotStartMinutes(b.slot))
+      }
+    }
+    return options
+  }
 
   if (windows.length) {
     let slots = buildBookableDayWindowSlots(params)

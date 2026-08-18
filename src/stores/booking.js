@@ -38,6 +38,8 @@ export const useBookingStore = defineStore('booking', {
     shopOpenHour: 9,
     shopLastBookingHour: 18,
     bookingSlotHours: 2,
+    extendBookingByServices: false,
+    extendBookingPastClose: false,
     advanceDays: 30,
     bookUntilDate: '',
     bookingDisplayMode: 'slots_2h',
@@ -177,6 +179,8 @@ export const useBookingStore = defineStore('booking', {
           data.slot_hours
         )
         this.bookingSlotHours = normalizeBookingSlotHours(data.slot_hours)
+        this.extendBookingByServices = data.extend_booking_by_services === true
+        this.extendBookingPastClose = data.extend_booking_past_close === true
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }

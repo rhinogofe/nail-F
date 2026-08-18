@@ -12,14 +12,20 @@ import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
 import {
   buildVisibleSlots,
   buildDayWindowSlots,
+  buildDynamicTimelineSlots,
+  isDynamicSlotAvailable,
   canBookSlot,
   canBookDayWindowSlot,
+  getExtendedSlotBlockReason,
+  computeEffectiveBookingSlot,
   slotTimeLabel as formatSlotTimeLabel,
+  slotLabel,
   hourToSlot,
   slotKey,
-  slotLabel,
   bookingRowToSlot,
   formatSlotDuration,
+  sumOptionDurationMinutes,
+  formatDurationMinutes,
 } from '../utils/bookingSlots'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
@@ -86,6 +92,16 @@ const selectedServicesTotalPrice = computed(() => {
   const sum = selectedOptionalServices.value.reduce((acc, opt) => acc + (Number(opt.price) || 0), 0)
   return sum > 0 ? sum : null
 })
+const selectedServicesForDisplay = computed(() => {
+  const ids = new Set(selectedOptionIds.value.map(String))
+  return nailOptions.value.filter((opt) => ids.has(String(opt.id)))
+})
+const selectedServicesTotalMinutes = computed(() =>
+  sumOptionDurationMinutes(nailOptions.value, selectedOptionIds.value)
+)
+const selectedServicesTotalDurationLabel = computed(() =>
+  formatDurationMinutes(selectedServicesTotalMinutes.value)
+)
 function categorySelectionCount(categoryId) {
   return selectedOptionalServices.value.filter((opt) => {
     const catId = opt.category_id || UNCategorized_CATEGORY_ID
@@ -227,7 +243,16 @@ const slotBuildParams = computed(() => ({
   bookings: bookings.value,
   displayMode: bookingStore.bookingDisplayMode,
   slotHours: bookingStore.bookingSlotHours,
+  extendByServices: bookingStore.extendBookingByServices,
 }))
+
+function dynamicSlotParams() {
+  return {
+    ...slotBuildParams.value,
+    dayWindows: dayHoursForDate.value,
+    allowPastClose: bookingStore.extendBookingPastClose,
+  }
+}
 
 const selectedDateLabel = computed(() => {
   const d = parseYmdLocal(selectedDate.value)
@@ -238,16 +263,68 @@ const monthLabel = computed(() => {
   return `${thMonths[d.getMonth()]} ${d.getFullYear() + 543}`
 })
 const pendingTimeLabel = computed(() => {
-  const slot = pendingSlot.value
+  const slot = effectiveBookingSlot.value || pendingSlot.value
   if (!slot) return ''
   return `${slotLabel(slot)} น.`
 })
+const effectiveBookingSlot = computed(() => {
+  const base = pendingSlot.value
+  if (!base) return null
+  return computeEffectiveBookingSlot(
+    base,
+    nailOptions.value,
+    selectedOptionIds.value,
+    bookingStore.bookingSlotHours,
+    bookingStore.extendBookingByServices,
+  )
+})
 const slotDurationLabel = computed(() => {
-  if (pendingSlot.value) {
-    return formatSlotDuration(pendingSlot.value, bookingStore.bookingSlotHours)
+  const slot = effectiveBookingSlot.value || pendingSlot.value
+  if (slot) {
+    return formatSlotDuration(slot, bookingStore.bookingSlotHours)
   }
   return `${bookingStore.bookingSlotHours} ชั่วโมง`
 })
+const serviceDurationExtendHint = computed(() => {
+  if (!bookingStore.extendBookingByServices || !pendingSlot.value) return ''
+  const base = pendingSlot.value
+  const effective = effectiveBookingSlot.value
+  if (!effective || slotKey(base) === slotKey(effective)) return ''
+  if (serviceExtendBlockReason.value) return ''
+  const mins = sumOptionDurationMinutes(nailOptions.value, selectedOptionIds.value)
+  const baseMins = bookingStore.bookingSlotHours * 60
+  if (mins <= baseMins) return ''
+  return `บริการรวม ${formatSlotDuration(effective, bookingStore.bookingSlotHours)} — ปรับเวลาจองเป็น ${slotLabel(effective)} น.`
+})
+
+function resolveExtendBlockMessage(reason) {
+  if (reason === 'next_booking') {
+    return ui.get(
+      'ui_extend_blocked_next_booking',
+      'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากมีคิวต่อถัดไปไม่สามารถขยายเวลาได้'
+    )
+  }
+  if (reason === 'closing_time') {
+    return ui.get(
+      'ui_extend_blocked_closing',
+      'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากชนเวลาปิดร้านไม่สามารถขยายเวลาได้'
+    )
+  }
+  return ''
+}
+
+const serviceExtendBlockReason = computed(() => {
+  if (!bookingStore.extendBookingByServices || !pendingSlot.value) return null
+  if (!selectedOptionIds.value.length) return null
+  const base = pendingSlot.value
+  const extended = effectiveBookingSlot.value
+  if (!extended) return null
+  return getExtendedSlotBlockReason(base, extended, dynamicSlotParams())
+})
+
+const serviceExtendBlockMessage = computed(() =>
+  resolveExtendBlockMessage(serviceExtendBlockReason.value)
+)
 const requiredLocationLabel = computed(() =>
   nailOptions.value
     .filter(opt => opt.is_required)
@@ -259,6 +336,8 @@ const canSubmitBooking = computed(() => {
   const required = requiredOptions.value
   const requiredOk = !required.length || required.every((opt) => selectedOptionIds.value.includes(opt.id))
   if (!requiredOk) return false
+
+  if (serviceExtendBlockReason.value) return false
 
   if (hasCategoryStep.value) {
     return selectedOptionalServices.value.length > 0
@@ -276,6 +355,10 @@ function missingRequiredOptionNames() {
   return nailOptions.value
     .filter(opt => opt.is_required && !selectedOptionIds.value.includes(opt.id))
     .map(opt => opt.option_name)
+}
+
+function formatOptionDuration(opt) {
+  return formatDurationMinutes(opt?.duration_min)
 }
 
 function occupiedSlotLabel(status) {
@@ -321,6 +404,9 @@ function bookingForSlot(slot) {
 }
 
 function canBook(slot) {
+  if (bookingStore.extendBookingByServices) {
+    return isDynamicSlotAvailable(slot, dynamicSlotParams())
+  }
   if (usesCustomDayHours.value) {
     return canBookDayWindowSlot(slot, {
       blocks: blockedSlots.value,
@@ -332,6 +418,9 @@ function canBook(slot) {
 
 const visibleSlots = computed(() => {
   const params = slotBuildParams.value
+  if (bookingStore.extendBookingByServices) {
+    return buildDynamicTimelineSlots(dynamicSlotParams()).all
+  }
   if (usesCustomDayHours.value) {
     return buildDayWindowSlots({
       dayWindows: dayHoursForDate.value,
@@ -371,6 +460,8 @@ function bookingSettingsSnapshot() {
     shopOpenHour: bookingStore.shopOpenHour,
     shopLastBookingHour: bookingStore.shopLastBookingHour,
     bookingSlotHours: bookingStore.bookingSlotHours,
+    extendBookingByServices: bookingStore.extendBookingByServices,
+    extendBookingPastClose: bookingStore.extendBookingPastClose,
     advanceDays: bookingStore.advanceDays,
     bookUntilDate: bookingStore.bookUntilDate,
     bookingDisplayMode: bookingStore.bookingDisplayMode,
@@ -384,6 +475,8 @@ function hasBookingSettingsChanged(before, after) {
     before.shopOpenHour !== after.shopOpenHour ||
     before.shopLastBookingHour !== after.shopLastBookingHour ||
     before.bookingSlotHours !== after.bookingSlotHours ||
+    before.extendBookingByServices !== after.extendBookingByServices ||
+    before.extendBookingPastClose !== after.extendBookingPastClose ||
     before.advanceDays !== after.advanceDays ||
     before.bookUntilDate !== after.bookUntilDate ||
     before.bookingDisplayMode !== after.bookingDisplayMode ||
@@ -397,6 +490,7 @@ async function syncBookingSettings({ refreshLayout = true } = {}) {
   await Promise.all([
     bookingStore.fetchBookingSettings(),
     bookingStore.fetchAllNailOptions(),
+    ui.fetch().catch(() => null),
   ])
   const after = bookingSettingsSnapshot()
   if (!refreshLayout || !hasBookingSettingsChanged(before, after)) return false
@@ -430,11 +524,36 @@ async function pollCurrentDate() {
   }
 }
 
-async function ensureSlotStillAvailable(slot) {
+async function ensureSlotStillAvailable(slot, optionIds = []) {
   await Promise.all([
     refreshSlotData(),
     bookingStore.fetchDayHoursForDate(selectedDate.value),
   ])
+
+  if (bookingStore.extendBookingByServices) {
+    const params = dynamicSlotParams()
+    if (!isDynamicSlotAvailable(slot, params)) {
+      serviceError.value = ui.get('ui_slot_taken_error', 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น')
+      return false
+    }
+    if (optionIds.length) {
+      const extended = computeEffectiveBookingSlot(
+        slot,
+        nailOptions.value,
+        optionIds,
+        bookingStore.bookingSlotHours,
+        true,
+      )
+      const params = dynamicSlotParams()
+      const reason = extended && getExtendedSlotBlockReason(slot, extended, params)
+      if (reason) {
+        serviceError.value = resolveExtendBlockMessage(reason)
+        return false
+      }
+    }
+    return true
+  }
+
   const key = slotKey(slot)
   const stillListed = visibleSlots.value.some((s) => slotKey(s) === key)
   const stillFree = canBook(slot) && !bookingForSlot(slot)
@@ -442,6 +561,7 @@ async function ensureSlotStillAvailable(slot) {
     serviceError.value = ui.get('ui_slot_taken_error', 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น')
     return false
   }
+
   return true
 }
 
@@ -533,11 +653,12 @@ async function submitBooking() {
   busy.value = true
   serviceError.value = ''
   try {
-    if (!(await ensureSlotStillAvailable(slot))) return
+    if (!(await ensureSlotStillAvailable(slot, selectedOptionIds.value))) return
 
+    const submitSlot = effectiveBookingSlot.value || slot
     const booking = await bookingStore.bookSlot(
       selectedDate.value,
-      slot,
+      submitSlot,
       selectedOptionIds.value.map(String),
     )
     closeBookSheet()
@@ -551,10 +672,10 @@ async function submitBooking() {
       path: shopPath(`/payment/${booking.id}`),
       query: {
         date: selectedDate.value,
-        start: String(slot.startHour),
-        startMin: String(slot.startMinute ?? 0),
-        end: String(slot.endHour),
-        endMin: String(slot.endMinute ?? 0),
+        start: String(submitSlot.startHour),
+        startMin: String(submitSlot.startMinute ?? 0),
+        end: String(submitSlot.endHour),
+        endMin: String(submitSlot.endMinute ?? 0),
       },
     })
   } catch (error) {
@@ -630,7 +751,7 @@ async function nextWeek() {
 }
 
 function displaySlotLabel(slot) {
-  if (usesCustomDayHours.value) return slotLabel(slot)
+  if (bookingStore.extendBookingByServices || usesCustomDayHours.value) return slotLabel(slot)
   return formatSlotTimeLabel(slot.startHour, isSlots2hMode.value, bookingStore.bookingSlotHours)
 }
 
@@ -930,20 +1051,26 @@ onUnmounted(() => {
                 <span class="info-label"><i class="ti ti-clock info-ic" aria-hidden="true"></i>เวลา</span>
                 <span class="info-val">{{ pendingTimeLabel }}</span>
               </div>
-              <template v-if="selectedOptionalServices.length">
+              <div v-if="serviceDurationExtendHint" class="info-row">
+                <span class="info-label"><i class="ti ti-hourglass info-ic" aria-hidden="true"></i>ระยะเวลา</span>
+                <span class="info-val">{{ serviceDurationExtendHint }}</span>
+              </div>
+              <template v-if="selectedServicesForDisplay.length">
                 <div class="info-row info-row-stack">
                   <span class="info-label"><i class="ti ti-list-check info-ic" aria-hidden="true"></i>บริการที่เลือก</span>
                   <ul class="selected-services-items">
                     <li
-                      v-for="opt in selectedOptionalServices"
+                      v-for="opt in selectedServicesForDisplay"
                       :key="`picked-${opt.id}`"
                       class="selected-service-item"
                     >
                       <span class="selected-service-name">{{ opt.option_name }}</span>
+                      <span class="selected-service-duration">{{ formatOptionDuration(opt) }}</span>
                       <span v-if="Number(opt.price) > 0" class="selected-service-price">
                         {{ Number(opt.price).toLocaleString('th-TH') }} บ.
                       </span>
                       <button
+                        v-if="!opt.is_required"
                         type="button"
                         class="selected-service-remove"
                         aria-label="ลบรายการ"
@@ -953,8 +1080,11 @@ onUnmounted(() => {
                       </button>
                     </li>
                   </ul>
-                  <span v-if="selectedServicesTotalPrice != null" class="selected-services-total">
-                    รวม {{ selectedServicesTotalPrice.toLocaleString('th-TH') }} บาท
+                  <span class="selected-services-total">
+                    รวมเวลา {{ selectedServicesTotalDurationLabel }}
+                    <template v-if="selectedServicesTotalPrice != null">
+                      · {{ selectedServicesTotalPrice.toLocaleString('th-TH') }} บาท
+                    </template>
                   </span>
                 </div>
               </template>
@@ -1004,6 +1134,9 @@ onUnmounted(() => {
                   </span>
                   <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
                 </span>
+                <span class="option-meta">
+                  <span class="option-duration">{{ formatOptionDuration(opt) }}</span>
+                </span>
               </label>
 
               <label
@@ -1026,9 +1159,24 @@ onUnmounted(() => {
                   <span class="option-name">{{ opt.option_name }}</span>
                   <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
                 </span>
-                <span v-if="Number(opt.price) > 0" class="option-price"></span>
+                <span class="option-meta">
+                  <span class="option-duration">{{ formatOptionDuration(opt) }}</span>
+                  <span v-if="Number(opt.price) > 0" class="option-price">
+                    {{ Number(opt.price).toLocaleString('th-TH') }} บ.
+                  </span>
+                </span>
               </label>
             </div>
+
+            <p v-if="selectedServicesForDisplay.length && !serviceExtendBlockMessage" class="services-duration-summary">
+              <i class="ti ti-hourglass" aria-hidden="true"></i>
+              รวมเวลาบริการที่เลือก <strong>{{ selectedServicesTotalDurationLabel }}</strong>
+            </p>
+
+            <p v-if="serviceExtendBlockMessage" class="sheet-warn" role="alert">
+              <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+              {{ serviceExtendBlockMessage }}
+            </p>
 
             <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>
 
@@ -1392,6 +1540,12 @@ onUnmounted(() => {
   font-weight: 500;
   color: var(--color-text-primary);
 }
+.selected-service-duration {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  white-space: nowrap;
+}
 .selected-service-price {
   font-size: 12px;
   font-weight: 600;
@@ -1421,6 +1575,34 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-primary-dark);
+}
+.services-duration-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-primary-light) 45%, white);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
+}
+.services-duration-summary strong {
+  color: var(--color-primary-dark);
+}
+.option-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.option-duration {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 .category-strip-wrap {
   margin-bottom: 12px;
@@ -1495,6 +1677,25 @@ onUnmounted(() => {
   color: var(--color-error);
   font-size: 12px;
   font-weight: 500;
+}
+.sheet-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.22);
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.sheet-warn i {
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 .option-list {
   display: flex;

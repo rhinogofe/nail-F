@@ -14,7 +14,7 @@ const adminSwal = Swal.mixin({
     container: 'swal-over-app-modal',
   },
 })
-import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, getUsedHoursForDayWindows, availableStartHoursForDay, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey } from '../utils/bookingSlots'
+import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
 import { imageUrlHint } from '../utils/imageUrl'
@@ -27,6 +27,7 @@ import {
   optionsForCategory,
   UNCategorized_CATEGORY_ID,
 } from '../utils/bookingOptionsResponse'
+import { useAdminBookingRealtime } from '../composables/useAdminBookingRealtime'
 
 const router = useRouter()
 const { shopPath, shopSlug } = useShopRoute()
@@ -56,6 +57,17 @@ function scrollToAdminSection(sectionId, focusSelector) {
   if (settingsKey) {
     activeTab.value = 'settings'
     activeSettingsSection.value = settingsKey
+    if (!isMobile.value) settingsNavOpen.value = true
+    focusAdminSectionEl(sectionId, focusSelector)
+    return
+  }
+  const blocksKey = blocksSectionById[sectionId]
+  if (blocksKey) {
+    activeTab.value = 'blocks'
+    activeBlocksSection.value = blocksKey
+    if (blocksKey !== 'day-hours') closeDayHoursDate()
+    closeBlockDay()
+    if (!isMobile.value) blocksNavOpen.value = true
     focusAdminSectionEl(sectionId, focusSelector)
     return
   }
@@ -214,6 +226,8 @@ const lineWebhookUrlHint = computed(() => {
   return `${base}${lineWebhookPath.value}`
 })
 const isSuperAdmin = computed(() => auth.isSuperAdmin)
+const canManageShopAdmins = computed(() => isSuperAdmin.value || shopSlug.value !== 'default')
+const staffAddBtnLabel = computed(() => uiSettingsStore.get('ui_admin_add_staff_btn', 'เพิ่มช่าง'))
 const unpaidAutoCancelEnabled = ref(true)
 const unpaidExpireHours = ref(24)
 const useCouponCode = ref('')
@@ -357,6 +371,7 @@ const bookingAddHourOptions = computed(() =>
     bookings: bookingAddSlotBookings.value,
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
+    extendByServices: extendBookingByServices.value,
   })
 )
 
@@ -411,6 +426,7 @@ const bookingEditHourOptions = computed(() => {
     bookings: bookingEditSlotBookings.value,
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
+    extendByServices: extendBookingByServices.value,
     excludeBookingId: bookingEditItem.value?.id,
   }, {
     excludeSlotKey: sameDay ? bookingEditOriginalSlotKey.value : null,
@@ -450,7 +466,7 @@ const adminTabs = [
   { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
   { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
   { key: 'ui', label: 'UI', icon: 'ti-palette' },
-  { key: 'blocks', label: 'ปิดร้าน', icon: 'ti-calendar-off' },
+  { key: 'blocks', label: 'เวลา', icon: 'ti-calendar-off' },
   { key: 'reviews', label: 'รีวิว', icon: 'ti-star' },
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
@@ -463,10 +479,7 @@ const settingsSections = [
   { key: 'unpaid', id: 'settings-unpaid', label: 'ยกเลิกอัตโนมัติ', icon: 'ti-clock-pause' },
   { key: 'shops', id: 'settings-shops', label: 'ร้าน / สาขา', icon: 'ti-building-store' },
   { key: 'register-pin', id: 'settings-register-pin', label: 'รหัสสร้างร้านค้า', icon: 'ti-lock', superAdminOnly: true },
-  { key: 'hours', id: 'settings-shop-hours', label: 'เวลาจองคิว (รายวัน)', icon: 'ti-clock' },
-  { key: 'display', id: 'settings-booking-display', label: 'แสดงเวลาจอง', icon: 'ti-layout-list' },
   { key: 'locations', id: 'settings-locations', label: 'สถานที่บริการ', icon: 'ti-map-pin' },
-  { key: 'advance', id: 'settings-advance-days', label: 'จองล่วงหน้า', icon: 'ti-calendar-event' },
   { key: 'use-coupon', id: 'settings-use-coupon', label: 'ใช้คูปอง', icon: 'ti-scan' },
 ]
 
@@ -487,12 +500,23 @@ const activeUiSection = ref(0)
 const settingsNavOpen = ref(false)
 const uiNavOpen = ref(false)
 const blocksSections = [
-  { key: 'shop-hours', label: 'เวลาเปิด-ปิด', icon: 'ti-clock' },
+  { key: 'shop-hours', label: 'เวลาเปิด-ปิดปกติ', icon: 'ti-clock' },
+  { key: 'day-hours', label: 'เวลาเปิด-ปิดเฉพาะวัน', icon: 'ti-calendar-time' },
+  { key: 'slot-display', label: 'ความยาวคิว & แสดงผล', icon: 'ti-layout-list' },
+  { key: 'advance', label: 'จองล่วงหน้า', icon: 'ti-calendar-event' },
   { key: 'bulk', label: 'ปิดหลายวัน', icon: 'ti-calendar-stats' },
   { key: 'calendar', label: 'ปิดทีละวัน', icon: 'ti-calendar' },
 ]
+const blocksSectionById = {
+  'blocks-day-hours': 'day-hours',
+  'blocks-slot-display': 'slot-display',
+  'blocks-shop-hours': 'shop-hours',
+  'blocks-advance-days': 'advance',
+}
 const activeBlocksSection = ref('shop-hours')
 const blocksNavOpen = ref(false)
+const bookingMenuId = ref(null)
+const setupWizardDismissed = ref(false)
 const isMobile = ref(false)
 let adminMobileMq = null
 
@@ -514,14 +538,27 @@ const blocksToolbarSubtitle = computed(() => {
   if (selectedBlockDate.value && activeBlocksSection.value === 'calendar') {
     return formatServiceDateLabel(selectedBlockDate.value)
   }
-  if (activeBlocksSection.value === 'shop-hours') {
-    return 'เวลาเปิด-ปิดร้านปกติทุกวัน'
+  if (selectedDayHoursDate.value && activeBlocksSection.value === 'day-hours') {
+    return formatServiceDateLabel(selectedDayHoursDate.value)
   }
-  return 'ปิดวัน / ปิดช่วงเวลา'
+  const meta = {
+    'shop-hours': 'เวลาเปิด-ปิดร้านปกติทุกวัน',
+    'day-hours': 'ตั้งเวลาเปิด-ปิดเฉพาะวันที่',
+    'slot-display': 'ความยาวคิวและรูปแบบแสดงหน้าจอง',
+    advance: 'กำหนดวันสุดท้ายที่ลูกค้าจองได้',
+    bulk: 'ปิดล่วงหน้าหลายวัน',
+    calendar: 'ปิดวัน / ปิดช่วงเวลา',
+  }
+  return meta[activeBlocksSection.value] || ''
 })
 
 function updateAdminMobileLayout() {
   isMobile.value = adminMobileMq?.matches ?? window.innerWidth <= 640
+  if (!isMobile.value) {
+    settingsNavOpen.value = true
+    uiNavOpen.value = true
+    blocksNavOpen.value = true
+  }
 }
 
 function toggleSettingsNav() {
@@ -536,6 +573,69 @@ function toggleBlocksNav() {
   blocksNavOpen.value = !blocksNavOpen.value
 }
 
+function toggleBookingMenu(id) {
+  bookingMenuId.value = bookingMenuId.value === id ? null : id
+}
+
+function closeBookingMenu() {
+  bookingMenuId.value = null
+}
+
+function loadSetupWizardDismissed() {
+  try {
+    setupWizardDismissed.value = localStorage.getItem(`admin-setup-dismissed-${shopSlug.value}`) === '1'
+  } catch {
+    setupWizardDismissed.value = false
+  }
+}
+
+function dismissSetupWizard() {
+  setupWizardDismissed.value = true
+  try {
+    localStorage.setItem(`admin-setup-dismissed-${shopSlug.value}`, '1')
+  } catch {
+    /* ignore */
+  }
+}
+
+const setupWizardSteps = computed(() => [
+  {
+    key: 'hours',
+    label: 'ตั้งเวลาเปิด-ปิดปกติ',
+    done: false,
+    go: () => goToBlocksSection('shop-hours'),
+  },
+  {
+    key: 'services',
+    label: 'เพิ่มบริการ',
+    done: nailOptions.value.length > 0,
+    go: () => switchTab('services'),
+  },
+  {
+    key: 'locations',
+    label: 'เพิ่มสถานที่ (ถ้ามีหลายจุด)',
+    done: serviceLocations.value.length > 0,
+    optional: true,
+    go: () => goToSettingsSection('locations'),
+  },
+  {
+    key: 'deposit',
+    label: 'ตรวจยอดมัดจำ',
+    done: Number(depositAmount.value) > 0,
+    go: () => goToSettingsSection('deposit'),
+  },
+])
+
+const setupWizardProgress = computed(() => {
+  const required = setupWizardSteps.value.filter((step) => !step.optional)
+  const done = required.filter((step) => step.done).length
+  return { done, total: required.length }
+})
+
+const showSetupWizard = computed(
+  () => !setupWizardDismissed.value && nailOptions.value.length === 0
+)
+
 function selectSettingsSection(key) {
   activeSettingsSection.value = key
   if (isMobile.value) settingsNavOpen.value = false
@@ -548,9 +648,38 @@ function selectUiSection(index) {
 
 function selectBlocksSection(key) {
   activeBlocksSection.value = key
-  if (key === 'bulk' || key === 'shop-hours') closeBlockDay()
-  if (key === 'shop-hours') closeDayHoursDate()
+  if (key !== 'day-hours') closeDayHoursDate()
+  if (key === 'bulk' || key === 'shop-hours' || key === 'slot-display' || key === 'advance') closeBlockDay()
   if (isMobile.value) blocksNavOpen.value = false
+}
+
+function goToBlocksSection(key) {
+  if (activeTab.value !== 'blocks') {
+    if (activeTab.value === 'services') closeServiceDay()
+    if (activeTab.value === 'bookings') closeBookingDay()
+    activeTab.value = 'blocks'
+    message.value = ''
+    errorMessage.value = ''
+  }
+  selectBlocksSection(key)
+  if (!isMobile.value) blocksNavOpen.value = true
+}
+
+function goToSettingsSection(key) {
+  if (activeTab.value !== 'settings') {
+    if (activeTab.value === 'services') closeServiceDay()
+    if (activeTab.value === 'bookings') closeBookingDay()
+    if (activeTab.value === 'blocks') {
+      closeBlockDay()
+      closeDayHoursDate()
+    }
+    activeTab.value = 'settings'
+    message.value = ''
+    errorMessage.value = ''
+  }
+  activeSettingsSection.value = key
+  if (!isMobile.value) settingsNavOpen.value = true
+  if (isMobile.value) settingsNavOpen.value = false
 }
 
 // ── Shop hours ─────────────────────────────
@@ -624,6 +753,9 @@ const selectedDayHoursDate = ref('')
 const dayHoursMonthList = ref([])
 const dayHoursForSelectedDate = ref([])
 const dayHourFormOpen = ref(false)
+const dayHourEditingId = ref(null)
+const dayHourEditOriginalEndM = ref(null)
+const dayHourGenerating = ref(false)
 const dayHourStartH = ref(9)
 const dayHourStartM = ref(0)
 const dayHourEndH = ref(18)
@@ -816,10 +948,25 @@ function adminShopLabel(user) {
   return user.admin_shop_slug || '-'
 }
 
+function canEditUserAdminRights(user) {
+  if (!canManageShopAdmins.value) return false
+  if (isSuperAdmin.value) return true
+  if (user?.is_super_admin) return false
+  if (user?.is_admin && user.admin_shop_slug && user.admin_shop_slug !== shopSlug.value) return false
+  return true
+}
+
+function canToggleUserAdmin(user) {
+  if (!canEditUserAdminRights(user)) return false
+  if (user.id === auth.user?.id && user.is_admin) return false
+  return true
+}
+
 async function loadUiSettingsAdmin() {
   try {
     const { data } = await api.get('/api/admin/settings/ui')
     uiForm.value = { ...(data || {}) }
+    uiSettingsStore.applyLocal(data || {})
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดตั้งค่า UI ไม่สำเร็จ'
   }
@@ -935,29 +1082,80 @@ const dayHoursMonthLabel = computed(() => {
 
 const dayHoursCalendarWeeks = computed(() => buildCalendarWeeks(dayHoursMonth.value))
 
-const dayHourAvailableStartHours = computed(() => availableStartHoursForDay(dayHoursForSelectedDate.value))
+const dayHoursExceptEditing = computed(() => {
+  if (!dayHourEditingId.value) return dayHoursForSelectedDate.value
+  return dayHoursForSelectedDate.value.filter((item) => item.id !== dayHourEditingId.value)
+})
+
+const dayHourAvailableStartHours = computed(() => availableStartHoursForDay(dayHoursExceptEditing.value))
+
+const dayHourAvailableStartMinutes = computed(() =>
+  availableStartMinutesForHour(dayHourStartH.value, dayHoursExceptEditing.value)
+)
 
 const dayHourCanAddMore = computed(() => dayHourAvailableStartHours.value.length > 0)
 
+const dayHourMaxEndM = computed(() => {
+  const startM = toMinutesFromHm(dayHourStartH.value, dayHourStartM.value)
+  if (dayHourEditingId.value != null && dayHourEditOriginalEndM.value != null) {
+    return maxEndMinutesForDayHourEdit(startM, dayHoursExceptEditing.value, {
+      editingId: dayHourEditingId.value,
+      originalEndM: dayHourEditOriginalEndM.value,
+      allWindows: dayHoursForSelectedDate.value,
+    })
+  }
+  return maxEndMinutesForDayHourStart(startM, dayHoursExceptEditing.value)
+})
+
 const dayHourEndHourOptions = computed(() => {
   const startM = toMinutesFromHm(dayHourStartH.value, dayHourStartM.value)
-  return hourOptions.filter((h) => h * 60 + 59 > startM && h <= 23)
+  const maxEndM = dayHourMaxEndM.value
+  return hourOptions.filter((h) => {
+    const hourStartM = h * 60
+    const hourEndM = h * 60 + 59
+    return hourEndM > startM && hourStartM <= maxEndM && h <= 23
+  })
 })
 
 const dayHourEndMinuteOptions = computed(() => {
   const startM = toMinutesFromHm(dayHourStartH.value, dayHourStartM.value)
+  const maxEndM = dayHourMaxEndM.value
   const endH = dayHourEndH.value
-  if (endH > dayHourStartH.value) return minuteOptions
-  return minuteOptions.filter((m) => toMinutesFromHm(endH, m) > startM)
+  return minuteOptions.filter((m) => {
+    const endM = toMinutesFromHm(endH, m)
+    return endM > startM && endM <= maxEndM
+  })
 })
+
+function defaultDayHourEndFromStart(startM, maxEndM) {
+  const preferred = startM + 60
+  if (preferred <= maxEndM) return preferred
+  if (maxEndM > startM) return maxEndM
+  return Math.min(startM + 1, maxEndM)
+}
+
+function applyDayHourEndMinutes(endM) {
+  dayHourEndH.value = Math.floor(endM / 60)
+  dayHourEndM.value = endM % 60
+}
+
+function syncDayHourEndAfterStartChange() {
+  const startM = toMinutesFromHm(dayHourStartH.value, dayHourStartM.value)
+  const maxEndM = dayHourMaxEndM.value
+  let endM = toMinutesFromHm(dayHourEndH.value, dayHourEndM.value)
+  if (endM <= startM || endM > maxEndM) {
+    applyDayHourEndMinutes(defaultDayHourEndFromStart(startM, maxEndM))
+    return
+  }
+  clampDayHourEndAfterStart()
+}
 
 function clampDayHourEndAfterStart() {
   const startM = toMinutesFromHm(dayHourStartH.value, dayHourStartM.value)
+  const maxEndM = dayHourMaxEndM.value
   let endM = toMinutesFromHm(dayHourEndH.value, dayHourEndM.value)
-  if (endM <= startM) {
-    endM = Math.min(startM + 1, toMinutesFromHm(23, 59))
-    dayHourEndH.value = Math.floor(endM / 60)
-    dayHourEndM.value = endM % 60
+  if (endM <= startM || endM > maxEndM) {
+    applyDayHourEndMinutes(defaultDayHourEndFromStart(startM, maxEndM))
     return
   }
   const allowedMinutes = dayHourEndMinuteOptions.value
@@ -1006,34 +1204,87 @@ async function loadDayHoursForDate(date) {
 
 async function openDayHoursDate(iso) {
   selectedDayHoursDate.value = iso
-  dayHourFormOpen.value = false
+  closeDayHourForm()
   await loadDayHoursForDate(iso)
 }
 
 function closeDayHoursDate() {
   selectedDayHoursDate.value = ''
   dayHoursForSelectedDate.value = []
-  dayHourFormOpen.value = false
+  closeDayHourForm()
 }
 
 function formatDayHourRange(item) {
   return `${formatHmLabel(item.start_hour, item.start_minute ?? 0)} – ${formatHmLabel(item.end_hour, item.end_minute ?? 0)}`
 }
 
+function closeDayHourForm() {
+  dayHourFormOpen.value = false
+  dayHourEditingId.value = null
+  dayHourEditOriginalEndM.value = null
+}
+
 function openDayHourForm() {
+  dayHourEditingId.value = null
   const available = dayHourAvailableStartHours.value
   if (!available.length) {
     errorMessage.value = 'ไม่มีช่วงเวลาว่างเหลือในวันนี้'
     return
   }
   dayHourStartH.value = available[0]
-  dayHourStartM.value = 0
+  dayHourStartM.value = availableStartMinutesForHour(available[0], dayHoursExceptEditing.value)[0] ?? 0
   const startM = toMinutesFromHm(dayHourStartH.value, dayHourStartM.value)
-  const defaultEndM = Math.min(startM + 60, toMinutesFromHm(23, 59))
-  dayHourEndH.value = Math.floor(defaultEndM / 60)
-  dayHourEndM.value = defaultEndM % 60
+  const maxEndM = maxEndMinutesForDayHourStart(startM, dayHoursExceptEditing.value)
+  applyDayHourEndMinutes(defaultDayHourEndFromStart(startM, maxEndM))
   dayHourFormOpen.value = true
   errorMessage.value = ''
+}
+
+function openDayHourEdit(item) {
+  dayHourEditingId.value = item.id
+  dayHourEditOriginalEndM.value = toMinutesFromHm(item.end_hour, item.end_minute ?? 0)
+  dayHourStartH.value = item.start_hour
+  dayHourStartM.value = item.start_minute ?? 0
+  dayHourEndH.value = item.end_hour
+  dayHourEndM.value = item.end_minute ?? 0
+  dayHourFormOpen.value = true
+  errorMessage.value = ''
+  focusAdminModal('admin-day-hour-edit-modal', 'select')
+}
+
+async function generateFullDayHours() {
+  if (!selectedDayHoursDate.value) return
+
+  let replace = false
+  if (dayHoursForSelectedDate.value.length) {
+    const ok = await adminSwal.fire({
+      title: 'แทนที่ช่วงเวลาทั้งวัน?',
+      text: 'จะลบช่วงเวลาเดิมแล้วสร้างใหม่ตามเวลาเปิด-ปิดปกติและความยาวคิว',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'สร้างใหม่',
+      cancelButtonText: 'ยกเลิก',
+    })
+    if (!ok.isConfirmed) return
+    replace = true
+  }
+
+  dayHourGenerating.value = true
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.post('/api/admin/day-hours/generate-full-day', {
+      schedule_date: selectedDayHoursDate.value,
+      replace,
+    })
+    message.value = `สร้างช่วงเวลาทั้งวัน ${data.count} รายการแล้ว`
+    closeDayHourForm()
+    await Promise.all([loadDayHoursForDate(selectedDayHoursDate.value), loadDayHoursMonth()])
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'สร้างช่วงเวลาทั้งวันไม่สำเร็จ'
+  } finally {
+    dayHourGenerating.value = false
+  }
 }
 
 async function saveDayHourEntry() {
@@ -1053,15 +1304,27 @@ async function saveDayHourEntry() {
   message.value = ''
   errorMessage.value = ''
   try {
-    await api.post('/api/admin/day-hours', {
-      schedule_date: selectedDayHoursDate.value,
-      start_hour: dayHourStartH.value,
-      start_minute: dayHourStartM.value,
-      end_hour: dayHourEndH.value,
-      end_minute: dayHourEndM.value,
-    })
-    message.value = 'บันทึกช่วงเวลาจองแล้ว'
-    dayHourFormOpen.value = false
+    if (dayHourEditingId.value) {
+      const { data } = await api.patch(`/api/admin/day-hours/${dayHourEditingId.value}`, {
+        start_hour: dayHourStartH.value,
+        start_minute: dayHourStartM.value,
+        end_hour: dayHourEndH.value,
+        end_minute: dayHourEndM.value,
+      })
+      message.value = data.cascaded
+        ? 'บันทึกแล้ว · เลื่อนช่วงถัดไปให้อัตโนมัติ'
+        : 'บันทึกช่วงเวลาแล้ว'
+    } else {
+      await api.post('/api/admin/day-hours', {
+        schedule_date: selectedDayHoursDate.value,
+        start_hour: dayHourStartH.value,
+        start_minute: dayHourStartM.value,
+        end_hour: dayHourEndH.value,
+        end_minute: dayHourEndM.value,
+      })
+      message.value = 'บันทึกช่วงเวลาจองแล้ว'
+    }
+    closeDayHourForm()
     await Promise.all([loadDayHoursForDate(selectedDayHoursDate.value), loadDayHoursMonth()])
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกช่วงเวลาไม่สำเร็จ'
@@ -1086,24 +1349,27 @@ async function removeDayHourEntry(id) {
   try {
     await api.delete(`/api/admin/day-hours/${id}`)
     message.value = 'ลบช่วงเวลาแล้ว'
-    dayHourFormOpen.value = false
+    closeDayHourForm()
     await Promise.all([loadDayHoursForDate(selectedDayHoursDate.value), loadDayHoursMonth()])
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'ลบช่วงเวลาไม่สำเร็จ'
   }
 }
 
-watch(dayHourStartH, (h) => {
-  const used = getUsedHoursForDayWindows(dayHoursForSelectedDate.value)
-  if (used.has(h)) {
-    const next = dayHourAvailableStartHours.value[0]
-    if (next != null && next !== h) dayHourStartH.value = next
+watch(dayHourStartH, () => {
+  const allowed = dayHourAvailableStartMinutes.value
+  if (!allowed.includes(dayHourStartM.value)) {
+    dayHourStartM.value = allowed[0] ?? 0
   }
-  clampDayHourEndAfterStart()
+  syncDayHourEndAfterStartChange()
 })
 
 watch(dayHourStartM, () => {
-  clampDayHourEndAfterStart()
+  const allowed = dayHourAvailableStartMinutes.value
+  if (!allowed.includes(dayHourStartM.value)) {
+    dayHourStartM.value = allowed[0] ?? 0
+  }
+  syncDayHourEndAfterStartChange()
 })
 
 watch(dayHourEndH, () => {
@@ -1129,6 +1395,13 @@ const userHistoryUser = ref(null)
 const userHistoryBookings = ref([])
 const userHistoryLoading = ref(false)
 const userHistoryError = ref('')
+
+const staffAddOpen = ref(false)
+const staffAddName = ref('')
+const staffAddPhone = ref('')
+const staffAddShopSlug = ref('default')
+const staffAddSaving = ref(false)
+const staffAddError = ref('')
 
 const chatSendOpen = ref(false)
 const chatSendUser = ref(null)
@@ -1192,12 +1465,74 @@ async function loadUsers() {
   }
 }
 
+function openStaffAdd() {
+  staffAddName.value = ''
+  staffAddPhone.value = ''
+  staffAddShopSlug.value = isSuperAdmin.value
+    ? (shopSlug.value === 'default' ? 'default' : shopSlug.value)
+    : shopSlug.value
+  staffAddError.value = ''
+  staffAddOpen.value = true
+  focusAdminModal('admin-staff-add-modal', 'input[type="text"]')
+}
+
+function closeStaffAdd() {
+  staffAddOpen.value = false
+  staffAddError.value = ''
+}
+
+async function saveStaffAdd() {
+  const name = staffAddName.value.trim()
+  const phone = staffAddPhone.value.trim()
+  if (!name) {
+    staffAddError.value = 'กรุณาระบุชื่อ'
+    return
+  }
+  if (!phone) {
+    staffAddError.value = 'กรุณาระบุเบอร์โทร'
+    return
+  }
+
+  staffAddSaving.value = true
+  staffAddError.value = ''
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const payload = { name, phone }
+    if (isSuperAdmin.value) {
+      payload.admin_shop_slug = staffAddShopSlug.value
+    }
+    const { data } = await api.post('/api/admin/users/staff', payload)
+    const user = data?.user
+    if (user) {
+      const idx = users.value.findIndex((u) => u.id === user.id)
+      if (idx >= 0) users.value[idx] = user
+      else users.value.unshift(user)
+    }
+    closeStaffAdd()
+    await adminSwal.fire({
+      title: `${staffAddBtnLabel.value}แล้ว`,
+      html: `ชื่อ <strong>${name}</strong><br>ล็อกอินด้วยชื่อ + เบอร์ <strong>${phone}</strong>`,
+      icon: 'success',
+    })
+    message.value = `${staffAddBtnLabel.value} "${name}" (${phone}) แล้ว`
+  } catch (err) {
+    staffAddError.value = err?.response?.data?.error || 'เพิ่มช่างไม่สำเร็จ'
+  } finally {
+    staffAddSaving.value = false
+  }
+}
+
 async function toggleAdmin(user) {
   const next = !user.is_admin
-  if (next && !isSuperAdmin.value) return
+  if (next && !canManageShopAdmins.value) return
+  if (!canToggleUserAdmin(user)) return
+  const adminSlug = isSuperAdmin.value ? 'default' : shopSlug.value
   const ok = await adminSwal.fire({
     title: next ? 'ให้สิทธิ์แอดมิน' : 'ถอดสิทธิ์แอดมิน',
-    text: `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมินของ "${user.name}" ใช่ไหม`,
+    text: next
+      ? `ให้ "${user.name}" เป็นแอดมินสาขา /${adminSlug} ใช่ไหม`
+      : `ถอดสิทธิ์แอดมินของ "${user.name}" ใช่ไหม`,
     icon: 'question', showCancelButton: true,
     confirmButtonText: 'ยืนยัน', cancelButtonText: 'ยกเลิก',
   })
@@ -1205,11 +1540,11 @@ async function toggleAdmin(user) {
   try {
     await api.patch(`/api/admin/users/${user.id}/set-admin`, {
       is_admin: next,
-      admin_shop_slug: next ? 'default' : null,
+      admin_shop_slug: next ? adminSlug : null,
     })
     user.is_admin = next
-    user.is_super_admin = next
-    user.admin_shop_slug = next ? 'default' : null
+    user.is_super_admin = next && isSuperAdmin.value && adminSlug === 'default'
+    user.admin_shop_slug = next ? adminSlug : null
     message.value = `${next ? 'ให้' : 'ถอด'}สิทธิ์แอดมิน "${user.name}" แล้ว`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'อัปเดตสิทธิ์ไม่สำเร็จ'
@@ -1248,7 +1583,7 @@ function editUser(user) {
   userEditIsAdmin.value = Boolean(user.is_admin)
   userEditAdminShopSlug.value = user.is_super_admin || user.admin_shop_slug === 'default'
     ? 'default'
-    : (user.admin_shop_slug || branchShopOptions.value[0]?.slug || 'default')
+    : (user.admin_shop_slug || shopSlug.value || branchShopOptions.value[0]?.slug || 'default')
   userEditError.value = ''
   userEditOpen.value = true
   focusAdminModal('admin-user-edit-modal', 'input[type="text"]:not([disabled])')
@@ -1336,10 +1671,12 @@ async function saveUserEdit() {
       total_points: totalPoints,
       admin_note: userEditNote.value.trim(),
     }
-    if (isSuperAdmin.value) {
+    if (canEditUserAdminRights(userEditItem.value)) {
       payload.is_admin = userEditIsAdmin.value
       if (userEditIsAdmin.value) {
-        payload.admin_shop_slug = userEditAdminShopSlug.value
+        payload.admin_shop_slug = isSuperAdmin.value
+          ? userEditAdminShopSlug.value
+          : shopSlug.value
       }
     }
     if (userEditItem.value.provider === 'phone') {
@@ -1368,7 +1705,10 @@ function switchTab(tab) {
   if (activeTab.value === tab) return
   if (activeTab.value === 'services') closeServiceDay()
   if (activeTab.value === 'bookings') closeBookingDay()
-  if (activeTab.value === 'blocks') closeBlockDay()
+  if (activeTab.value === 'blocks') {
+    closeBlockDay()
+    closeDayHoursDate()
+  }
   activeTab.value = tab
   message.value = ''
   errorMessage.value = ''
@@ -1376,9 +1716,15 @@ function switchTab(tab) {
   if (tab === 'reviews') loadShowcaseClips()
   if (tab === 'ui') activeUiSection.value = 0
   if (tab === 'blocks') activeBlocksSection.value = 'shop-hours'
-  settingsNavOpen.value = false
-  uiNavOpen.value = false
-  blocksNavOpen.value = false
+  if (isMobile.value) {
+    settingsNavOpen.value = false
+    uiNavOpen.value = false
+    blocksNavOpen.value = false
+  } else {
+    settingsNavOpen.value = true
+    uiNavOpen.value = true
+    blocksNavOpen.value = true
+  }
 }
 
 const filtered = computed(() => bookings.value)
@@ -1450,6 +1796,31 @@ async function reloadBookingViews() {
   await Promise.all([loadBookings(), loadBookingCalendarSummary()])
   if (activeTab.value === 'revenue') await loadRevenueSummary()
 }
+
+async function refreshAdminBookingModalSlots() {
+  if (bookingEditOpen.value && bookingEditDate.value) {
+    await loadBookingEditDayData(bookingEditDate.value).catch(() => null)
+  }
+  if (bookingAddOpen.value && selectedBookingDate.value) {
+    try {
+      const { data } = await api.get('/api/bookings', { params: { date: selectedBookingDate.value } })
+      bookingAddSlotBookings.value = data?.bookings || []
+      bookingAddSlotBlocks.value = data?.blocks || []
+    } catch {
+      // ignore slot refresh errors during live update
+    }
+  }
+}
+
+async function onAdminBookingRealtimeUpdate() {
+  await reloadBookingViews()
+  await refreshAdminBookingModalSlots()
+}
+
+useAdminBookingRealtime({
+  enabled: computed(() => activeTab.value === 'bookings'),
+  onChange: onAdminBookingRealtimeUpdate,
+})
 
 const revenueMonthLabel = computed(() => {
   const [y, m] = revenueMonth.value.split('-').map(Number)
@@ -1562,6 +1933,10 @@ async function loadRevenueSummary() {
 // ── รูปแบบแสดงเวลาหน้าจองลูกค้า ─────────────
 const bookingDisplayMode = ref('slots_2h')
 const bookingSlotHours = ref(2)
+const extendBookingByServices = ref(false)
+const extendBookingPastClose = ref(false)
+const extendBlockNextBookingMessage = ref('')
+const extendBlockClosingMessage = ref('')
 
 const displaySlotPreview = computed(() => {
   const slot = normalizeBookingSlotHours(bookingSlotHours.value)
@@ -1575,12 +1950,17 @@ const displaySlotPreview = computed(() => {
 
 async function loadBookingDisplay() {
   try {
-    const [{ data: displayData }, { data: slotData }] = await Promise.all([
+    const [{ data: displayData }, { data: slotData }, { data: extendData }] = await Promise.all([
       api.get('/api/admin/settings/booking-display'),
       api.get('/api/admin/settings/booking-slot-hours'),
+      api.get('/api/admin/settings/extend-booking-by-services'),
     ])
     bookingDisplayMode.value = displayData.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
     bookingSlotHours.value = normalizeBookingSlotHours(slotData.slot_hours)
+    extendBookingByServices.value = extendData.enabled === true
+    extendBookingPastClose.value = extendData.past_close_enabled === true
+    extendBlockNextBookingMessage.value = extendData.block_next_booking_message || ''
+    extendBlockClosingMessage.value = extendData.block_closing_message || ''
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรูปแบบแสดงเวลาไม่สำเร็จ'
   }
@@ -1598,6 +1978,29 @@ async function saveBookingSlotHours() {
     message.value = `บันทึกความยาวคิว ${slot} ชม. แล้ว`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกความยาวคิวไม่สำเร็จ'
+  }
+}
+
+async function saveExtendBookingByServices() {
+  const ok = await confirmAdminSave('ยืนยันบันทึก', 'บันทึกตั้งค่าขยายเวลาจองตามบริการ ใช่ไหม')
+  if (!ok) return
+
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/extend-booking-by-services', {
+      enabled: extendBookingByServices.value,
+      past_close_enabled: extendBookingPastClose.value,
+      block_next_booking_message: extendBlockNextBookingMessage.value,
+      block_closing_message: extendBlockClosingMessage.value,
+    })
+    extendBookingByServices.value = data.enabled === true
+    extendBookingPastClose.value = data.past_close_enabled === true
+    extendBlockNextBookingMessage.value = data.block_next_booking_message || ''
+    extendBlockClosingMessage.value = data.block_closing_message || ''
+    message.value = 'บันทึกตั้งค่าขยายเวลาจองแล้ว'
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกตั้งค่าขยายเวลาจองไม่สำเร็จ'
   }
 }
 
@@ -2720,6 +3123,7 @@ async function openBookingAdd() {
       bookings: bookingAddSlotBookings.value,
       displayMode: bookingDisplayMode.value,
       slotHours: bookingSlotHours.value,
+      extendByServices: extendBookingByServices.value,
     })
     bookingAddSlotKey.value = hourOpts[0]?.key || ''
     const normalized = normalizeBookingOptionsResponse(optionsRes.data)
@@ -2854,6 +3258,17 @@ const activeLocationPresets = computed(() =>
 const activeServiceCategories = computed(() =>
   serviceCategories.value.filter((cat) => cat.is_active)
 )
+
+const optionEditScopeLabel = computed(() => {
+  if (!optionForm.value.id) return ''
+  const from = String(optionForm.value.show_from_date || '').trim()
+  const to = String(optionForm.value.show_to_date || '').trim()
+  if (!from && !to) return 'แสดงทุกวัน'
+  if (from && to && from === to) return `วันที่ ${formatServiceDateLabel(from)}`
+  if (from && to) return `${formatServiceDateLabel(from)} – ${formatServiceDateLabel(to)}`
+  if (from) return `ตั้งแต่ ${formatServiceDateLabel(from)}`
+  return ''
+})
 
 function formatServiceDateLabel(iso) {
   if (!iso) return ''
@@ -3063,7 +3478,7 @@ function startEditCategory(item) {
     is_active: Boolean(item.is_active),
     sort_order: Number(item.sort_order) || 0,
   }
-  showCategoryPanel.value = true
+  focusAdminModal('admin-category-edit-modal', 'input[type="text"]')
 }
 
 async function saveServiceCategory() {
@@ -3145,7 +3560,7 @@ function startEditLocation(item) {
     is_active: Boolean(item.is_active),
     sort_order: Number(item.sort_order) || 0,
   }
-  scrollToAdminSection('settings-locations', '.service-option-form input[type="text"]')
+  focusAdminModal('admin-location-edit-modal', 'input[type="text"]')
 }
 
 async function saveServiceLocation() {
@@ -3246,7 +3661,7 @@ function startEditClip(item) {
     title: item.title || '',
     is_active: Boolean(item.is_active),
   }
-  scrollToAdminSection('reviews-clip-form', 'input[type="url"]')
+  focusAdminModal('admin-clip-edit-modal', 'input[type="url"]')
 }
 
 async function saveShowcaseClip() {
@@ -3388,20 +3803,7 @@ function startEditOption(item) {
     show_to_date: to || '',
     category_id: item.category_id || '',
   }
-  if (!from && !to) {
-    showEveryDayForm.value = true
-    selectedServiceDate.value = ''
-  } else if (from && to && from === to) {
-    selectedServiceDate.value = from
-    showEveryDayForm.value = false
-  } else if (from) {
-    selectedServiceDate.value = from
-    showEveryDayForm.value = false
-  }
-  nextTick(() => {
-    const sectionId = showEveryDayForm.value ? 'services-option-form-everyday' : 'services-option-form-day'
-    scrollToAdminSection(sectionId, 'input[type="text"]')
-  })
+  focusAdminModal('admin-option-edit-modal', 'input[type="text"]')
 }
 
 async function saveNailOption() {
@@ -3460,9 +3862,13 @@ async function saveNailOption() {
       await api.post('/api/admin/nailoptions', payload)
       message.value = 'เพิ่มบริการแล้ว'
     }
-    if (selectedServiceDate.value) resetOptionFormForDay()
-    else if (showEveryDayForm.value) resetOptionForm()
-    else resetOptionForm()
+    if (isEdit) {
+      resetOptionForm()
+    } else if (selectedServiceDate.value) {
+      resetOptionFormForDay()
+    } else {
+      resetOptionForm()
+    }
     await loadNailOptions()
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกบริการไม่สำเร็จ'
@@ -3486,10 +3892,7 @@ async function removeNailOption(item) {
   try {
     await api.delete(`/api/admin/nailoptions/${item.id}`)
     message.value = 'ลบบริการแล้ว'
-    if (optionForm.value.id === item.id) {
-      if (selectedServiceDate.value) resetOptionFormForDay()
-      else resetOptionForm()
-    }
+    if (optionForm.value.id === item.id) resetOptionForm()
     await loadNailOptions()
   } catch (error) {
     const msg = error?.response?.data?.error || 'ลบบริการไม่สำเร็จ'
@@ -3567,6 +3970,7 @@ onMounted(() => {
   adminMobileMq = window.matchMedia('(max-width: 640px)')
   updateAdminMobileLayout()
   adminMobileMq.addEventListener('change', updateAdminMobileLayout)
+  loadSetupWizardDismissed()
 })
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
@@ -3578,6 +3982,7 @@ watch(shopSlug, () => {
   loadLinePushSetting()
   loadChatNotifySetting()
   loadRegisterShopPinSetting()
+  loadSetupWizardDismissed()
 })
 </script>
 
@@ -3632,6 +4037,33 @@ watch(shopSlug, () => {
     >
       ระยะเวลาใช้งานเหลือ {{ currentBranchUsage.usage_days_remaining }} วัน (หมดอายุ {{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }})
     </p>
+
+    <div v-if="showSetupWizard" class="admin-setup-wizard card-inner">
+      <div class="admin-setup-wizard-head">
+        <div>
+          <h3>เริ่มตั้งร้าน</h3>
+          <p class="muted">ทำตามขั้นตอนด้านล่างเพื่อเปิดรับจองลูกค้า</p>
+        </div>
+        <button type="button" class="btn admin-setup-dismiss" @click="dismissSetupWizard">ซ่อน</button>
+      </div>
+      <ol class="admin-setup-steps">
+        <li
+          v-for="step in setupWizardSteps"
+          :key="step.key"
+          class="admin-setup-step"
+          :class="{ done: step.done, optional: step.optional }"
+        >
+          <span class="admin-setup-step-label">
+            <i class="ti" :class="step.done ? 'ti-circle-check' : 'ti-circle'" aria-hidden="true"></i>
+            {{ step.label }}
+            <span v-if="step.optional" class="muted">(ไม่บังคับ)</span>
+          </span>
+          <button v-if="!step.done" type="button" class="btn primary admin-setup-go" @click="step.go()">
+            ไปตั้งค่า
+          </button>
+        </li>
+      </ol>
+    </div>
 
     <section v-show="activeTab === 'bookings'" class="card admin-section">
       <template v-if="!selectedBookingDate">
@@ -3753,7 +4185,7 @@ watch(shopSlug, () => {
               ยอด {{ formatBookingTotal(item.total) }}
             </p>
           </div>
-          <div class="row">
+          <div class="row admin-booking-actions-desktop">
             <button
               type="button"
               class="btn"
@@ -3822,6 +4254,95 @@ watch(shopSlug, () => {
             >
               ลบ
             </button>
+          </div>
+          <div class="admin-booking-actions-mobile">
+            <div class="row admin-booking-actions-primary">
+              <button
+                v-if="item.status === 'awaiting_payment'"
+                class="btn primary"
+                @click="confirmPayment(item.id)"
+              >
+                ยืนยันชำระเงิน
+              </button>
+              <button
+                v-if="item.status === 'pending'"
+                class="btn primary"
+                @click="markDone(item)"
+              >
+                ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
+              </button>
+              <button
+                v-if="item.status === 'cancelled'"
+                type="button"
+                class="btn primary"
+                @click="restoreBooking(item)"
+              >
+                คืนสถานะจอง
+              </button>
+              <button
+                v-if="item.status !== 'cancelled'"
+                type="button"
+                class="btn"
+                @click="editBooking(item); closeBookingMenu()"
+              >
+                แก้ไข
+              </button>
+              <div class="admin-action-overflow">
+                <button
+                  type="button"
+                  class="btn admin-overflow-trigger"
+                  :aria-expanded="bookingMenuId === item.id"
+                  aria-label="เมนูเพิ่มเติม"
+                  @click="toggleBookingMenu(item.id)"
+                >
+                  <i class="ti ti-dots-vertical" aria-hidden="true"></i>
+                </button>
+                <div v-if="bookingMenuId === item.id" class="admin-overflow-menu" @click.stop>
+                  <button
+                    type="button"
+                    class="admin-overflow-item"
+                    @click="openSendMessageModal({ id: item.user_id, name: item.user_name, email: item.user_email }); closeBookingMenu()"
+                  >
+                    ส่งข้อความ
+                  </button>
+                  <button type="button" class="admin-overflow-item" @click="openAdminChat(item.user_id); closeBookingMenu()">
+                    ไปแชท
+                  </button>
+                  <button
+                    v-if="item.status === 'awaiting_payment'"
+                    type="button"
+                    class="admin-overflow-item danger"
+                    @click="cancelUnpaid(item.id); closeBookingMenu()"
+                  >
+                    ยกเลิกคิวไม่ชำระ
+                  </button>
+                  <button
+                    v-if="item.status === 'pending'"
+                    type="button"
+                    class="admin-overflow-item"
+                    @click="revertPayment(item.id); closeBookingMenu()"
+                  >
+                    เปลี่ยนเป็นรอชำระ
+                  </button>
+                  <button
+                    v-if="item.status === 'pending'"
+                    type="button"
+                    class="admin-overflow-item danger"
+                    @click="cancelPaid(item.id); closeBookingMenu()"
+                  >
+                    ยกเลิกคิว (เลื่อนวัน)
+                  </button>
+                  <button
+                    v-if="item.status === 'cancelled'"
+                    type="button"
+                    class="admin-overflow-item danger"
+                    @click="deleteBooking(item.id); closeBookingMenu()"
+                  >
+                    ลบ
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -3961,33 +4482,34 @@ watch(shopSlug, () => {
         <p v-else class="muted">ยังไม่มีหมวดหมู่ — ถ้าไม่สร้าง ลูกค้าจะเลือกบริการแบบเดิม</p>
 
         <div v-if="showCategoryPanel" class="service-option-form card-inner" style="margin-top:12px">
-          <h4>{{ categoryForm.id ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่' }}</h4>
-          <div class="admin-form-grid admin-option-grid">
-            <label>
-              ชื่อหมวดหมู่ *
-              <input v-model="categoryForm.name" type="text" class="admin-input" placeholder="เช่น มือ, เท้า, ต่อเล็บ" />
-            </label>
-            <label>
-              รายละเอียด
-              <input v-model="categoryForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
-            </label>
-            <label>
-              ลำดับแสดง
-              <input v-model.number="categoryForm.sort_order" type="number" min="0" step="1" class="admin-input" />
-            </label>
-          </div>
-          <div class="admin-form-row">
-            <label class="admin-checkbox">
-              <input v-model="categoryForm.is_active" type="checkbox" />
-              เปิดใช้งาน
-            </label>
-            <button type="button" class="btn primary admin-action-btn" @click="saveServiceCategory">
-              {{ categoryForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มหมวดหมู่' }}
-            </button>
-            <button v-if="categoryForm.id" type="button" class="btn admin-action-btn" @click="resetCategoryForm">ยกเลิกแก้ไข</button>
-          </div>
+          <template v-if="!categoryForm.id">
+            <h4>เพิ่มหมวดหมู่</h4>
+            <div class="admin-form-grid admin-option-grid">
+              <label>
+                ชื่อหมวดหมู่ *
+                <input v-model="categoryForm.name" type="text" class="admin-input" placeholder="เช่น มือ, เท้า, ต่อเล็บ" />
+              </label>
+              <label>
+                รายละเอียด
+                <input v-model="categoryForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+              </label>
+              <label>
+                ลำดับแสดง
+                <input v-model.number="categoryForm.sort_order" type="number" min="0" step="1" class="admin-input" />
+              </label>
+            </div>
+            <div class="admin-form-row">
+              <label class="admin-checkbox">
+                <input v-model="categoryForm.is_active" type="checkbox" />
+                เปิดใช้งาน
+              </label>
+              <button type="button" class="btn primary admin-action-btn" @click="saveServiceCategory">
+                เพิ่มหมวดหมู่
+              </button>
+            </div>
+          </template>
 
-          <div v-if="serviceCategories.length" style="margin-top:16px">
+          <div v-if="serviceCategories.length" :style="categoryForm.id ? '' : 'margin-top:16px'">
             <div v-for="item in serviceCategories" :key="item.id" class="admin-item">
               <div>
                 <strong>{{ item.name }}</strong>
@@ -4060,8 +4582,8 @@ watch(shopSlug, () => {
           </div>
           <p class="muted">บริการที่ไม่ผูกวันที่ จะแสดงให้ลูกค้าเลือกได้ทุกวันในปฏิทินจอง</p>
 
-          <div v-if="showEveryDayForm" id="services-option-form-everyday" class="service-option-form card-inner admin-settings-section">
-            <h4>{{ optionForm.id ? 'แก้ไขบริการทุกวัน' : 'เพิ่มบริการทุกวัน' }}</h4>
+          <div v-if="showEveryDayForm && !optionForm.id" id="services-option-form-everyday" class="service-option-form card-inner admin-settings-section">
+            <h4>เพิ่มบริการทุกวัน</h4>
             <div class="admin-form-grid admin-option-grid">
               <label>
                 ชื่อบริการ *
@@ -4128,7 +4650,7 @@ watch(shopSlug, () => {
                 บังคับเลือกเมื่อจอง
               </label>
               <button class="btn primary admin-action-btn" @click="saveNailOption">
-                {{ optionForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มบริการ' }}
+                เพิ่มบริการ
               </button>
               <button class="btn admin-action-btn" @click="closeEveryDayForm">ยกเลิก</button>
             </div>
@@ -4193,7 +4715,8 @@ watch(shopSlug, () => {
           <h4>เพิ่มสถานที่ให้บริการ</h4>
           <p class="muted">เลือกสถานที่สำหรับวันนี้ · ลูกค้าต้องเลือกตอนจอง · สีในปฏิทินตามปุ่ม</p>
           <p v-if="activeLocationPresets.length === 0" class="muted">
-            ยังไม่มีสถานที่ — ไปที่แท็บ <strong>ตั้งค่า</strong> เพื่อเพิ่ม
+            ยังไม่มีสถานที่ —
+            <button type="button" class="btn-link" @click="goToSettingsSection('locations')">ไปเพิ่มสถานที่</button>
           </p>
           <div v-else class="location-preset-row">
             <button
@@ -4211,8 +4734,8 @@ watch(shopSlug, () => {
           </div>
         </div>
 
-        <div id="services-option-form-day" class="service-option-form card-inner admin-settings-section">
-          <h4>{{ optionForm.id ? 'แก้ไขบริการ' : 'เพิ่มบริการอื่น' }}</h4>
+        <div v-if="!optionForm.id" id="services-option-form-day" class="service-option-form card-inner admin-settings-section">
+          <h4>เพิ่มบริการอื่น</h4>
           <div class="admin-form-grid admin-option-grid">
             <label>
               ชื่อบริการ *
@@ -4279,9 +4802,8 @@ watch(shopSlug, () => {
               บังคับเลือกเมื่อจอง
             </label>
             <button class="btn primary admin-action-btn" @click="saveNailOption">
-              {{ optionForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มบริการ' }}
+              เพิ่มบริการ
             </button>
-            <button v-if="optionForm.id" class="btn admin-action-btn" @click="resetOptionFormForDay">ยกเลิกแก้ไข</button>
           </div>
         </div>
 
@@ -4344,7 +4866,7 @@ watch(shopSlug, () => {
           />
         </Transition>
 
-        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': settingsNavOpen }">
+        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': settingsNavOpen || !isMobile }">
           <div class="admin-drawer-nav-head">
             <h3 class="admin-drawer-nav-title">หัวข้อตั้งค่า</h3>
             <button
@@ -4376,7 +4898,7 @@ watch(shopSlug, () => {
           <header class="admin-drawer-toolbar">
             <button
               type="button"
-              class="admin-drawer-icon-btn"
+              class="admin-drawer-icon-btn admin-drawer-menu-btn"
               :aria-expanded="settingsNavOpen"
               aria-label="เปิดหัวข้อตั้งค่า"
               @click="toggleSettingsNav"
@@ -4830,181 +5352,12 @@ watch(shopSlug, () => {
       </div>
       </div>
 
-      <div v-show="activeSettingsSection === 'hours'" id="settings-shop-hours" class="admin-settings-section">
-      <template v-if="!selectedDayHoursDate">
-        <h3>ตั้งเวลาเปิด-ปิดเฉพาะวัน</h3>
-        <p class="muted">
-          สำหรับวันที่อยากเปิด-ปิดไม่ตามปกติ (ชม. นาที) · กดวันในปฏิทินแล้วเพิ่มช่วงเวลา ·
-          วันที่ไม่ตั้งจะใช้เวลาเปิด-ปิดปกติที่ <strong>ปิดร้าน → เวลาเปิด-ปิด</strong>
-        </p>
-
-        <div class="service-cal-nav">
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="เดือนก่อน">
-            <i class="ti ti-chevron-left" aria-hidden="true"></i>
-          </button>
-          <span class="service-cal-month">{{ dayHoursMonthLabel }}</span>
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(1)" aria-label="เดือนถัดไป">
-            <i class="ti ti-chevron-right" aria-hidden="true"></i>
-          </button>
-        </div>
-
-        <div class="service-cal-weekdays">
-          <span v-for="wd in serviceWeekdays" :key="`dh-${wd}`" class="service-cal-wd">{{ wd }}</span>
-        </div>
-
-        <div class="service-cal-grid">
-          <div v-for="(week, wi) in dayHoursCalendarWeeks" :key="`dh-week-${wi}`" class="service-cal-week">
-            <button
-              v-for="(cell, ci) in week"
-              :key="`dh-${wi}-${ci}`"
-              type="button"
-              class="service-cal-day day-hours-cal-day"
-              :class="{
-                empty: !cell,
-                today: cell?.isToday,
-                'has-hours': cell && dayHoursDayHasEntries(cell.iso),
-              }"
-              :disabled="!cell"
-              @click="cell && openDayHoursDate(cell.iso)"
-            >
-              <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
-              <span v-if="cell && dayHoursDayCount(cell.iso)" class="day-hours-cal-badge">{{ dayHoursDayCount(cell.iso) }}</span>
-            </button>
-          </div>
-        </div>
-      </template>
-
-      <template v-else>
-        <div class="service-day-header">
-          <button type="button" class="btn service-back-btn" @click="closeDayHoursDate">
-            <i class="ti ti-arrow-left" aria-hidden="true"></i>
-            กลับปฏิทิน
-          </button>
-          <div>
-            <h3>เวลาเปิด-ปิดวันที่ {{ formatServiceDateLabel(selectedDayHoursDate) }}</h3>
-            <p class="muted">ช่วงที่ตั้งวันนี้จะใช้แทนเวลาเปิด-ปิดปกติ · เพิ่มได้หลายรายการจนถึง 23:59</p>
-          </div>
-        </div>
-
-        <div v-if="dayHoursForSelectedDate.length === 0" class="muted">
-          ยังไม่ตั้งเวลาเฉพาะวัน — ใช้เวลาเปิด-ปิดปกติจากเมนู <strong>ปิดร้าน → เวลาเปิด-ปิด</strong>
-        </div>
-        <div v-for="item in dayHoursForSelectedDate" :key="item.id" class="admin-item">
-          <div>
-            <strong>{{ formatDayHourRange(item) }}</strong>
-          </div>
-          <button type="button" class="btn danger" @click="removeDayHourEntry(item.id)">ลบ</button>
-        </div>
-
-        <div v-if="dayHourFormOpen" class="day-hour-form card-inner">
-          <h4>เพิ่มช่วงเวลา</h4>
-          <div class="admin-form-grid admin-option-grid">
-            <label>
-              เริ่ม (ชม.)
-              <select v-model.number="dayHourStartH" class="admin-input">
-                <option v-for="h in dayHourAvailableStartHours" :key="`sh-${h}`" :value="h">
-                  {{ String(h).padStart(2, '0') }}
-                </option>
-              </select>
-            </label>
-            <label>
-              เริ่ม (นาที)
-              <select v-model.number="dayHourStartM" class="admin-input">
-                <option v-for="m in minuteOptions" :key="`sm-${m}`" :value="m">
-                  {{ String(m).padStart(2, '0') }}
-                </option>
-              </select>
-            </label>
-            <label>
-              สิ้นสุด (ชม.)
-              <select v-model.number="dayHourEndH" class="admin-input">
-                <option v-for="h in dayHourEndHourOptions" :key="`eh-${h}`" :value="h">
-                  {{ String(h).padStart(2, '0') }}
-                </option>
-              </select>
-            </label>
-            <label>
-              สิ้นสุด (นาที)
-              <select v-model.number="dayHourEndM" class="admin-input">
-                <option v-for="m in dayHourEndMinuteOptions" :key="`em-${m}`" :value="m">
-                  {{ String(m).padStart(2, '0') }}
-                </option>
-              </select>
-            </label>
-          </div>
-          <div class="admin-form-row">
-            <button type="button" class="btn primary admin-action-btn" :disabled="dayHourSaving" @click="saveDayHourEntry">
-              {{ dayHourSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
-            </button>
-            <button type="button" class="btn admin-action-btn" @click="dayHourFormOpen = false">ยกเลิก</button>
-          </div>
-        </div>
-
-        <button
-          v-else-if="dayHourCanAddMore"
-          type="button"
-          class="btn primary day-hour-add-btn"
-          @click="openDayHourForm"
-        >
-          <i class="ti ti-plus" aria-hidden="true"></i>
-          เพิ่มช่วงเวลา
-        </button>
-        <p v-else class="muted day-hour-full-note">ครบช่วงเวลาในวันนี้แล้ว (ถึง 23:59)</p>
-      </template>
-      </div>
-
-      <div v-show="activeSettingsSection === 'display'" id="settings-booking-display" class="admin-settings-section">
-      <h3>รูปแบบแสดงเวลาหน้าจองลูกค้า</h3>
-      <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจอง</p>
-      <div class="admin-form-row" style="flex-wrap:wrap;margin-bottom:12px">
-        <label class="admin-label-grow">
-          ความยาวคิว (ชม.)
-          <select v-model.number="bookingSlotHours" class="admin-input">
-            <option :value="1">1 ชั่วโมง</option>
-            <option :value="2">2 ชั่วโมง</option>
-            <option :value="3">3 ชั่วโมง</option>
-            <option :value="4">4 ชั่วโมง</option>
-          </select>
-        </label>
-        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveBookingSlotHours">
-          บันทึกความยาวคิว
-        </button>
-      </div>
-      <div class="booking-view-toggle" role="group" aria-label="รูปแบบแสดงเวลาหน้าจอง">
-        <button
-          type="button"
-          class="view-toggle-btn"
-          :class="{ active: bookingDisplayMode === 'normal' }"
-          @click="bookingDisplayMode = 'normal'"
-        >
-          <i class="ti ti-list" aria-hidden="true"></i>
-          ปกติ (ทีละชม.)
-        </button>
-        <button
-          type="button"
-          class="view-toggle-btn"
-          :class="{ active: bookingDisplayMode === 'slots_2h' }"
-          @click="bookingDisplayMode = 'slots_2h'"
-        >
-          <i class="ti ti-clock" aria-hidden="true"></i>
-          ช่วงบล็อก (กระโดด {{ bookingSlotHours }} ชม.)
-        </button>
-      </div>
-      <div class="admin-form-row" style="margin-top:10px">
-        <button class="btn primary admin-action-btn" @click="saveBookingDisplay">บันทึกรูปแบบแสดงเวลา</button>
-      </div>
-      <div v-if="bookingDisplayMode === 'slots_2h'" class="shop-hours-preview">
-        <i class="ti ti-layout-list" style="font-size:16px;color:var(--color-primary)"></i>
-        ตัวอย่าง: {{ displaySlotPreview }}
-      </div>
-      </div>
-
       <div v-show="activeSettingsSection === 'locations'" id="settings-locations" class="admin-settings-section">
       <h3>สถานที่ให้บริการ (ปุ่มลัด)</h3>
       <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเพิ่มบริการในแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำในรายการนี้</p>
 
-      <div class="service-option-form card-inner">
-        <h4>{{ locationForm.id ? 'แก้ไขสถานที่' : 'เพิ่มสถานที่ใหม่' }}</h4>
+      <div v-if="!locationForm.id" class="service-option-form card-inner">
+        <h4>เพิ่มสถานที่ใหม่</h4>
         <div class="admin-form-grid admin-option-grid">
           <label>
             ชื่อสถานที่ *
@@ -5045,9 +5398,8 @@ watch(shopSlug, () => {
             แสดงเป็นปุ่มลัด
           </label>
           <button class="btn primary admin-action-btn" @click="saveServiceLocation">
-            {{ locationForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มสถานที่' }}
+            เพิ่มสถานที่
           </button>
-          <button v-if="locationForm.id" type="button" class="btn admin-action-btn" @click="resetLocationForm">ยกเลิกแก้ไข</button>
         </div>
       </div>
 
@@ -5066,23 +5418,6 @@ watch(shopSlug, () => {
           <button type="button" class="btn" @click="startEditLocation(item)">แก้ไข</button>
           <button type="button" class="btn danger" @click="removeServiceLocation(item)">ลบ</button>
         </div>
-      </div>
-      </div>
-
-      <div v-show="activeSettingsSection === 'advance'" id="settings-advance-days" class="admin-settings-section">
-      <h3>จำนวนวันจองล่วงหน้า</h3>
-      <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
-      <div class="admin-form-row">
-        <label class="admin-label-grow">
-          จองล่วงหน้าได้ (วัน)
-          <input v-model.number="advanceDays" type="number" min="1" max="365" step="1" class="admin-input" />
-        </label>
-        <button class="btn primary admin-action-btn" @click="saveAdvanceDays">บันทึก</button>
-      </div>
-      <div class="shop-hours-preview">
-        <i class="ti ti-calendar-event" style="font-size:16px;color:var(--color-primary)"></i>
-        เปิดจองถึง <strong>{{ formatBookUntilLabel(bookUntilDate) }}</strong>
-        <span v-if="bookUntilDate" class="muted">({{ advanceDays }} วัน นับจากวันที่กดบันทึกล่าสุด)</span>
       </div>
       </div>
 
@@ -5113,7 +5448,7 @@ watch(shopSlug, () => {
           />
         </Transition>
 
-        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': uiNavOpen }">
+        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': uiNavOpen || !isMobile }">
           <div class="admin-drawer-nav-head">
             <h3 class="admin-drawer-nav-title">หัวข้อ UI</h3>
             <button
@@ -5145,7 +5480,7 @@ watch(shopSlug, () => {
           <header class="admin-drawer-toolbar">
             <button
               type="button"
-              class="admin-drawer-icon-btn"
+              class="admin-drawer-icon-btn admin-drawer-menu-btn"
               :aria-expanded="uiNavOpen"
               aria-label="เปิดหัวข้อ UI"
               @click="toggleUiNav"
@@ -5253,14 +5588,14 @@ watch(shopSlug, () => {
             v-if="blocksNavOpen && isMobile"
             type="button"
             class="admin-drawer-backdrop"
-            aria-label="ปิดหัวข้อปิดร้าน"
+            aria-label="ปิดหัวข้อเวลา"
             @click="blocksNavOpen = false"
           />
         </Transition>
 
-        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': blocksNavOpen }">
+        <aside class="admin-drawer-nav" :class="{ 'admin-drawer-nav--open': blocksNavOpen || !isMobile }">
           <div class="admin-drawer-nav-head">
-            <h3 class="admin-drawer-nav-title">ปิดร้าน</h3>
+            <h3 class="admin-drawer-nav-title">เวลา</h3>
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
@@ -5270,7 +5605,7 @@ watch(shopSlug, () => {
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
-          <nav class="admin-drawer-nav-list" aria-label="หัวข้อปิดร้าน">
+          <nav class="admin-drawer-nav-list" aria-label="หัวข้อเวลา">
             <button
               v-for="section in blocksSections"
               :key="section.key"
@@ -5290,9 +5625,9 @@ watch(shopSlug, () => {
           <header class="admin-drawer-toolbar">
             <button
               type="button"
-              class="admin-drawer-icon-btn"
+              class="admin-drawer-icon-btn admin-drawer-menu-btn"
               :aria-expanded="blocksNavOpen"
-              aria-label="เปิดหัวข้อปิดร้าน"
+              aria-label="เปิดหัวข้อเวลา"
               @click="toggleBlocksNav"
             >
               <i class="ti ti-menu-2" aria-hidden="true"></i>
@@ -5304,9 +5639,9 @@ watch(shopSlug, () => {
           </header>
 
           <div class="admin-drawer-panel">
-            <div v-show="activeBlocksSection === 'shop-hours'" class="admin-settings-section">
+            <div v-show="activeBlocksSection === 'shop-hours'" id="blocks-shop-hours" class="admin-settings-section">
               <h3>เวลาเปิด-ปิดร้าน (ปกติ)</h3>
-              <p class="muted">ใช้ทุกวันที่ไม่ได้ตั้งเวลาเฉพาะวันใน <strong>ตั้งค่า → เวลาจองคิว (รายวัน)</strong></p>
+              <p class="muted">ใช้ทุกวันที่ไม่ได้ตั้งใน <strong>เวลาเปิด-ปิดเฉพาะวัน</strong> (เมนูด้านซ้าย)</p>
               <div class="admin-form-row" style="flex-wrap:wrap">
                 <label class="admin-label-grow">
                   เวลาเปิดร้าน
@@ -5329,6 +5664,263 @@ watch(shopSlug, () => {
                 ลูกค้าจะเห็นช่วง
                 <strong>{{ String(shopOpenHour).padStart(2,'0') }}:00 – {{ String(shopLastBookingHour).padStart(2,'0') }}:00</strong>
                 (ปิดรับ {{ String(shopLastBookingHour + bookingSlotHours).padStart(2,'0') }}:00)
+              </div>
+            </div>
+
+            <div v-show="activeBlocksSection === 'day-hours'" id="blocks-day-hours" class="admin-settings-section">
+              <template v-if="!selectedDayHoursDate">
+                <h3>ตั้งเวลาเปิด-ปิดเฉพาะวัน</h3>
+                <p class="muted">
+                  สำหรับวันที่อยากเปิด-ปิดไม่ตามปกติ (ชม. นาที) · กดวันในปฏิทินแล้วเพิ่มช่วงเวลา ·
+                  วันที่ไม่ตั้งจะใช้เวลาเปิด-ปิดปกติที่ <strong>เวลาเปิด-ปิดปกติ</strong>
+                </p>
+
+                <div class="service-cal-nav">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="เดือนก่อน">
+                    <i class="ti ti-chevron-left" aria-hidden="true"></i>
+                  </button>
+                  <span class="service-cal-month">{{ dayHoursMonthLabel }}</span>
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(1)" aria-label="เดือนถัดไป">
+                    <i class="ti ti-chevron-right" aria-hidden="true"></i>
+                  </button>
+                </div>
+
+                <div class="service-cal-weekdays">
+                  <span v-for="wd in serviceWeekdays" :key="`dh-${wd}`" class="service-cal-wd">{{ wd }}</span>
+                </div>
+
+                <div class="service-cal-grid">
+                  <div v-for="(week, wi) in dayHoursCalendarWeeks" :key="`dh-week-${wi}`" class="service-cal-week">
+                    <button
+                      v-for="(cell, ci) in week"
+                      :key="`dh-${wi}-${ci}`"
+                      type="button"
+                      class="service-cal-day day-hours-cal-day"
+                      :class="{
+                        empty: !cell,
+                        today: cell?.isToday,
+                        'has-hours': cell && dayHoursDayHasEntries(cell.iso),
+                      }"
+                      :disabled="!cell"
+                      @click="cell && openDayHoursDate(cell.iso)"
+                    >
+                      <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
+                      <span v-if="cell && dayHoursDayCount(cell.iso)" class="day-hours-cal-badge">{{ dayHoursDayCount(cell.iso) }}</span>
+                    </button>
+                  </div>
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="service-day-header">
+                  <button type="button" class="btn service-back-btn" @click="closeDayHoursDate">
+                    <i class="ti ti-arrow-left" aria-hidden="true"></i>
+                    กลับปฏิทิน
+                  </button>
+                  <div>
+                    <h3>เวลาเปิด-ปิดวันที่ {{ formatServiceDateLabel(selectedDayHoursDate) }}</h3>
+                    <p class="muted">ช่วงที่ตั้งวันนี้จะใช้แทนเวลาเปิด-ปิดปกติ · เพิ่มได้หลายรายการจนถึง 23:59</p>
+                  </div>
+                </div>
+
+                <div v-if="dayHoursForSelectedDate.length === 0" class="muted">
+                  ยังไม่ตั้งเวลาเฉพาะวัน — ใช้เวลาเปิด-ปิดปกติจากเมนู <strong>เวลาเปิด-ปิดปกติ</strong>
+                </div>
+                <div v-for="item in dayHoursForSelectedDate" :key="item.id" class="admin-item">
+                  <div>
+                    <strong>{{ formatDayHourRange(item) }}</strong>
+                  </div>
+                  <div class="row">
+                    <button type="button" class="btn" @click="openDayHourEdit(item)">แก้ไข</button>
+                    <button type="button" class="btn danger" @click="removeDayHourEntry(item.id)">ลบ</button>
+                  </div>
+                </div>
+
+                <div v-if="dayHourFormOpen && !dayHourEditingId" class="day-hour-form card-inner">
+                  <h4>เพิ่มช่วงเวลา</h4>
+                  <div class="admin-form-grid admin-option-grid">
+                    <label>
+                      เริ่ม (ชม.)
+                      <select v-model.number="dayHourStartH" class="admin-input">
+                        <option v-for="h in dayHourAvailableStartHours" :key="`sh-${h}`" :value="h">
+                          {{ String(h).padStart(2, '0') }}
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      เริ่ม (นาที)
+                      <select v-model.number="dayHourStartM" class="admin-input">
+                        <option v-for="m in dayHourAvailableStartMinutes" :key="`sm-${m}`" :value="m">
+                          {{ String(m).padStart(2, '0') }}
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      สิ้นสุด (ชม.)
+                      <select v-model.number="dayHourEndH" class="admin-input">
+                        <option v-for="h in dayHourEndHourOptions" :key="`eh-${h}`" :value="h">
+                          {{ String(h).padStart(2, '0') }}
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      สิ้นสุด (นาที)
+                      <select v-model.number="dayHourEndM" class="admin-input">
+                        <option v-for="m in dayHourEndMinuteOptions" :key="`em-${m}`" :value="m">
+                          {{ String(m).padStart(2, '0') }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="admin-form-row">
+                    <button type="button" class="btn primary admin-action-btn" :disabled="dayHourSaving" @click="saveDayHourEntry">
+                      {{ dayHourSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+                    </button>
+                    <button type="button" class="btn admin-action-btn" @click="closeDayHourForm">ยกเลิก</button>
+                  </div>
+                </div>
+
+                <div v-if="!dayHourFormOpen || dayHourEditingId" class="day-hour-actions">
+                  <button
+                    type="button"
+                    class="btn primary day-hour-add-btn"
+                    :disabled="dayHourGenerating"
+                    @click="generateFullDayHours"
+                  >
+                    <i class="ti ti-calendar-plus" aria-hidden="true"></i>
+                    {{ dayHourGenerating ? 'กำลังสร้าง...' : 'เพิ่มเวลาทั้งวัน' }}
+                  </button>
+                  <button
+                    v-if="dayHourCanAddMore"
+                    type="button"
+                    class="btn primary day-hour-add-btn day-hour-add-btn-secondary"
+                    @click="openDayHourForm"
+                  >
+                    <i class="ti ti-plus" aria-hidden="true"></i>
+                    เพิ่มช่วงเวลา
+                  </button>
+                  <p v-if="!dayHourCanAddMore && dayHoursForSelectedDate.length" class="muted day-hour-full-note">
+                    ครบช่วงเวลาในวันนี้แล้ว (ถึง 23:59)
+                  </p>
+                </div>
+              </template>
+            </div>
+
+            <div v-show="activeBlocksSection === 'slot-display'" id="blocks-slot-display" class="admin-settings-section">
+              <h3>ความยาวคิว & รูปแบบแสดงผล</h3>
+              <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจองลูกค้า</p>
+              <div class="admin-form-row" style="flex-wrap:wrap;margin-bottom:12px">
+                <label class="admin-label-grow">
+                  ความยาวคิว (ชม.)
+                  <select v-model.number="bookingSlotHours" class="admin-input">
+                    <option :value="1">1 ชั่วโมง</option>
+                    <option :value="2">2 ชั่วโมง</option>
+                    <option :value="3">3 ชั่วโมง</option>
+                    <option :value="4">4 ชั่วโมง</option>
+                  </select>
+                </label>
+                <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveBookingSlotHours">
+                  บันทึกความยาวคิว
+                </button>
+              </div>
+
+              <div class="service-option-form card-inner" style="margin-bottom:14px">
+                <h4>ขยายเวลาจองตามบริการ</h4>
+                <p class="muted">
+                  เมื่อเปิด ระยะเวลารวมของบริการที่ลูกค้าเลือกจะขยายเวลาคิว · คิวถัดไปเลื่อนตามเวลาจริง · ช่องว่าง 1 ชม. ก่อนปิดร้านเปิดเป็นคิวสั้นได้
+                </p>
+                <label class="admin-checkbox">
+                  <input v-model="extendBookingByServices" type="checkbox" />
+                  เปิดใช้งานขยายเวลาจองตามบริการ
+                </label>
+                <label
+                  v-if="extendBookingByServices"
+                  class="admin-checkbox"
+                  style="margin-top:10px"
+                >
+                  <input v-model="extendBookingPastClose" type="checkbox" />
+                  อนุญาตให้ขยายเวลาเกินเวลาปิดร้าน
+                </label>
+                <p v-if="extendBookingByServices" class="muted" style="margin:6px 0 0">
+                  ถ้าเปิด ลูกค้าจองได้แม้บริการรวมยาวเกินเวลาปิดร้าน (ยังติดคิวถัดไปไม่ได้)
+                </p>
+                <div class="shop-hours-preview">
+                  <i class="ti ti-hourglass" style="font-size:16px;color:var(--color-primary)"></i>
+                  <template v-if="extendBookingByServices">
+                    เปิดอยู่ — ตั้ง <strong>ระยะเวลา (นาที)</strong> ในแต่ละบริการด้วย
+                  </template>
+                  <template v-else>ปิดอยู่ — คิวใช้ความยาวตามที่ตั้งไว้เท่านั้น</template>
+                </div>
+                <template v-if="extendBookingByServices">
+                  <label class="admin-label-grow" style="margin-top:12px">
+                    ข้อความเตือน — มีคิวถัดไป
+                    <textarea
+                      v-model="extendBlockNextBookingMessage"
+                      class="admin-input"
+                      rows="2"
+                      placeholder="เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากมีคิวต่อถัดไปไม่สามารถขยายเวลาได้"
+                    ></textarea>
+                  </label>
+                  <label class="admin-label-grow" style="margin-top:10px">
+                    ข้อความเตือน — ชนเวลาปิดร้าน
+                    <textarea
+                      v-model="extendBlockClosingMessage"
+                      class="admin-input"
+                      rows="2"
+                      placeholder="เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากชนเวลาปิดร้านไม่สามารถขยายเวลาได้"
+                    ></textarea>
+                  </label>
+                </template>
+                <div class="admin-form-row" style="margin-top:12px">
+                  <button type="button" class="btn primary admin-action-btn" @click="saveExtendBookingByServices">
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+
+              <div class="booking-view-toggle" role="group" aria-label="รูปแบบแสดงเวลาหน้าจอง">
+                <button
+                  type="button"
+                  class="view-toggle-btn"
+                  :class="{ active: bookingDisplayMode === 'normal' }"
+                  @click="bookingDisplayMode = 'normal'"
+                >
+                  <i class="ti ti-list" aria-hidden="true"></i>
+                  ปกติ (ทีละชม.)
+                </button>
+                <button
+                  type="button"
+                  class="view-toggle-btn"
+                  :class="{ active: bookingDisplayMode === 'slots_2h' }"
+                  @click="bookingDisplayMode = 'slots_2h'"
+                >
+                  <i class="ti ti-clock" aria-hidden="true"></i>
+                  ช่วงบล็อก (กระโดด {{ bookingSlotHours }} ชม.)
+                </button>
+              </div>
+              <div class="admin-form-row" style="margin-top:10px">
+                <button class="btn primary admin-action-btn" @click="saveBookingDisplay">บันทึกรูปแบบแสดงเวลา</button>
+              </div>
+              <div v-if="bookingDisplayMode === 'slots_2h'" class="shop-hours-preview">
+                <i class="ti ti-layout-list" style="font-size:16px;color:var(--color-primary)"></i>
+                ตัวอย่าง: {{ displaySlotPreview }}
+              </div>
+            </div>
+
+            <div v-show="activeBlocksSection === 'advance'" id="blocks-advance-days" class="admin-settings-section">
+              <h3>จำนวนวันจองล่วงหน้า</h3>
+              <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
+              <div class="admin-form-row">
+                <label class="admin-label-grow">
+                  จองล่วงหน้าได้ (วัน)
+                  <input v-model.number="advanceDays" type="number" min="1" max="365" step="1" class="admin-input" />
+                </label>
+                <button class="btn primary admin-action-btn" @click="saveAdvanceDays">บันทึก</button>
+              </div>
+              <div class="shop-hours-preview">
+                <i class="ti ti-calendar-event" style="font-size:16px;color:var(--color-primary)"></i>
+                เปิดจองถึง <strong>{{ formatBookUntilLabel(bookUntilDate) }}</strong>
+                <span v-if="bookUntilDate" class="muted">({{ advanceDays }} วัน นับจากวันที่กดบันทึกล่าสุด)</span>
               </div>
             </div>
 
@@ -5543,6 +6135,7 @@ watch(shopSlug, () => {
       </p>
 
       <div id="reviews-clip-form" class="admin-settings-section">
+      <template v-if="!clipForm.id">
       <div class="admin-form-row showcase-clip-form">
         <label class="admin-label-grow">
           ลิงก์ TikTok / Instagram
@@ -5573,12 +6166,10 @@ watch(shopSlug, () => {
 
       <div class="row">
         <button type="button" class="btn primary" @click="saveShowcaseClip">
-          {{ clipForm.id ? 'บันทึกการแก้ไข' : 'เพิ่มคลิป' }}
-        </button>
-        <button v-if="clipForm.id" type="button" class="btn" @click="resetClipForm">
-          ยกเลิกแก้ไข
+          เพิ่มคลิป
         </button>
       </div>
+      </template>
       </div>
 
       <p v-if="showcaseClips.length === 0" class="muted" style="margin-top:14px">ยังไม่มีคลิป</p>
@@ -5626,8 +6217,11 @@ watch(shopSlug, () => {
     <section v-show="activeTab === 'users'" class="card admin-section">
       <h3>รายชื่อผู้ใช้</h3>
       <p v-if="shopSlug === 'default'" class="muted">แสดงผู้ใช้ทั้งหมดในระบบ (สาขาหลัก)</p>
-      <p v-else class="muted">แสดงเฉพาะลูกค้าที่เคยจองที่สาขา <strong>/{{ shopSlug }}</strong></p>
-      <div class="admin-form-row" style="margin-bottom:14px">
+      <p v-else class="muted">
+        แสดงเฉพาะลูกค้าที่เคยจองที่สาขา <strong>/{{ shopSlug }}</strong>
+        · แอดมินสาขาสามารถให้/ถอดสิทธิ์แอดมินได้เฉพาะสาขานี้
+      </p>
+      <div class="admin-form-row" style="margin-bottom:14px;flex-wrap:wrap">
         <label class="admin-label-grow">
           ค้นหา
           <input
@@ -5637,6 +6231,16 @@ watch(shopSlug, () => {
             class="admin-input"
           />
         </label>
+        <button
+          v-if="canManageShopAdmins"
+          type="button"
+          class="btn primary admin-action-btn"
+          style="align-self:flex-end"
+          @click="openStaffAdd"
+        >
+          <i class="ti ti-user-plus" aria-hidden="true"></i>
+          {{ staffAddBtnLabel }}
+        </button>
       </div>
 
       <p v-if="filteredUsers.length === 0" class="muted">ไม่พบผู้ใช้</p>
@@ -5665,10 +6269,9 @@ watch(shopSlug, () => {
           <button type="button" class="btn primary" @click="openUserHistory(u)">ประวัติจอง</button>
           <button type="button" class="btn" @click="editUser(u)">แก้ไขข้อมูล</button>
           <button
-            v-if="isSuperAdmin"
+            v-if="canToggleUserAdmin(u)"
             class="btn"
             :class="u.is_admin ? 'danger' : ''"
-            :disabled="u.id === auth.user?.id && u.is_admin"
             @click="toggleAdmin(u)"
           >
             {{ u.is_admin ? 'ถอดแอดมิน' : 'ให้สิทธิ์แอดมิน' }}
@@ -5834,6 +6437,75 @@ watch(shopSlug, () => {
 
     <Teleport to="body">
       <div
+        v-if="staffAddOpen"
+        id="admin-staff-add-modal"
+        class="booking-edit-backdrop"
+        @click.self="closeStaffAdd"
+      >
+        <div class="booking-edit-modal card" role="dialog" aria-labelledby="staff-add-title">
+          <div class="booking-edit-header">
+            <h3 id="staff-add-title">{{ staffAddBtnLabel }} (แอดมิน)</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeStaffAdd">×</button>
+          </div>
+          <p v-if="isSuperAdmin" class="muted booking-edit-meta">
+            สร้างบัญชีล็อกอินเบอร์โทร + ให้สิทธิ์แอดมินตามสาขาที่เลือก
+          </p>
+          <p v-else class="muted booking-edit-meta">
+            สร้างบัญชีล็อกอินเบอร์โทร + ให้สิทธิ์แอดมินสาขา <strong>/{{ shopSlug }}</strong> เท่านั้น
+          </p>
+
+          <label class="booking-edit-field">
+            ชื่อ *
+            <input
+              v-model="staffAddName"
+              type="text"
+              class="admin-input"
+              placeholder="ชื่อที่ใช้ล็อกอิน"
+              @input="staffAddError = ''"
+            />
+          </label>
+
+          <label class="booking-edit-field">
+            เบอร์โทร *
+            <input
+              v-model="staffAddPhone"
+              type="tel"
+              class="admin-input"
+              placeholder="เช่น 0812345678"
+              @input="staffAddError = ''"
+            />
+          </label>
+
+          <label v-if="isSuperAdmin" class="booking-edit-field">
+            สาขาที่ดูแล
+            <select v-model="staffAddShopSlug" class="admin-input" @change="staffAddError = ''">
+              <option value="default">ทุกสาขา (แอดมินหลัก)</option>
+              <option v-for="shop in branchShopOptions" :key="shop.id" :value="shop.slug">
+                {{ shop.name }} ({{ shop.slug }})
+              </option>
+            </select>
+          </label>
+
+          <p class="muted booking-edit-meta">
+            ช่างล็อกอินที่หน้าเข้าสู่ระบบด้วย <strong>ชื่อ + เบอร์โทร</strong> เหมือนลูกค้า
+          </p>
+
+          <p v-if="staffAddError" class="alert error">{{ staffAddError }}</p>
+
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="staffAddSaving" @click="closeStaffAdd">
+              ยกเลิก
+            </button>
+            <button type="button" class="btn primary" :disabled="staffAddSaving" @click="saveStaffAdd">
+              {{ staffAddSaving ? 'กำลังสร้าง...' : 'สร้างแอดมิน' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="userEditOpen"
         class="booking-edit-backdrop"
         @click.self="closeUserEdit"
@@ -5909,7 +6581,7 @@ watch(shopSlug, () => {
             />
           </label>
 
-          <label v-if="isSuperAdmin" class="admin-checkbox user-edit-admin-check">
+          <label v-if="canEditUserAdminRights(userEditItem)" class="admin-checkbox user-edit-admin-check">
             <input
               v-model="userEditIsAdmin"
               type="checkbox"
@@ -5928,6 +6600,13 @@ watch(shopSlug, () => {
               </option>
             </select>
           </label>
+
+          <p
+            v-else-if="canEditUserAdminRights(userEditItem) && userEditIsAdmin"
+            class="muted booking-edit-meta"
+          >
+            สาขาที่ดูแล: <strong>{{ shopStore.shopName || shopSlug }}</strong> (/{{ shopSlug }})
+          </p>
 
           <label class="booking-edit-field">
             หมายเหตุ
@@ -6279,6 +6958,293 @@ watch(shopSlug, () => {
             >
               {{ bookingEditSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
             </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="dayHourEditingId"
+        class="booking-edit-backdrop"
+        @click.self="closeDayHourForm"
+      >
+        <div id="admin-day-hour-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="day-hour-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="day-hour-edit-title">แก้ไขช่วงเวลา</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeDayHourForm">×</button>
+          </div>
+          <p v-if="selectedDayHoursDate" class="muted booking-edit-meta">
+            วันที่ {{ formatServiceDateLabel(selectedDayHoursDate) }}
+          </p>
+          <p class="muted booking-edit-meta">
+            ถ้าขยายเวลาสิ้นสุด ช่วงถัดไปที่ต่อกันจะเลื่อนเวลาเริ่มให้อัตโนมัติ
+          </p>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              เริ่ม (ชม.)
+              <select v-model.number="dayHourStartH" class="admin-input">
+                <option v-for="h in dayHourAvailableStartHours" :key="`esh-${h}`" :value="h">
+                  {{ String(h).padStart(2, '0') }}
+                </option>
+              </select>
+            </label>
+            <label>
+              เริ่ม (นาที)
+              <select v-model.number="dayHourStartM" class="admin-input">
+                <option v-for="m in dayHourAvailableStartMinutes" :key="`esm-${m}`" :value="m">
+                  {{ String(m).padStart(2, '0') }}
+                </option>
+              </select>
+            </label>
+            <label>
+              สิ้นสุด (ชม.)
+              <select v-model.number="dayHourEndH" class="admin-input">
+                <option v-for="h in dayHourEndHourOptions" :key="`eeh-${h}`" :value="h">
+                  {{ String(h).padStart(2, '0') }}
+                </option>
+              </select>
+            </label>
+            <label>
+              สิ้นสุด (นาที)
+              <select v-model.number="dayHourEndM" class="admin-input">
+                <option v-for="m in dayHourEndMinuteOptions" :key="`eem-${m}`" :value="m">
+                  {{ String(m).padStart(2, '0') }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="dayHourSaving" @click="closeDayHourForm">
+              ยกเลิก
+            </button>
+            <button type="button" class="btn primary" :disabled="dayHourSaving" @click="saveDayHourEntry">
+              {{ dayHourSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="categoryForm.id"
+        class="booking-edit-backdrop"
+        @click.self="resetCategoryForm"
+      >
+        <div id="admin-category-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="category-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="category-edit-title">แก้ไขหมวดหมู่</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetCategoryForm">×</button>
+          </div>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              ชื่อหมวดหมู่ *
+              <input v-model="categoryForm.name" type="text" class="admin-input" placeholder="เช่น มือ, เท้า, ต่อเล็บ" />
+            </label>
+            <label>
+              รายละเอียด
+              <input v-model="categoryForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+            </label>
+            <label>
+              ลำดับแสดง
+              <input v-model.number="categoryForm.sort_order" type="number" min="0" step="1" class="admin-input" />
+            </label>
+          </div>
+          <label class="admin-checkbox" style="display:block;margin-bottom:16px">
+            <input v-model="categoryForm.is_active" type="checkbox" />
+            เปิดใช้งาน
+          </label>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" @click="resetCategoryForm">ยกเลิก</button>
+            <button type="button" class="btn primary" @click="saveServiceCategory">บันทึก</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="optionForm.id"
+        class="booking-edit-backdrop"
+        @click.self="resetOptionForm"
+      >
+        <div id="admin-option-edit-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-labelledby="option-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="option-edit-title">แก้ไขบริการ</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetOptionForm">×</button>
+          </div>
+          <p v-if="optionEditScopeLabel" class="muted booking-edit-meta">{{ optionEditScopeLabel }}</p>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              ชื่อบริการ *
+              <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
+            </label>
+            <label>
+              รายละเอียด
+              <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+            </label>
+            <label>
+              หมวดหมู่
+              <select v-model="optionForm.category_id" class="admin-input">
+                <option value="">— ไม่ระบุ —</option>
+                <option v-for="cat in activeServiceCategories" :key="`edit-cat-${cat.id}`" :value="cat.id">
+                  {{ cat.name }}
+                </option>
+              </select>
+            </label>
+            <label>
+              ราคา (บาท)
+              <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
+            </label>
+            <label>
+              ระยะเวลา (นาที)
+              <input v-model.number="optionForm.duration_min" type="number" min="1" step="1" class="admin-input" />
+            </label>
+            <label class="admin-color-field admin-color-field-full">
+              <span class="admin-color-label-row">
+                สีแสดงในปฏิทิน
+                <label class="admin-checkbox admin-checkbox-inline">
+                  <input v-model="optionFormUseColor" type="checkbox" />
+                  ใช้สี
+                </label>
+              </span>
+              <template v-if="optionFormUseColor">
+                <div class="color-picker-row">
+                  <input v-model="optionForm.color" type="color" class="admin-color-input" />
+                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
+                </div>
+                <div class="color-preset-row">
+                  <button
+                    v-for="preset in optionColorPresets"
+                    :key="`edit-opt-${preset.value}`"
+                    type="button"
+                    class="color-preset-btn"
+                    :class="{ active: optionForm.color === preset.value }"
+                    :style="{ background: preset.value }"
+                    :title="preset.label"
+                    :aria-label="preset.label"
+                    @click="setOptionColor(preset.value)"
+                  ></button>
+                </div>
+              </template>
+              <p v-else class="muted admin-color-hint">ไม่ใช้สี — วันในปฏิทินจะไม่เปลี่ยนจากบริการนี้</p>
+            </label>
+          </div>
+          <div class="admin-form-row" style="margin-bottom:16px">
+            <label class="admin-checkbox">
+              <input v-model="optionForm.is_active" type="checkbox" />
+              แสดงให้ลูกค้าเลือกจอง
+            </label>
+            <label class="admin-checkbox">
+              <input v-model="optionForm.is_required" type="checkbox" />
+              บังคับเลือกเมื่อจอง
+            </label>
+          </div>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" @click="resetOptionForm">ยกเลิก</button>
+            <button type="button" class="btn primary" @click="saveNailOption">บันทึก</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="locationForm.id"
+        class="booking-edit-backdrop"
+        @click.self="resetLocationForm"
+      >
+        <div id="admin-location-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="location-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="location-edit-title">แก้ไขสถานที่</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetLocationForm">×</button>
+          </div>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              ชื่อสถานที่ *
+              <input v-model="locationForm.name" type="text" class="admin-input" placeholder="เช่น จุฬา, เกษตร" />
+            </label>
+            <label>
+              รายละเอียด
+              <input v-model="locationForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+            </label>
+            <label>
+              ลำดับแสดง
+              <input v-model.number="locationForm.sort_order" type="number" min="0" step="1" class="admin-input" />
+            </label>
+            <label class="admin-color-field">
+              สีในปฏิทิน
+              <div class="color-picker-row">
+                <input v-model="locationForm.color" type="color" class="admin-color-input" />
+                <input v-model="locationForm.color" type="text" class="admin-input" maxlength="7" placeholder="#3b82f6" />
+              </div>
+              <div class="color-preset-row">
+                <button
+                  v-for="preset in optionColorPresets"
+                  :key="`edit-loc-${preset.value}`"
+                  type="button"
+                  class="color-preset-btn"
+                  :class="{ active: locationForm.color === preset.value }"
+                  :style="{ background: preset.value }"
+                  :title="preset.label"
+                  :aria-label="preset.label"
+                  @click="setLocationColor(preset.value)"
+                ></button>
+              </div>
+            </label>
+          </div>
+          <label class="admin-checkbox" style="display:block;margin-bottom:16px">
+            <input v-model="locationForm.is_active" type="checkbox" />
+            แสดงเป็นปุ่มลัด
+          </label>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" @click="resetLocationForm">ยกเลิก</button>
+            <button type="button" class="btn primary" @click="saveServiceLocation">บันทึก</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="clipForm.id"
+        class="booking-edit-backdrop"
+        @click.self="resetClipForm"
+      >
+        <div id="admin-clip-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="clip-edit-title">
+          <div class="booking-edit-header">
+            <h3 id="clip-edit-title">แก้ไขคลิป</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetClipForm">×</button>
+          </div>
+          <label class="booking-edit-field">
+            ลิงก์ TikTok / Instagram
+            <input
+              v-model="clipForm.tiktok_url"
+              type="url"
+              class="admin-input"
+              placeholder="https://www.tiktok.com/... หรือ https://www.instagram.com/p/..."
+            />
+          </label>
+          <label class="booking-edit-field">
+            ชื่อแสดง (ไม่บังคับ)
+            <input
+              v-model="clipForm.title"
+              type="text"
+              class="admin-input"
+              placeholder="เช่น เจล french"
+            />
+          </label>
+          <label class="booking-edit-field">
+            แสดง
+            <select v-model="clipForm.is_active" class="admin-input">
+              <option :value="true">เปิด</option>
+              <option :value="false">ปิด</option>
+            </select>
+          </label>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" @click="resetClipForm">ยกเลิก</button>
+            <button type="button" class="btn primary" @click="saveShowcaseClip">บันทึก</button>
           </div>
         </div>
       </div>
@@ -7006,6 +7972,22 @@ watch(shopSlug, () => {
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+.day-hour-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.day-hour-actions .day-hour-add-btn {
+  margin-top: 0;
+}
+
+.day-hour-add-btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-primary-dark);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
 }
 
 .day-hour-full-note {
@@ -8078,6 +9060,10 @@ watch(shopSlug, () => {
   z-index: 1;
 }
 
+.admin-edit-modal-wide {
+  width: min(100%, 560px);
+}
+
 .booking-edit-header {
   display: flex;
   align-items: center;
@@ -8430,6 +9416,33 @@ watch(shopSlug, () => {
   margin-top: 0;
 }
 
+@media (min-width: 641px) {
+  .admin-drawer-nav {
+    width: 260px;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .admin-drawer-menu-btn,
+  .admin-drawer-close {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-drawer-nav:not(.admin-drawer-nav--open) {
+    width: 0;
+    overflow: hidden;
+    border-right: none;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 @media (max-width: 640px) {
   .admin-drawer-nav {
     position: fixed;
@@ -8449,23 +9462,6 @@ watch(shopSlug, () => {
 
   .admin-drawer-close {
     display: inline-flex;
-  }
-}
-
-@media (min-width: 641px) {
-  .admin-drawer-nav:not(.admin-drawer-nav--open) {
-    width: 0;
-    overflow: hidden;
-    border-right: none;
-    padding: 0;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .admin-drawer-nav--open {
-    width: 260px;
-    opacity: 1;
-    pointer-events: auto;
   }
 }
 
@@ -8723,5 +9719,144 @@ watch(shopSlug, () => {
   height: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+.btn-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-primary, #6366f1);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.admin-setup-wizard {
+  margin-bottom: var(--space-3);
+  border-color: color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+}
+
+.admin-setup-wizard-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-setup-wizard-head h3 {
+  margin: 0 0 4px;
+}
+
+.admin-setup-dismiss {
+  flex-shrink: 0;
+}
+
+.admin-setup-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-setup-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.admin-setup-step.done {
+  opacity: 0.72;
+}
+
+.admin-setup-step-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.admin-setup-go {
+  min-width: 100px;
+}
+
+.admin-booking-actions-desktop {
+  display: none;
+}
+
+.admin-booking-actions-mobile {
+  display: block;
+  width: 100%;
+}
+
+.admin-booking-actions-primary {
+  width: 100%;
+}
+
+.admin-booking-actions-primary .btn {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+}
+
+.admin-action-overflow {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.admin-overflow-trigger {
+  min-width: var(--touch-min);
+  padding: 8px 12px;
+}
+
+.admin-overflow-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.admin-overflow-item {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-overflow-item:hover {
+  background: var(--color-surface-muted);
+}
+
+.admin-overflow-item.danger {
+  color: var(--color-error, #dc2626);
+}
+
+@media (min-width: 821px) {
+  .admin-booking-actions-desktop {
+    display: flex;
+  }
+
+  .admin-booking-actions-mobile {
+    display: none;
+  }
 }
 </style>
