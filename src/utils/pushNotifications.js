@@ -242,5 +242,8 @@ export function getPushHelpText(status) {
   if (isIosDevice() && !isStandalonePwa()) {
     return 'iPhone: กด Share → เพิ่มลงหน้าจอหลัก แล้วเปิดจากไอคอนแอป'
   }
+  if (isIosDevice()) {
+    return 'iPhone: แจ้งที่หน้าจอล็อก/ศูนย์แจ้งเตือน — ลองปิดแอปหรือล็อกหน้าจอก่อนทดสอบ'
+  }
   return 'แจ้งทั้งในเว็บและมุมจอ แม้เปิดแอปอยู่'
 }
