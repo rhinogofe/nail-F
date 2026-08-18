@@ -596,13 +596,16 @@ async function onVisibilityChange() {
 }
 
 function openBookSheet(slot) {
-  if (!canBook(slot) || bookingForSlot(slot)) return
+  if (!canBook(slot) || bookingForSlot(slot) || showModal.value) return
   pendingSlot.value = slot
   sheetStep.value = 'confirm'
   selectedOptionIds.value = []
   selectedCategoryId.value = ''
   serviceError.value = ''
-  showModal.value = true
+  afterScrollSettled(() => {
+    if (!pendingSlot.value) return
+    showModal.value = true
+  })
 }
 
 function closeBookSheet() {
@@ -648,10 +651,38 @@ function resetInteractionBlockers() {
   scheduleOverlayCleanup()
 }
 
+// iOS PWA misplaces fixed-position sheets while the page is mid-scroll, so the
+// scroll has to finish before the sheet mounts.
+function scrollPageToTop() {
+  if (typeof window === 'undefined') return
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+}
+
+function afterScrollSettled(callback) {
+  scrollPageToTop()
+  let attempts = 0
+  const tick = () => {
+    attempts += 1
+    const offset = window.scrollY || document.documentElement.scrollTop || 0
+    if (offset > 1 && attempts < 10) {
+      scrollPageToTop()
+      requestAnimationFrame(tick)
+      return
+    }
+    callback()
+  }
+  requestAnimationFrame(tick)
+}
+
 function openCancelConfirm(bookingId) {
   if (cancelInFlight.value || pendingCancelId.value) return
   dismissBlockingOverlays()
-  pendingCancelId.value = bookingId
+  afterScrollSettled(() => {
+    if (cancelInFlight.value || pendingCancelId.value) return
+    pendingCancelId.value = bookingId
+  })
 }
 
 function closeCancelConfirm() {
@@ -884,17 +915,20 @@ watch(anySheetOpen, (open, wasOpen) => {
 
 onActivated(() => {
   resetInteractionBlockers()
+  scrollPageToTop()
 })
 
 watch(
   () => route.fullPath,
   () => {
     resetInteractionBlockers()
+    scrollPageToTop()
   }
 )
 
 onMounted(() => {
   resetInteractionBlockers()
+  scrollPageToTop()
   window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
