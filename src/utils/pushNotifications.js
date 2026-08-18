@@ -222,10 +222,7 @@ export async function startPushNotificationListener() {
   const { onMessage } = await loadFirebaseMessagingModule()
   foregroundUnsubscribe = onMessage(messaging, (payload) => {
     window.dispatchEvent(new CustomEvent(FCM_PUSH_RECEIVED_EVENT, { detail: payload }))
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      return
-    }
-    showOsNotificationFromPayload(payload)
+    void showOsNotificationFromPayload(payload)
   })
 
   return () => {
