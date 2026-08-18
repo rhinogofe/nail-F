@@ -4,7 +4,7 @@ import { getFirebaseVapidKey, getFirebaseWebConfig, isFirebaseConfigured } from 
 const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'fcmToken'
 export const PUSH_DEVICE_STATUS_EVENT = 'push-device-status-changed'
-export const FCM_FOREGROUND_MESSAGE_EVENT = 'fcm-foreground-message'
+export const FCM_PUSH_RECEIVED_EVENT = 'fcm-push-received'
 
 let messagingInstance = null
 let firebaseMessagingModule = null
@@ -177,7 +177,6 @@ export async function showOsNotificationFromPayload(payload) {
   const title = payload?.notification?.title || payload?.data?.title || 'แจ้งเตือน'
   const body = payload?.notification?.body || payload?.data?.body || ''
   const url = payload?.data?.url || payload?.fcmOptions?.link || '/'
-  const messageId = payload?.data?.messageId || payload?.data?.message_id || ''
   const options = {
     body,
     icon: '/favicon.svg',
@@ -222,8 +221,8 @@ export async function startPushNotificationListener() {
 
   const { onMessage } = await loadFirebaseMessagingModule()
   foregroundUnsubscribe = onMessage(messaging, (payload) => {
+    window.dispatchEvent(new CustomEvent(FCM_PUSH_RECEIVED_EVENT, { detail: payload }))
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      window.dispatchEvent(new CustomEvent(FCM_FOREGROUND_MESSAGE_EVENT))
       return
     }
     showOsNotificationFromPayload(payload)
@@ -234,22 +233,6 @@ export async function startPushNotificationListener() {
   }
 }
 
-export function showOsNotificationForChatItem({
-  title,
-  body,
-  url,
-  messageId,
-}) {
-  return showOsNotificationFromPayload({
-    notification: { title, body },
-    data: {
-      title,
-      body,
-      url,
-      messageId: messageId ? String(messageId) : '',
-    },
-  })
-}
 
 export function initPushNotificationsWhenReady() {
   if (!canUseBrowserPush() || Notification.permission !== 'granted') {
@@ -315,5 +298,5 @@ export function getPushHelpText(status) {
   if (isIosDevice()) {
     return 'iPhone: แจ้งที่หน้าจอล็อก/ศูนย์แจ้งเตือน — ลองปิดแอปหรือล็อกหน้าจอก่อนทดสอบ'
   }
-  return 'แจ้งทั้งในเว็บและมุมจอ แม้เปิดแอปอยู่'
+  return 'แจ้งที่หน้าจอล็อก/ศูนย์แจ้งเตือนเมื่อมีข้อความหรือการจองใหม่'
 }

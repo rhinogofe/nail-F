@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import ChatNotificationStack from './components/ChatNotificationStack.vue'
 import { useAuthStore } from './stores/auth'
 import {
   initPushNotificationsWhenReady,
@@ -40,7 +39,6 @@ watch(() => auth.isLoggedIn, () => {
 <template>
   <div class="app-shell" :class="{ 'app-shell--admin': isAdminRoute }">
     <router-view />
-    <ChatNotificationStack />
   </div>
 </template>
 

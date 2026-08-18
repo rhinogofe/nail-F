@@ -2,6 +2,18 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
+import {
+  FCM_PUSH_RECEIVED_EVENT,
+  PUSH_DEVICE_STATUS_EVENT,
+  getStoredFcmToken,
+} from '../utils/pushNotifications'
+
+const POLL_MS = 30000
+const POLL_MS_PUSH = 90000
+
+function getPollIntervalMs() {
+  return getStoredFcmToken() ? POLL_MS_PUSH : POLL_MS
+}
 
 export function useChatUnread() {
   const auth = useAuthStore()
@@ -36,7 +48,8 @@ export function useChatUnread() {
     if (timer) clearInterval(timer)
     timer = null
     if (typeof document !== 'undefined' && document.hidden) return
-    timer = setInterval(refresh, 20000)
+    if (!auth.isLoggedIn) return
+    timer = setInterval(refresh, getPollIntervalMs())
   }
 
   function onVisibilityChange() {
@@ -52,18 +65,44 @@ export function useChatUnread() {
     }, 500)
   }
 
+  function onPushReceived() {
+    refresh()
+  }
+
+  function onPushDeviceStatusChanged() {
+    restartTimer()
+  }
+
   onMounted(() => {
     refresh()
     restartTimer()
     document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener(FCM_PUSH_RECEIVED_EVENT, onPushReceived)
+    window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
   })
 
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
+    window.removeEventListener(FCM_PUSH_RECEIVED_EVENT, onPushReceived)
+    window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
     if (timer) clearInterval(timer)
   })
 
   watch([shopSlug, isAdminForShop], refresh)
+
+  watch(
+    () => auth.isLoggedIn,
+    (loggedIn) => {
+      if (!loggedIn) {
+        unreadCount.value = 0
+        if (timer) clearInterval(timer)
+        timer = null
+        return
+      }
+      refresh()
+      restartTimer()
+    }
+  )
 
   return { unreadCount, refresh }
 }

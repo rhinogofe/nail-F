@@ -10,6 +10,7 @@ import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { compressChatImage } from '../utils/compressChatImage'
+import { FCM_PUSH_RECEIVED_EVENT } from '../utils/pushNotifications'
 
 const ui = useUiSettingsStore()
 const auth = useAuthStore()
@@ -415,10 +416,16 @@ function onViewportChange() {
   syncSidebarForViewport()
 }
 
+function onFcmPushReceived() {
+  if (document.hidden) return
+  refreshChat(true)
+}
+
 onMounted(async () => {
   mobileMq = window.matchMedia('(max-width: 640px)')
   onViewportChange()
   mobileMq.addEventListener('change', onViewportChange)
+  window.addEventListener(FCM_PUSH_RECEIVED_EVENT, onFcmPushReceived)
 
   const userId = route.query.userId
   if (isAdminMode.value) {
@@ -437,6 +444,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener(FCM_PUSH_RECEIVED_EVENT, onFcmPushReceived)
   if (pollTimer) clearInterval(pollTimer)
   scrollCleanup?.()
   mobileMq?.removeEventListener('change', onViewportChange)
