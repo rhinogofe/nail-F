@@ -54,6 +54,7 @@ const { loadMyCoupons, redeemCoupon, showMyCoupons, couponSettings, canRedeem, l
 
 const selectedDate = ref(toLocalYmd(new Date()))
 const busy = ref(false)
+const cancelInFlight = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 const showModal = ref(false)
@@ -612,6 +613,8 @@ function closeBookSheet() {
 }
 
 function resetStripDragState() {
+  const el = dayStripRef.value
+  const pointerId = stripDragState.value.pointerId
   stripDragState.value = {
     active: false,
     moved: false,
@@ -620,11 +623,22 @@ function resetStripDragState() {
     targetIso: null,
     pointerId: null,
   }
+  if (el && pointerId != null) {
+    try {
+      if (el.hasPointerCapture?.(pointerId)) {
+        el.releasePointerCapture(pointerId)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function resetInteractionBlockers() {
   closeBookSheet()
   busy.value = false
+  cancelInFlight.value = null
+  submitInFlight = false
   resetStripDragState()
   dismissBlockingOverlays()
   scheduleOverlayCleanup()
@@ -728,6 +742,7 @@ async function submitBooking() {
 }
 
 async function cancel(bookingId) {
+  if (cancelInFlight.value) return
   resetInteractionBlockers()
   await nextTick()
   const result = await Swal.fire({
@@ -736,17 +751,21 @@ async function cancel(bookingId) {
     icon: 'warning', showCancelButton: true,
     confirmButtonText: 'ยืนยันยกเลิก', cancelButtonText: 'ปิด',
   })
+  dismissBlockingOverlays()
+  scheduleOverlayCleanup()
   if (!result.isConfirmed) return
-  busy.value = true
+  cancelInFlight.value = bookingId
   try {
     await bookingStore.cancelBooking(bookingId, selectedDate.value)
+    successMessage.value = ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ')
     resetInteractionBlockers()
-    await Swal.fire({ title: ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ'), icon: 'success', timer: 1300, showConfirmButton: false })
-    dismissBlockingOverlays()
+    window.setTimeout(() => { successMessage.value = '' }, 2000)
   } catch (error) {
     await Swal.fire({ title: ui.get('ui_cancel_fail_title', 'ยกเลิกไม่สำเร็จ'), text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
+    dismissBlockingOverlays()
+    scheduleOverlayCleanup()
   } finally {
-    busy.value = false
+    cancelInFlight.value = null
   }
 }
 
@@ -804,6 +823,7 @@ function displayBookingLabel(booking) {
 }
 
 function goToPayment(booking) {
+  resetInteractionBlockers()
   const slot = bookingRowToSlot(booking, bookingStore.bookingSlotHours)
   router.push({
     path: shopPath(`/payment/${booking.id}`),
@@ -987,6 +1007,10 @@ onUnmounted(() => {
         <i class="ti ti-alert-circle" style="font-size:15px;vertical-align:-2px" aria-hidden="true"></i>
         {{ errorMessage }}
       </p>
+      <p v-if="successMessage" class="msg success">
+        <i class="ti ti-check" style="font-size:15px;vertical-align:-2px" aria-hidden="true"></i>
+        {{ successMessage }}
+      </p>
 
       <!-- Slots -->
       <div v-if="visibleSlots.length === 0" class="empty-state">
@@ -1014,15 +1038,16 @@ onUnmounted(() => {
               </span>
               <button
                 v-if="bookingForSlot(slot).status === 'awaiting_payment'"
+                type="button"
                 class="btn-cancel-slot"
-                :disabled="busy"
+                :disabled="cancelInFlight === bookingForSlot(slot).id"
                 @click.stop="cancel(bookingForSlot(slot).id)"
               >ยกเลิก</button>
               <button
                 v-if="bookingForSlot(slot).status === 'awaiting_payment'"
+                type="button"
                 class="book-btn"
-                :disabled="busy"
-                @click="goToPayment(bookingForSlot(slot))"
+                @click.stop="goToPayment(bookingForSlot(slot))"
               >ชำระเงิน</button>
             </div>
           </div>
@@ -1469,6 +1494,7 @@ onUnmounted(() => {
   padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 10px;
 }
 .msg.error { background: rgba(196, 92, 92, 0.08); color: var(--color-error); border: 1px solid rgba(196, 92, 92, 0.2); }
+.msg.success { background: rgba(34, 120, 80, 0.08); color: #227850; border: 1px solid rgba(34, 120, 80, 0.2); }
 
 .empty-state {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
@@ -1503,7 +1529,7 @@ onUnmounted(() => {
 .slot-card.continuation { background: var(--slot-busy-bg); border-color: var(--color-border); justify-content: center; min-height: 40px; }
 
 .slot-left { display: flex; flex-direction: column; gap: 2px; }
-.slot-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.slot-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; position: relative; z-index: 2; }
 .slot-range { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
 .slot-status { font-size: 11px; color: var(--color-text-muted); }
 .slot-status.status-awaiting { color: var(--color-primary); font-weight: 500; }
@@ -1544,6 +1570,7 @@ onUnmounted(() => {
   border: 1px solid var(--color-border); background: var(--color-surface-elevated);
   font-size: 10px; font-weight: 600; color: var(--color-text-secondary);
   cursor: pointer; flex-shrink: 0; font-family: inherit; transition: all var(--transition);
+  position: relative; z-index: 2; touch-action: manipulation;
 }
 .btn-cancel-slot:hover:not(:disabled) {
   border-color: var(--color-primary);
@@ -1884,6 +1911,7 @@ onUnmounted(() => {
 /* ── Transitions ── */
 .fade-enter-active, .fade-leave-active { transition: opacity var(--transition); }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-leave-active.overlay { pointer-events: none; }
 .fade-enter-active .sheet, .fade-leave-active .sheet { transition: transform var(--transition-sheet); }
 .fade-enter-from .sheet { transform: translateY(100%); }
 .fade-leave-to .sheet { transform: translateY(100%); }

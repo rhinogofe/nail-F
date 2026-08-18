@@ -12,7 +12,9 @@ export function dismissBlockingOverlays() {
   document.body.classList.remove('swal2-shown', 'swal2-height-auto')
   document.body.style.removeProperty('padding-right')
   document.body.style.removeProperty('overflow')
+  document.body.style.removeProperty('pointer-events')
   document.documentElement.style.removeProperty('overflow')
+  document.documentElement.style.removeProperty('pointer-events')
 
   document.querySelectorAll('.swal2-container').forEach((el) => el.remove())
 }
