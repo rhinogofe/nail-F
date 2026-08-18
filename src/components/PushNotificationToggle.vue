@@ -22,10 +22,10 @@ const statusNote = computed(() => {
 })
 
 const iosInstallSteps = [
-  'เปิดเว็บนี้ด้วย Safari',
-  'กดปุ่มแชร์ (สี่เหลี่ยมมีลูกศรชี้ขึ้น) ด้านล่างจอ',
-  'เลื่อนหาแล้วเลือก "เพิ่มไปยังหน้าจอโฮม"',
-  'เปิดแอปจากไอคอนบนหน้าจอโฮม แล้วกลับมาเปิดสวิตช์นี้',
+  { text: 'เปิดเว็บนี้ด้วย Safari' },
+  { text: 'กดปุ่มแชร์', icon: 'share', textAfter: 'ที่แถบด้านล่างจอ' },
+  { text: 'เลื่อนหาแล้วเลือก "เพิ่มไปยังหน้าจอโฮม"' },
+  { text: 'เปิดแอปจากไอคอนบนหน้าจอโฮม แล้วกลับมาเปิดสวิตช์นี้' },
 ]
 
 async function onToggle(event) {
@@ -54,7 +54,26 @@ async function onToggle(event) {
       <ol v-if="needsIosInstall && configured" class="push-ios-steps">
         <li v-for="(step, index) in iosInstallSteps" :key="index">
           <span class="push-ios-step-num" aria-hidden="true">{{ index + 1 }}</span>
-          <span>{{ step }}</span>
+          <span class="push-ios-step-text">
+            {{ step.text }}
+            <svg
+              v-if="step.icon === 'share'"
+              class="push-ios-share-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              role="img"
+              aria-label="ปุ่มแชร์ของ Safari"
+            >
+              <path d="M12 3v12" />
+              <path d="M8.5 6.5 12 3l3.5 3.5" />
+              <path d="M8 9.5H6.2A2.2 2.2 0 0 0 4 11.7v7.1A2.2 2.2 0 0 0 6.2 21h11.6a2.2 2.2 0 0 0 2.2-2.2v-7.1A2.2 2.2 0 0 0 17.8 9.5H16" />
+            </svg>
+            <template v-if="step.textAfter">{{ step.textAfter }}</template>
+          </span>
         </li>
       </ol>
 
@@ -136,6 +155,18 @@ async function onToggle(event) {
   font-size: var(--text-caption);
   line-height: 1.5;
   color: var(--color-text-primary);
+}
+
+.push-ios-step-text {
+  min-width: 0;
+}
+
+.push-ios-share-icon {
+  width: 15px;
+  height: 15px;
+  margin: 0 2px;
+  vertical-align: -3px;
+  color: #007aff;
 }
 
 .push-ios-step-num {
