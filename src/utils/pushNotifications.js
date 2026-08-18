@@ -1,12 +1,22 @@
-import { initializeApp, getApps } from 'firebase/app'
-import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging'
 import api from '../api/axios'
 import { getFirebaseVapidKey, getFirebaseWebConfig, isFirebaseConfigured } from '../utils/firebaseConfig'
 
 const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'fcmToken'
+export const PUSH_DEVICE_STATUS_EVENT = 'push-device-status-changed'
 
 let messagingInstance = null
+let firebaseMessagingModule = null
+
+async function loadFirebaseMessagingModule() {
+  if (firebaseMessagingModule) return firebaseMessagingModule
+  const [appMod, messagingMod] = await Promise.all([
+    import('firebase/app'),
+    import('firebase/messaging'),
+  ])
+  firebaseMessagingModule = { ...appMod, ...messagingMod }
+  return firebaseMessagingModule
+}
 
 function canUseBrowserPush() {
   return typeof window !== 'undefined'
@@ -39,18 +49,26 @@ async function waitForServiceWorkerRegistration() {
       })
     })
   }
+  await registration.update().catch(() => {})
   return registration
 }
 
 async function getMessagingInstance() {
   if (messagingInstance) return messagingInstance
   if (!isFirebaseConfigured()) return null
+
+  const { initializeApp, getApps, getMessaging, isSupported } = await loadFirebaseMessagingModule()
   if (!(await isSupported())) return null
 
   const apps = getApps()
   const app = apps.length ? apps[0] : initializeApp(getFirebaseWebConfig())
   messagingInstance = getMessaging(app)
   return messagingInstance
+}
+
+function notifyPushDeviceStatusChanged() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(PUSH_DEVICE_STATUS_EVENT))
 }
 
 export async function detectPushSupport() {
@@ -60,6 +78,7 @@ export async function detectPushSupport() {
   if (!isFirebaseConfigured()) {
     return { supported: false, reason: 'config' }
   }
+  const { isSupported } = await loadFirebaseMessagingModule()
   if (!(await isSupported())) {
     return { supported: false, reason: 'unsupported' }
   }
@@ -93,6 +112,10 @@ export function getStoredFcmToken() {
   return localStorage.getItem(TOKEN_STORAGE_KEY) || ''
 }
 
+export function isPushEnabledOnDevice() {
+  return Boolean(getStoredFcmToken())
+}
+
 async function syncTokenWithBackend(token, enabled) {
   await api.post('/api/push/token', { token, enabled })
 }
@@ -114,6 +137,7 @@ export async function enableBrowserPush() {
     throw new Error('ตั้งค่า Firebase ไม่ครบ')
   }
 
+  const { getToken } = await loadFirebaseMessagingModule()
   const token = await getToken(messaging, { vapidKey: getFirebaseVapidKey() })
   if (!token) {
     throw new Error('ขอ token แจ้งเตือนไม่สำเร็จ')
@@ -121,6 +145,7 @@ export async function enableBrowserPush() {
 
   localStorage.setItem(TOKEN_STORAGE_KEY, token)
   await syncTokenWithBackend(token, true)
+  notifyPushDeviceStatusChanged()
   await startPushNotificationListener()
   return token
 }
@@ -129,6 +154,7 @@ export async function disableBrowserPush() {
   const token = getStoredFcmToken()
   stopPushNotificationListener()
   localStorage.removeItem(TOKEN_STORAGE_KEY)
+  notifyPushDeviceStatusChanged()
   try {
     await api.post('/api/push/disable', token ? { token } : {})
   } catch {
@@ -185,6 +211,7 @@ export async function startPushNotificationListener() {
   const messaging = await getMessagingInstance()
   if (!messaging) return () => {}
 
+  const { onMessage } = await loadFirebaseMessagingModule()
   foregroundUnsubscribe = onMessage(messaging, (payload) => {
     showOsNotificationFromPayload(payload)
   })
@@ -211,9 +238,29 @@ export function showOsNotificationForChatItem({
   })
 }
 
-export async function initPushNotificationsWhenReady() {
-  if (!canUseBrowserPush() || Notification.permission !== 'granted') return null
-  if (!getStoredFcmToken()) return null
+export function initPushNotificationsWhenReady() {
+  if (!canUseBrowserPush() || Notification.permission !== 'granted') {
+    return Promise.resolve(null)
+  }
+  if (!getStoredFcmToken()) {
+    return Promise.resolve(null)
+  }
+
+  return new Promise((resolve) => {
+    const run = () => {
+      initPushNotificationsWhenReadyImpl()
+        .then(resolve)
+        .catch(() => resolve(null))
+    }
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(run, { timeout: 2500 })
+    } else {
+      setTimeout(run, 800)
+    }
+  })
+}
+
+async function initPushNotificationsWhenReadyImpl() {
   await waitForServiceWorkerRegistration()
   return startPushNotificationListener()
 }

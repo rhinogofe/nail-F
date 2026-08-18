@@ -20,6 +20,7 @@ export function useChatUnread() {
       unreadCount.value = 0
       return
     }
+    if (typeof document !== 'undefined' && document.hidden) return
     try {
       const url = isAdminForShop.value
         ? '/api/admin/chat/unread-count'
@@ -31,12 +32,31 @@ export function useChatUnread() {
     }
   }
 
+  function restartTimer() {
+    if (timer) clearInterval(timer)
+    timer = null
+    if (typeof document !== 'undefined' && document.hidden) return
+    timer = setInterval(refresh, 20000)
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) {
+      if (timer) clearInterval(timer)
+      timer = null
+      return
+    }
+    refresh()
+    restartTimer()
+  }
+
   onMounted(() => {
     refresh()
-    timer = setInterval(refresh, 15000)
+    restartTimer()
+    document.addEventListener('visibilitychange', onVisibilityChange)
   })
 
   onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
     if (timer) clearInterval(timer)
   })
 

@@ -3,10 +3,19 @@ import { useRoute } from 'vue-router'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
-import { showOsNotificationForChatItem } from '../utils/pushNotifications'
+import {
+  PUSH_DEVICE_STATUS_EVENT,
+  getStoredFcmToken,
+  showOsNotificationForChatItem,
+} from '../utils/pushNotifications'
 
 const POLL_MS = 12000
+const POLL_MS_PUSH = 45000
 const AUTO_DISMISS_MS = 7000
+
+function getPollIntervalMs() {
+  return getStoredFcmToken() ? POLL_MS_PUSH : POLL_MS
+}
 
 export function useChatNotifications() {
   const auth = useAuthStore()
@@ -17,6 +26,7 @@ export function useChatNotifications() {
   const lastSeenAt = ref(null)
   const seenIds = ref(new Set())
   let pollTimer = null
+  let pollInFlight = false
   const dismissTimers = new Map()
 
   const shopSlug = computed(
@@ -80,7 +90,12 @@ export function useChatNotifications() {
       ...notifications.value,
     ].slice(0, 5)
 
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    const pushHandlesOs = Boolean(getStoredFcmToken())
+    if (
+      !pushHandlesOs
+      && typeof Notification !== 'undefined'
+      && Notification.permission === 'granted'
+    ) {
       showOsNotificationForChatItem({
         title,
         body: item.body,
@@ -111,8 +126,10 @@ export function useChatNotifications() {
   }
 
   async function pollNotifications() {
-    if (!auth.isLoggedIn) return
+    if (!auth.isLoggedIn || pollInFlight) return
+    if (typeof document !== 'undefined' && document.hidden) return
 
+    pollInFlight = true
     try {
       const params = {}
       if (lastSeenAt.value) params.after = lastSeenAt.value
@@ -135,16 +152,44 @@ export function useChatNotifications() {
       if (latest) lastSeenAt.value = latest
     } catch {
       /* ignore polling errors */
+    } finally {
+      pollInFlight = false
     }
+  }
+
+  function restartPollTimer() {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (!auth.isLoggedIn) return
+    pollTimer = setInterval(pollNotifications, getPollIntervalMs())
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) {
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = null
+      return
+    }
+    pollNotifications()
+    restartPollTimer()
+  }
+
+  function onPushDeviceStatusChanged() {
+    restartPollTimer()
   }
 
   onMounted(() => {
     markBaselineNow()
     pollNotifications()
-    pollTimer = setInterval(pollNotifications, POLL_MS)
+    restartPollTimer()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
   })
 
   onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
     if (pollTimer) clearInterval(pollTimer)
     dismissTimers.forEach((timer) => clearTimeout(timer))
     dismissTimers.clear()
@@ -179,10 +224,13 @@ export function useChatNotifications() {
         notifications.value = []
         seenIds.value = new Set()
         lastSeenAt.value = null
+        if (pollTimer) clearInterval(pollTimer)
+        pollTimer = null
         return
       }
       markBaselineNow()
       pollNotifications()
+      restartPollTimer()
     }
   )
 

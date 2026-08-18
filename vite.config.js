@@ -15,23 +15,37 @@ function buildFirebaseServiceWorkerSource(env) {
   return `importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-messaging-compat.js');
 
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 firebase.initializeApp(${JSON.stringify(config)});
 
 const messaging = firebase.messaging();
+const iconUrl = self.location.origin + '/favicon.svg';
 
-messaging.onBackgroundMessage((payload) => {
+function buildNotificationOptions(payload) {
   const title = payload.notification?.title || payload.data?.title || 'แจ้งเตือน';
   const body = payload.notification?.body || payload.data?.body || '';
   const url = payload.data?.url || payload.fcmOptions?.link || '/';
   const messageId = payload.data?.messageId || payload.data?.message_id || '';
-  self.registration.showNotification(title, {
-    body,
-    icon: '/favicon.svg',
-    badge: '/favicon.svg',
-    tag: messageId ? 'nail-msg-' + messageId : 'nail-push-' + Date.now(),
-    renotify: true,
-    data: { url },
-  });
+  return {
+    title,
+    options: {
+      body,
+      icon: iconUrl,
+      badge: iconUrl,
+      tag: messageId ? 'nail-msg-' + messageId : 'nail-push-' + Date.now(),
+      renotify: true,
+      data: { url },
+    },
+  };
+}
+
+messaging.onBackgroundMessage((payload) => {
+  const built = buildNotificationOptions(payload);
+  return self.registration.showNotification(built.title, built.options);
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -44,7 +58,12 @@ self.addEventListener('notificationclick', (event) => {
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
         if ('focus' in client) {
-          return client.focus().then(() => client.navigate(targetUrl));
+          return client.focus().then(() => {
+            if ('navigate' in client) {
+              return client.navigate(targetUrl);
+            }
+            return undefined;
+          });
         }
       }
       if (clients.openWindow) {
