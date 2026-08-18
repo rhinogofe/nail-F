@@ -58,6 +58,7 @@ const cancelInFlight = ref(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 const showModal = ref(false)
+const pendingCancelId = ref(null)
 const sheetStep = ref('confirm')
 const pendingSlot = ref(null)
 const selectedOptionIds = ref([])
@@ -636,12 +637,42 @@ function resetStripDragState() {
 
 function resetInteractionBlockers() {
   closeBookSheet()
+  pendingCancelId.value = null
   busy.value = false
   cancelInFlight.value = null
   submitInFlight = false
   resetStripDragState()
   dismissBlockingOverlays()
   scheduleOverlayCleanup()
+}
+
+function openCancelConfirm(bookingId) {
+  if (cancelInFlight.value || pendingCancelId.value) return
+  dismissBlockingOverlays()
+  pendingCancelId.value = bookingId
+}
+
+function closeCancelConfirm() {
+  pendingCancelId.value = null
+}
+
+async function confirmCancelBooking() {
+  const bookingId = pendingCancelId.value
+  if (!bookingId || cancelInFlight.value) return
+  pendingCancelId.value = null
+  cancelInFlight.value = bookingId
+  try {
+    await bookingStore.cancelBooking(bookingId, selectedDate.value)
+    successMessage.value = ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ')
+    resetInteractionBlockers()
+    window.setTimeout(() => { successMessage.value = '' }, 2000)
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.error || ui.get('ui_cancel_fail_title', 'ยกเลิกไม่สำเร็จ')
+    dismissBlockingOverlays()
+    scheduleOverlayCleanup()
+  } finally {
+    cancelInFlight.value = null
+  }
 }
 
 function removeSelectedOption(optionId) {
@@ -738,34 +769,6 @@ async function submitBooking() {
   } finally {
     submitInFlight = false
     busy.value = false
-  }
-}
-
-async function cancel(bookingId) {
-  if (cancelInFlight.value) return
-  resetInteractionBlockers()
-  await nextTick()
-  const result = await Swal.fire({
-    title: ui.get('ui_cancel_confirm_title', 'ยืนยันการยกเลิก'),
-    text: ui.get('ui_cancel_confirm_text', 'ต้องการยกเลิกคิวนี้ใช่ไหม'),
-    icon: 'warning', showCancelButton: true,
-    confirmButtonText: 'ยืนยันยกเลิก', cancelButtonText: 'ปิด',
-  })
-  dismissBlockingOverlays()
-  scheduleOverlayCleanup()
-  if (!result.isConfirmed) return
-  cancelInFlight.value = bookingId
-  try {
-    await bookingStore.cancelBooking(bookingId, selectedDate.value)
-    successMessage.value = ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ')
-    resetInteractionBlockers()
-    window.setTimeout(() => { successMessage.value = '' }, 2000)
-  } catch (error) {
-    await Swal.fire({ title: ui.get('ui_cancel_fail_title', 'ยกเลิกไม่สำเร็จ'), text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
-    dismissBlockingOverlays()
-    scheduleOverlayCleanup()
-  } finally {
-    cancelInFlight.value = null
   }
 }
 
@@ -1041,7 +1044,8 @@ onUnmounted(() => {
                 type="button"
                 class="btn-cancel-slot"
                 :disabled="cancelInFlight === bookingForSlot(slot).id"
-                @click.stop="cancel(bookingForSlot(slot).id)"
+                @click.stop="openCancelConfirm(bookingForSlot(slot).id)"
+                @pointerup.stop="openCancelConfirm(bookingForSlot(slot).id)"
               >ยกเลิก</button>
               <button
                 v-if="bookingForSlot(slot).status === 'awaiting_payment'"
@@ -1291,6 +1295,28 @@ onUnmounted(() => {
               </button>
             </div>
           </template>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── CANCEL CONFIRM (iOS-safe, no SweetAlert) ── -->
+    <Transition name="fade">
+      <div v-if="pendingCancelId" class="overlay cancel-overlay" @click.self="closeCancelConfirm">
+        <div class="sheet cancel-sheet" role="dialog" aria-modal="true" aria-labelledby="cancel-sheet-title">
+          <div class="sheet-handle"></div>
+          <h3 id="cancel-sheet-title" class="sheet-title">{{ ui.get('ui_cancel_confirm_title', 'ยืนยันการยกเลิก') }}</h3>
+          <p class="sheet-sub">{{ ui.get('ui_cancel_confirm_text', 'ต้องการยกเลิกคิวนี้ใช่ไหม') }}</p>
+          <div class="sheet-actions">
+            <button type="button" class="btn-cancel" @click="closeCancelConfirm">ปิด</button>
+            <button
+              type="button"
+              class="btn-confirm btn-confirm-danger"
+              :disabled="cancelInFlight === pendingCancelId"
+              @click="confirmCancelBooking"
+            >
+              ยืนยันยกเลิก
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -1584,6 +1610,12 @@ onUnmounted(() => {
   position: fixed; inset: 0; background: rgba(45, 36, 36, 0.4);
   display: flex; align-items: flex-end; z-index: 50;
 }
+.cancel-overlay { z-index: 60; }
+.cancel-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0)); }
+.btn-confirm-danger {
+  background: #b45309;
+}
+.btn-confirm-danger:hover:not(:disabled) { opacity: .9; }
 .sheet {
   background: var(--color-surface-elevated); width: 100%; max-width: 430px; margin: 0 auto;
   border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
