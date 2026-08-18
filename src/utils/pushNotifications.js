@@ -73,10 +73,14 @@ export async function fetchPushStatus() {
   }
 
   try {
-    const { data } = await api.get('/api/push/status')
+    const localToken = getStoredFcmToken()
+    const { data } = await api.get('/api/push/status', {
+      params: localToken ? { token: localToken } : {},
+    })
+    const deviceEnabled = Boolean(localToken) && Boolean(data?.enabled)
     return {
       configured: Boolean(data?.configured),
-      enabled: Boolean(data?.enabled),
+      enabled: deviceEnabled,
       supported: true,
       reason: null,
     }
@@ -123,10 +127,13 @@ export async function enableBrowserPush() {
 
 export async function disableBrowserPush() {
   const token = getStoredFcmToken()
-  if (token) {
-    await syncTokenWithBackend(token, false)
-  }
+  stopPushNotificationListener()
   localStorage.removeItem(TOKEN_STORAGE_KEY)
+  try {
+    await api.post('/api/push/disable', token ? { token } : {})
+  } catch {
+    /* keep local off even if network fails */
+  }
 }
 
 export async function showOsNotificationFromPayload(payload) {
@@ -162,9 +169,13 @@ export async function showOsNotificationFromPayload(payload) {
 
 let foregroundUnsubscribe = null
 
-export async function startPushNotificationListener() {
+export function stopPushNotificationListener() {
   foregroundUnsubscribe?.()
   foregroundUnsubscribe = null
+}
+
+export async function startPushNotificationListener() {
+  stopPushNotificationListener()
 
   if (!canUseBrowserPush() || Notification.permission !== 'granted') {
     return () => {}
@@ -179,8 +190,7 @@ export async function startPushNotificationListener() {
   })
 
   return () => {
-    foregroundUnsubscribe?.()
-    foregroundUnsubscribe = null
+    stopPushNotificationListener()
   }
 }
 

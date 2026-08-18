@@ -42,13 +42,11 @@ export function usePushNotifications() {
   async function turnOff() {
     loading.value = true
     errorMessage.value = ''
+    enabled.value = false
     try {
       await disableBrowserPush()
-      enabled.value = false
-      await refreshStatus()
     } catch (err) {
       errorMessage.value = err?.message || 'ปิดแจ้งเตือนไม่สำเร็จ'
-      throw err
     } finally {
       loading.value = false
     }

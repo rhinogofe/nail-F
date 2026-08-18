@@ -22,6 +22,10 @@ const statusNote = computed(() => {
 
 async function onToggle(event) {
   const next = event.target.checked
+  if (loading.value) {
+    event.target.checked = !next
+    return
+  }
   try {
     await toggle(next)
   } catch {
@@ -31,7 +35,7 @@ async function onToggle(event) {
 </script>
 
 <template>
-  <div class="push-toggle-card">
+  <div class="push-toggle-card" @click.stop>
     <div class="push-toggle-copy">
       <strong class="push-toggle-title">
         <i class="ti ti-bell" aria-hidden="true"></i>
