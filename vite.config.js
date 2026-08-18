@@ -37,7 +37,7 @@ function buildNotificationOptions(payload) {
       icon: iconUrl,
       badge: iconUrl,
       tag: messageId ? 'nail-msg-' + messageId : 'nail-push-' + Date.now(),
-      renotify: true,
+      renotify: false,
       data: { url },
     },
   };

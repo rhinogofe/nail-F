@@ -4,6 +4,7 @@ import { getFirebaseVapidKey, getFirebaseWebConfig, isFirebaseConfigured } from 
 const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'fcmToken'
 export const PUSH_DEVICE_STATUS_EVENT = 'push-device-status-changed'
+export const FCM_FOREGROUND_MESSAGE_EVENT = 'fcm-foreground-message'
 
 let messagingInstance = null
 let firebaseMessagingModule = null
@@ -174,7 +175,7 @@ export async function showOsNotificationFromPayload(payload) {
     icon: '/favicon.svg',
     badge: '/favicon.svg',
     tag: messageId ? `nail-msg-${messageId}` : `nail-push-${Date.now()}`,
-    renotify: true,
+    renotify: false,
     data: { url },
   }
 
@@ -213,6 +214,10 @@ export async function startPushNotificationListener() {
 
   const { onMessage } = await loadFirebaseMessagingModule()
   foregroundUnsubscribe = onMessage(messaging, (payload) => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      window.dispatchEvent(new CustomEvent(FCM_FOREGROUND_MESSAGE_EVENT))
+      return
+    }
     showOsNotificationFromPayload(payload)
   })
 

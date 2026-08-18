@@ -4,6 +4,7 @@ import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import {
+  FCM_FOREGROUND_MESSAGE_EVENT,
   PUSH_DEVICE_STATUS_EVENT,
   getStoredFcmToken,
   showOsNotificationForChatItem,
@@ -179,17 +180,23 @@ export function useChatNotifications() {
     restartPollTimer()
   }
 
+  function onFcmForegroundMessage() {
+    pollNotifications()
+  }
+
   onMounted(() => {
     markBaselineNow()
     pollNotifications()
     restartPollTimer()
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
+    window.addEventListener(FCM_FOREGROUND_MESSAGE_EVENT, onFcmForegroundMessage)
   })
 
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
     window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
+    window.removeEventListener(FCM_FOREGROUND_MESSAGE_EVENT, onFcmForegroundMessage)
     if (pollTimer) clearInterval(pollTimer)
     dismissTimers.forEach((timer) => clearTimeout(timer))
     dismissTimers.clear()
