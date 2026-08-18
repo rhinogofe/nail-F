@@ -182,8 +182,11 @@ export function useChatNotifications() {
       pollTimer = null
       return
     }
-    pollNotifications()
-    restartPollTimer()
+    window.setTimeout(() => {
+      if (document.hidden || !auth.isLoggedIn) return
+      pollNotifications()
+      restartPollTimer()
+    }, 400)
   }
 
   function onPushDeviceStatusChanged() {

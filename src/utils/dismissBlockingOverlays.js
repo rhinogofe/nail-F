@@ -1,5 +1,7 @@
 import Swal from 'sweetalert2'
 
+let overlayCleanupTimers = []
+
 export function dismissBlockingOverlays() {
   if (typeof document === 'undefined') return
 
@@ -13,4 +15,11 @@ export function dismissBlockingOverlays() {
   document.documentElement.style.removeProperty('overflow')
 
   document.querySelectorAll('.swal2-container').forEach((el) => el.remove())
+}
+
+export function scheduleOverlayCleanup(delaysMs = [0, 80, 200, 500, 1000]) {
+  overlayCleanupTimers.forEach((timer) => clearTimeout(timer))
+  overlayCleanupTimers = delaysMs.map((delay) => setTimeout(() => {
+    dismissBlockingOverlays()
+  }, delay))
 }

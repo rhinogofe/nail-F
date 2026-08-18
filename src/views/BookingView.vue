@@ -2,7 +2,7 @@
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
-import { dismissBlockingOverlays } from '../utils/dismissBlockingOverlays'
+import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import { useCoupons } from '../composables/useCoupons'
@@ -131,6 +131,7 @@ const stripDragState = ref({
 const POLL_INTERVAL_MS = 45_000
 let pollTimer = null
 let stripResizeTimer = null
+let submitInFlight = false
 
 const weekdayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const thMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
@@ -581,9 +582,14 @@ async function ensureSlotStillAvailable(slot, optionIds = []) {
 }
 
 async function onVisibilityChange() {
-  if (document.hidden || busy.value) return
-  const layoutRefreshed = await syncBookingSettings()
-  if (!layoutRefreshed) await refreshSlotData()
+  if (document.hidden) return
+  resetInteractionBlockers()
+  if (busy.value) return
+  window.setTimeout(() => {
+    if (document.hidden || busy.value) return
+    refreshSlotData().catch(() => null)
+    void syncBookingSettings({ refreshLayout: false })
+  }, 300)
 }
 
 function openBookSheet(slot) {
@@ -621,6 +627,7 @@ function resetInteractionBlockers() {
   busy.value = false
   resetStripDragState()
   dismissBlockingOverlays()
+  scheduleOverlayCleanup()
 }
 
 function removeSelectedOption(optionId) {
@@ -685,6 +692,7 @@ async function submitBooking() {
 
   busy.value = true
   serviceError.value = ''
+  submitInFlight = true
   try {
     if (!(await ensureSlotStillAvailable(slot, selectedOptionIds.value))) return
 
@@ -697,7 +705,6 @@ async function submitBooking() {
     closeBookSheet()
     dismissBlockingOverlays()
     busy.value = false
-    await refreshSlotData()
     router.push({
       path: shopPath(`/payment/${booking.id}`),
       query: {
@@ -709,11 +716,13 @@ async function submitBooking() {
         booked: '1',
       },
     })
+    refreshSlotData().catch(() => null)
   } catch (error) {
     const msg = error?.response?.data?.error || 'จองคิวไม่สำเร็จ'
     await Swal.fire({ title: ui.get('ui_booking_fail_title', 'จองไม่สำเร็จ'), text: msg, icon: 'error' })
     if (error?.response?.status === 409) await loadDate()
   } finally {
+    submitInFlight = false
     busy.value = false
   }
 }
@@ -851,20 +860,37 @@ watch(
   }
 )
 
-onMounted(async () => {
+onMounted(() => {
   resetInteractionBlockers()
   window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
-  await bookingStore.fetchBookingSettings()
-  await bookingStore.fetchAllNailOptions()
-  await refreshBlocksAndEnsureSelection(true)
-  await Promise.all([loadDate(), bookingStore.fetchMyBookings().catch(() => null), loadMyCoupons(), loadCouponSettings()])
-  await nextTick()
-  updateStripScroll()
-  scrollActiveDayIntoView('auto')
+  void bootstrapBookingPage()
 })
+
+async function bootstrapBookingPage() {
+  try {
+    await loadDate()
+    await nextTick()
+    updateStripScroll()
+    scrollActiveDayIntoView('auto')
+  } catch {
+    /* show slots on next poll */
+  }
+
+  void Promise.all([
+    bookingStore.fetchBookingSettings().catch(() => null),
+    bookingStore.fetchAllNailOptions().catch(() => null),
+    bookingStore.fetchMyBookings().catch(() => null),
+    loadMyCoupons().catch(() => null),
+    loadCouponSettings().catch(() => null),
+  ]).then(() => refreshBlocksAndEnsureSelection(true).catch(() => null))
+}
+
 onUnmounted(() => {
+  submitInFlight = false
+  busy.value = false
+  resetInteractionBlockers()
   window.removeEventListener('resize', scheduleStripMeasure)
   document.removeEventListener('visibilitychange', onVisibilityChange)
   clearTimeout(stripResizeTimer)

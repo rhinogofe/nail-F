@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import api from '../api/axios'
 import QRCode from 'qrcode'
 import generatePayload from 'promptpay-qr'
@@ -8,7 +8,7 @@ import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
-import { dismissBlockingOverlays } from '../utils/dismissBlockingOverlays'
+import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,8 +88,14 @@ function openLine() {
 
 function backToBooking() {
   dismissBlockingOverlays()
+  scheduleOverlayCleanup()
   router.push(shopPath('/bookings'))
 }
+
+onBeforeRouteLeave(() => {
+  dismissBlockingOverlays()
+  scheduleOverlayCleanup()
+})
 
 async function copyAccountNo() {
   try {
@@ -126,6 +132,7 @@ let expiryTimer = null
 
 onMounted(async () => {
   dismissBlockingOverlays()
+  scheduleOverlayCleanup()
   paymentLoading.value = true
   paymentError.value = ''
   try {

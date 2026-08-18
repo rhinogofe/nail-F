@@ -45,8 +45,11 @@ export function useChatUnread() {
       timer = null
       return
     }
-    refresh()
-    restartTimer()
+    window.setTimeout(() => {
+      if (document.hidden || !auth.isLoggedIn) return
+      refresh()
+      restartTimer()
+    }, 500)
   }
 
   onMounted(() => {
