@@ -9,6 +9,7 @@ const {
   loading,
   errorMessage,
   helpText,
+  needsIosInstall,
   toggle,
 } = usePushNotifications()
 
@@ -16,9 +17,16 @@ const canToggle = computed(() => configured.value && supported.value)
 
 const statusNote = computed(() => {
   if (!configured.value) return 'รอตั้งค่า Firebase บนเซิร์ฟเวอร์ (backend .env)'
-  if (!supported.value) return helpText.value
+  if (needsIosInstall.value) return 'iPhone / iPad ต้องเพิ่มแอปลงหน้าจอโฮมก่อน ถึงจะเปิดแจ้งเตือนได้'
   return helpText.value
 })
+
+const iosInstallSteps = [
+  'เปิดเว็บนี้ด้วย Safari',
+  'กดปุ่มแชร์ (สี่เหลี่ยมมีลูกศรชี้ขึ้น) ด้านล่างจอ',
+  'เลื่อนหาแล้วเลือก "เพิ่มไปยังหน้าจอโฮม"',
+  'เปิดแอปจากไอคอนบนหน้าจอโฮม แล้วกลับมาเปิดสวิตช์นี้',
+]
 
 async function onToggle(event) {
   const next = event.target.checked
@@ -42,6 +50,14 @@ async function onToggle(event) {
         แจ้งเตือนนอกแอป
       </strong>
       <p class="push-toggle-desc muted">{{ statusNote }}</p>
+
+      <ol v-if="needsIosInstall && configured" class="push-ios-steps">
+        <li v-for="(step, index) in iosInstallSteps" :key="index">
+          <span class="push-ios-step-num" aria-hidden="true">{{ index + 1 }}</span>
+          <span>{{ step }}</span>
+        </li>
+      </ol>
+
       <p v-if="!configured" class="push-toggle-note muted">Backend ต้องอ่าน Service Account ได้ — restart npm run dev</p>
       <p v-if="errorMessage" class="push-toggle-error">{{ errorMessage }}</p>
     </div>
@@ -100,6 +116,40 @@ async function onToggle(event) {
 
 .push-toggle-error {
   color: var(--color-error);
+}
+
+.push-ios-steps {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.push-ios-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.push-ios-step-num {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .push-toggle-switch {

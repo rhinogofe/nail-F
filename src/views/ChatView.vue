@@ -37,6 +37,7 @@ const lightboxSrc = ref('')
 const conversations = ref([])
 const selectedUserId = ref('')
 const activeUser = ref(null)
+const deletingMessageId = ref(null)
 const conversationSearch = ref('')
 const sidebarOpen = ref(true)
 const isMobile = ref(false)
@@ -215,20 +216,43 @@ async function sendChatPayload({ body = '', imageData = null, imageMime = null }
 }
 
 async function deleteConversation() {
-  if (!selectedUserId.value || !selectedConversation.value || selectedIsSystem.value) return
+  if (!selectedUserId.value || !selectedConversation.value) return
+  const isSystem = selectedIsSystem.value
   const name = selectedConversation.value.name || 'ลูกค้า'
-  if (!window.confirm(`ลบประวัติแชทกับ "${name}" ทั้งหมดใช่ไหม?\nการลบไม่สามารถยกเลิกได้`)) return
+  const question = isSystem
+    ? 'ล้างข้อความระบบทั้งหมดใช่ไหม?\nการลบไม่สามารถยกเลิกได้'
+    : `ลบประวัติแชทกับ "${name}" ทั้งหมดใช่ไหม?\nการลบไม่สามารถยกเลิกได้`
+  if (!window.confirm(question)) return
 
   errorMessage.value = ''
   try {
     await api.delete(`/api/admin/chat/conversations/${selectedUserId.value}`)
-    selectedUserId.value = ''
-    activeUser.value = null
     messages.value = []
+    if (!isSystem) {
+      selectedUserId.value = ''
+      activeUser.value = null
+      sidebarOpen.value = true
+    }
     await loadConversations()
-    sidebarOpen.value = true
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'ลบแชทไม่สำเร็จ'
+  }
+}
+
+async function deleteMessage(msg) {
+  if (!msg?.id || deletingMessageId.value) return
+  if (!window.confirm('ลบข้อความนี้ใช่ไหม?')) return
+
+  errorMessage.value = ''
+  deletingMessageId.value = msg.id
+  try {
+    await api.delete(`/api/admin/chat/messages/${msg.id}`)
+    messages.value = messages.value.filter((item) => item.id !== msg.id)
+    await loadConversations()
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'ลบข้อความไม่สำเร็จ'
+  } finally {
+    deletingMessageId.value = null
   }
 }
 
@@ -569,11 +593,11 @@ watch(
               <p class="chat-thread-meta muted">เลือกลูกค้าเพื่อตอบข้อความ</p>
             </div>
             <button
-              v-if="selectedUserId && !selectedIsSystem"
+              v-if="selectedUserId"
               type="button"
               class="chat-icon-btn chat-delete-btn"
-              aria-label="ลบประวัติแชท"
-              title="ลบประวัติแชท"
+              :aria-label="selectedIsSystem ? 'ล้างข้อความระบบ' : 'ลบประวัติแชท'"
+              :title="selectedIsSystem ? 'ล้างข้อความระบบ' : 'ลบประวัติแชท'"
               @click="deleteConversation"
             >
               <i class="ti ti-trash" aria-hidden="true"></i>
@@ -613,6 +637,16 @@ watch(
                   </button>
                   <time class="chat-time">{{ formatTime(msg.created_at) }}</time>
                 </div>
+                <button
+                  type="button"
+                  class="chat-msg-delete"
+                  aria-label="ลบข้อความนี้"
+                  title="ลบข้อความนี้"
+                  :disabled="deletingMessageId === msg.id"
+                  @click="deleteMessage(msg)"
+                >
+                  <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
               </div>
               <div ref="bottomAnchorRef" class="chat-scroll-anchor" aria-hidden="true" />
             </div>
@@ -1176,14 +1210,55 @@ watch(
 
 .chat-bubble-row {
   display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .chat-bubble-row.mine {
   justify-content: flex-end;
+  flex-direction: row-reverse;
 }
 
 .chat-bubble-row.theirs {
   justify-content: flex-start;
+}
+
+.chat-msg-delete {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted, #64748b);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-bubble-row:hover .chat-msg-delete,
+.chat-msg-delete:focus-visible {
+  opacity: 1;
+}
+
+.chat-msg-delete:hover {
+  color: var(--color-danger, #dc2626);
+  border-color: var(--color-danger, #dc2626);
+}
+
+.chat-msg-delete:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (hover: none) {
+  .chat-msg-delete {
+    opacity: 0.55;
+  }
 }
 
 .chat-bubble {

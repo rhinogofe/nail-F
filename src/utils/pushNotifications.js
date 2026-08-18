@@ -92,6 +92,11 @@ export async function fetchPushStatus() {
     return { configured: isFirebaseConfigured(), enabled: false, ...support }
   }
 
+  if (Notification.permission !== 'granted' && getStoredFcmToken()) {
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    notifyPushDeviceStatusChanged()
+  }
+
   try {
     const localToken = getStoredFcmToken()
     const { data } = await api.get('/api/push/status', {
@@ -129,6 +134,71 @@ async function syncTokenWithBackend(token, enabled) {
   await api.post('/api/push/token', { token, enabled })
 }
 
+// FCM rotates tokens (SW update, long idle, browser upgrade) and the backend
+// hard-deletes tokens FCM reports as unregistered. Without a re-sync the device
+// stays silent until the user toggles push off/on, so re-register on every
+// app start and whenever the app comes back to the foreground.
+const RESYNC_THROTTLE_MS = 15 * 60 * 1000
+let lastResyncAt = 0
+let resyncInFlight = null
+let autoSyncAttached = false
+
+export async function resyncPushToken({ force = false } = {}) {
+  if (!canUseBrowserPush()) return null
+
+  const stored = getStoredFcmToken()
+  if (!stored) return null
+
+  if (Notification.permission !== 'granted') {
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    stopPushNotificationListener()
+    notifyPushDeviceStatusChanged()
+    return null
+  }
+
+  const now = Date.now()
+  if (!force && now - lastResyncAt < RESYNC_THROTTLE_MS) return stored
+  if (resyncInFlight) return resyncInFlight
+
+  resyncInFlight = (async () => {
+    try {
+      await waitForServiceWorkerRegistration()
+      const messaging = await getMessagingInstance()
+      if (!messaging) return null
+
+      const { getToken } = await loadFirebaseMessagingModule()
+      const token = await getToken(messaging, { vapidKey: getFirebaseVapidKey() })
+      if (!token) return null
+
+      if (token !== getStoredFcmToken()) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, token)
+        notifyPushDeviceStatusChanged()
+      }
+      await syncTokenWithBackend(token, true)
+      lastResyncAt = Date.now()
+      return token
+    } catch {
+      return null
+    } finally {
+      resyncInFlight = null
+    }
+  })()
+
+  return resyncInFlight
+}
+
+function attachPushTokenAutoSync() {
+  if (autoSyncAttached || typeof window === 'undefined') return
+  autoSyncAttached = true
+
+  const onResume = () => {
+    if (document.visibilityState !== 'visible') return
+    void resyncPushToken()
+  }
+  document.addEventListener('visibilitychange', onResume)
+  window.addEventListener('focus', onResume)
+}
+
 export async function enableBrowserPush() {
   const support = await detectPushSupport()
   if (!support.supported) {
@@ -154,14 +224,17 @@ export async function enableBrowserPush() {
 
   localStorage.setItem(TOKEN_STORAGE_KEY, token)
   await syncTokenWithBackend(token, true)
+  lastResyncAt = Date.now()
   notifyPushDeviceStatusChanged()
   await startPushNotificationListener()
+  attachPushTokenAutoSync()
   return token
 }
 
 export async function disableBrowserPush() {
   const token = getStoredFcmToken()
   stopPushNotificationListener()
+  lastResyncAt = 0
   localStorage.removeItem(TOKEN_STORAGE_KEY)
   notifyPushDeviceStatusChanged()
   try {
@@ -171,12 +244,29 @@ export async function disableBrowserPush() {
   }
 }
 
+// A notification for the exact conversation the user is currently reading is
+// pure noise, so skip it there — everywhere else the notification still fires.
+function isAlreadyViewing(url) {
+  if (typeof window === 'undefined' || document.visibilityState !== 'visible') return false
+  try {
+    const target = new URL(url, window.location.origin)
+    if (target.pathname !== window.location.pathname) return false
+    const targetUser = target.searchParams.get('userId') || ''
+    const currentUser = new URLSearchParams(window.location.search).get('userId') || ''
+    return targetUser === currentUser
+  } catch {
+    return false
+  }
+}
+
 export async function showOsNotificationFromPayload(payload) {
   if (typeof window === 'undefined' || Notification.permission !== 'granted') return
 
   const title = payload?.notification?.title || payload?.data?.title || 'แจ้งเตือน'
   const body = payload?.notification?.body || payload?.data?.body || ''
   const url = payload?.data?.url || payload?.fcmOptions?.link || '/'
+
+  if (isAlreadyViewing(url)) return
   const options = {
     body,
     icon: '/favicon.svg',
@@ -232,10 +322,14 @@ export async function startPushNotificationListener() {
 
 
 export function initPushNotificationsWhenReady() {
-  if (!canUseBrowserPush() || Notification.permission !== 'granted') {
+  if (!canUseBrowserPush() || !getStoredFcmToken()) {
     return Promise.resolve(null)
   }
-  if (!getStoredFcmToken()) {
+  if (Notification.permission !== 'granted') {
+    // Permission was revoked in OS/browser settings — clear the stale device state
+    // so the toggle shows OFF instead of pretending push still works.
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    notifyPushDeviceStatusChanged()
     return Promise.resolve(null)
   }
 
@@ -255,7 +349,10 @@ export function initPushNotificationsWhenReady() {
 
 async function initPushNotificationsWhenReadyImpl() {
   await waitForServiceWorkerRegistration()
-  return startPushNotificationListener()
+  const stop = await startPushNotificationListener()
+  attachPushTokenAutoSync()
+  await resyncPushToken({ force: true })
+  return stop
 }
 
 export async function ensurePushServiceWorker() {

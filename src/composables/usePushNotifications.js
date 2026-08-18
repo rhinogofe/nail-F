@@ -1,9 +1,11 @@
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   disableBrowserPush,
   enableBrowserPush,
   fetchPushStatus,
   getPushHelpText,
+  isIosDevice,
+  isStandalonePwa,
 } from '../utils/pushNotifications'
 
 export function usePushNotifications() {
@@ -13,6 +15,9 @@ export function usePushNotifications() {
   const loading = ref(false)
   const errorMessage = ref('')
   const helpText = ref('')
+
+  // iOS only allows web push from an app installed on the Home Screen.
+  const needsIosInstall = computed(() => isIosDevice() && !isStandalonePwa())
 
   async function refreshStatus() {
     const status = await fetchPushStatus()
@@ -72,6 +77,7 @@ export function usePushNotifications() {
     loading,
     errorMessage,
     helpText,
+    needsIosInstall,
     refreshStatus,
     toggle,
     turnOn,
