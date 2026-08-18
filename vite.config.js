@@ -29,14 +29,20 @@ function buildNotificationOptions(payload) {
   const title = payload.notification?.title || payload.data?.title || 'แจ้งเตือน';
   const body = payload.notification?.body || payload.data?.body || '';
   const url = payload.data?.url || payload.fcmOptions?.link || '/';
+  const bookingId = payload.data?.bookingId || payload.data?.booking_id || '';
   const messageId = payload.data?.messageId || payload.data?.message_id || '';
+  const tag = bookingId
+    ? 'nail-booking-' + bookingId
+    : messageId
+      ? 'nail-msg-' + messageId
+      : 'nail-push-' + Date.now();
   return {
     title,
     options: {
       body,
       icon: iconUrl,
       badge: iconUrl,
-      tag: messageId ? 'nail-msg-' + messageId : 'nail-push-' + Date.now(),
+      tag,
       renotify: false,
       data: { url },
     },

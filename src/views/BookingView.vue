@@ -590,6 +590,15 @@ function closeBookSheet() {
   pendingSlot.value = null
 }
 
+function dismissBlockingUi() {
+  closeBookSheet()
+  if (Swal.isVisible()) Swal.close()
+  document.body.classList.remove('swal2-shown', 'swal2-height-auto')
+  document.body.style.removeProperty('padding-right')
+  document.body.style.removeProperty('overflow')
+  document.querySelectorAll('.swal2-container').forEach((el) => el.remove())
+}
+
 function removeSelectedOption(optionId) {
   selectedOptionIds.value = selectedOptionIds.value.filter((id) => id !== optionId)
   serviceError.value = ''
@@ -668,6 +677,7 @@ async function submitBooking() {
       icon: 'success',
       confirmButtonText: ui.get('ui_booking_success_btn', 'ไปหน้าชำระเงิน'),
     })
+    dismissBlockingUi()
     router.push({
       path: shopPath(`/payment/${booking.id}`),
       query: {
@@ -688,6 +698,8 @@ async function submitBooking() {
 }
 
 async function cancel(bookingId) {
+  dismissBlockingUi()
+  await nextTick()
   const result = await Swal.fire({
     title: ui.get('ui_cancel_confirm_title', 'ยืนยันการยกเลิก'),
     text: ui.get('ui_cancel_confirm_text', 'ต้องการยกเลิกคิวนี้ใช่ไหม'),
@@ -698,6 +710,7 @@ async function cancel(bookingId) {
   busy.value = true
   try {
     await bookingStore.cancelBooking(bookingId, selectedDate.value)
+    dismissBlockingUi()
     await Swal.fire({ title: ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ'), icon: 'success', timer: 1300, showConfirmButton: false })
   } catch (error) {
     await Swal.fire({ title: ui.get('ui_cancel_fail_title', 'ยกเลิกไม่สำเร็จ'), text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
@@ -806,6 +819,7 @@ watch(unpaidCountdown.nowMs, () => {
 })
 
 onMounted(async () => {
+  dismissBlockingUi()
   window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)
@@ -943,7 +957,7 @@ onUnmounted(() => {
                 v-if="bookingForSlot(slot).status === 'awaiting_payment'"
                 class="btn-cancel-slot"
                 :disabled="busy"
-                @click="cancel(bookingForSlot(slot).id)"
+                @click.stop="cancel(bookingForSlot(slot).id)"
               >ยกเลิก</button>
               <button
                 v-if="bookingForSlot(slot).status === 'awaiting_payment'"

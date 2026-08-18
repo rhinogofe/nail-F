@@ -144,11 +144,21 @@ export function useChatNotifications() {
       if (!rows.length) return
 
       let latest = lastSeenAt.value
+      const systemRows = []
+      const otherRows = []
       for (const row of rows) {
-        if (shouldNotify(row)) pushNotification(row)
         if (!latest || new Date(row.created_at) > new Date(latest)) {
           latest = row.created_at
         }
+        if (!shouldNotify(row)) continue
+        if (row.is_system_thread) systemRows.push(row)
+        else otherRows.push(row)
+      }
+      if (systemRows.length) {
+        otherRows.push(systemRows[systemRows.length - 1])
+      }
+      for (const row of otherRows) {
+        pushNotification(row)
       }
       if (latest) lastSeenAt.value = latest
     } catch {

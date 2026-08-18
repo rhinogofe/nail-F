@@ -117,6 +117,14 @@ export function isPushEnabledOnDevice() {
   return Boolean(getStoredFcmToken())
 }
 
+function buildNotificationTag(payload) {
+  const bookingId = payload?.data?.bookingId || payload?.data?.booking_id || ''
+  const messageId = payload?.data?.messageId || payload?.data?.message_id || ''
+  if (bookingId) return `nail-booking-${bookingId}`
+  if (messageId) return `nail-msg-${messageId}`
+  return `nail-push-${Date.now()}`
+}
+
 async function syncTokenWithBackend(token, enabled) {
   await api.post('/api/push/token', { token, enabled })
 }
@@ -174,7 +182,7 @@ export async function showOsNotificationFromPayload(payload) {
     body,
     icon: '/favicon.svg',
     badge: '/favicon.svg',
-    tag: messageId ? `nail-msg-${messageId}` : `nail-push-${Date.now()}`,
+    tag: buildNotificationTag(payload),
     renotify: false,
     data: { url },
   }
