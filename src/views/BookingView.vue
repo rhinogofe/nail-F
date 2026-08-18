@@ -1,7 +1,8 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
+import { dismissBlockingOverlays } from '../utils/dismissBlockingOverlays'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import { useCoupons } from '../composables/useCoupons'
@@ -39,6 +40,7 @@ import {
 } from '../utils/bookingOptionsResponse'
 
 const router = useRouter()
+const route = useRoute()
 const { shopPath } = useShopRoute()
 const ui = useUiSettingsStore()
 const auth = useAuthStore()
@@ -118,7 +120,14 @@ const maxBookDate = computed(() => {
 })
 const dayStripRef = ref(null)
 const stripScroll = ref({ left: 0, width: 0, scrollWidth: 0 })
-const stripDragState = ref({ active: false, moved: false, startX: 0, startScrollLeft: 0, targetIso: null, pointerId: null })
+const stripDragState = ref({
+  active: false,
+  moved: false,
+  startX: 0,
+  startScrollLeft: 0,
+  targetIso: null,
+  pointerId: null,
+})
 const POLL_INTERVAL_MS = 45_000
 let pollTimer = null
 let stripResizeTimer = null
@@ -194,8 +203,14 @@ function onStripPointerUp(e) {
   if (!stripDragState.value.active || e.pointerId !== stripDragState.value.pointerId) return
   const el = dayStripRef.value
   const { moved, targetIso } = stripDragState.value
-  stripDragState.value.active = false
-  if (moved) el?.releasePointerCapture(e.pointerId)
+  resetStripDragState()
+  try {
+    if (el?.hasPointerCapture?.(e.pointerId)) {
+      el.releasePointerCapture(e.pointerId)
+    }
+  } catch {
+    /* ignore */
+  }
   updateStripScroll()
   if (!moved && targetIso) selectDate(targetIso)
 }
@@ -590,13 +605,22 @@ function closeBookSheet() {
   pendingSlot.value = null
 }
 
-function dismissBlockingUi() {
+function resetStripDragState() {
+  stripDragState.value = {
+    active: false,
+    moved: false,
+    startX: 0,
+    startScrollLeft: 0,
+    targetIso: null,
+    pointerId: null,
+  }
+}
+
+function resetInteractionBlockers() {
   closeBookSheet()
-  if (Swal.isVisible()) Swal.close()
-  document.body.classList.remove('swal2-shown', 'swal2-height-auto')
-  document.body.style.removeProperty('padding-right')
-  document.body.style.removeProperty('overflow')
-  document.querySelectorAll('.swal2-container').forEach((el) => el.remove())
+  busy.value = false
+  resetStripDragState()
+  dismissBlockingOverlays()
 }
 
 function removeSelectedOption(optionId) {
@@ -671,13 +695,9 @@ async function submitBooking() {
       selectedOptionIds.value.map(String),
     )
     closeBookSheet()
-    await Swal.fire({
-      title: ui.get('ui_booking_success_title', 'จองแล้ว รอชำระเงิน'),
-      text: ui.get('ui_booking_success_text', 'กรุณาโอนและส่งสลิปทาง LINE เพื่อรอแอดมินยืนยัน'),
-      icon: 'success',
-      confirmButtonText: ui.get('ui_booking_success_btn', 'ไปหน้าชำระเงิน'),
-    })
-    dismissBlockingUi()
+    dismissBlockingOverlays()
+    busy.value = false
+    await refreshSlotData()
     router.push({
       path: shopPath(`/payment/${booking.id}`),
       query: {
@@ -686,6 +706,7 @@ async function submitBooking() {
         startMin: String(submitSlot.startMinute ?? 0),
         end: String(submitSlot.endHour),
         endMin: String(submitSlot.endMinute ?? 0),
+        booked: '1',
       },
     })
   } catch (error) {
@@ -698,7 +719,7 @@ async function submitBooking() {
 }
 
 async function cancel(bookingId) {
-  dismissBlockingUi()
+  resetInteractionBlockers()
   await nextTick()
   const result = await Swal.fire({
     title: ui.get('ui_cancel_confirm_title', 'ยืนยันการยกเลิก'),
@@ -710,8 +731,9 @@ async function cancel(bookingId) {
   busy.value = true
   try {
     await bookingStore.cancelBooking(bookingId, selectedDate.value)
-    dismissBlockingUi()
+    resetInteractionBlockers()
     await Swal.fire({ title: ui.get('ui_cancel_success_title', 'ยกเลิกสำเร็จ'), icon: 'success', timer: 1300, showConfirmButton: false })
+    dismissBlockingOverlays()
   } catch (error) {
     await Swal.fire({ title: ui.get('ui_cancel_fail_title', 'ยกเลิกไม่สำเร็จ'), text: error?.response?.data?.error || 'เกิดข้อผิดพลาด', icon: 'error' })
   } finally {
@@ -818,8 +840,19 @@ watch(unpaidCountdown.nowMs, () => {
   })
 })
 
+onActivated(() => {
+  resetInteractionBlockers()
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    resetInteractionBlockers()
+  }
+)
+
 onMounted(async () => {
-  dismissBlockingUi()
+  resetInteractionBlockers()
   window.addEventListener('resize', scheduleStripMeasure)
   document.addEventListener('visibilitychange', onVisibilityChange)
   pollTimer = setInterval(pollCurrentDate, POLL_INTERVAL_MS)

@@ -8,6 +8,7 @@ import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
+import { dismissBlockingOverlays } from '../utils/dismissBlockingOverlays'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,11 @@ const bookingId = computed(() => route.params.bookingId)
 const bookingDate = computed(() => route.query.date || '-')
 const startHour = computed(() => route.query.start || '-')
 const endHour = computed(() => route.query.end || '-')
+const showBookedNotice = computed(() => route.query.booked === '1')
+const bookedNoticeText = computed(() => ui.get(
+  'ui_booking_success_text',
+  'จองแล้ว รอชำระเงิน — กรุณาโอนและส่งสลิปทาง LINE เพื่อรอแอดมินยืนยัน'
+))
 
 const lineChatUrl = computed(() => ui.get('ui_line_chat_url', 'https://line.me'))
 const bankName = computed(() => ui.get('ui_bank_name', 'ธนาคารกสิกรไทย'))
@@ -81,6 +87,7 @@ function openLine() {
 }
 
 function backToBooking() {
+  dismissBlockingOverlays()
   router.push(shopPath('/bookings'))
 }
 
@@ -118,6 +125,7 @@ async function generateThaiQr() {
 let expiryTimer = null
 
 onMounted(async () => {
+  dismissBlockingOverlays()
   paymentLoading.value = true
   paymentError.value = ''
   try {
@@ -179,6 +187,11 @@ onUnmounted(() => {
     </header>
 
     <main class="payment-content">
+      <div v-if="showBookedNotice" class="alert-banner success payment-booked-notice">
+        <i class="ti ti-circle-check" aria-hidden="true"></i>
+        <span>{{ bookedNoticeText }}</span>
+      </div>
+
       <p v-if="paymentLoading" class="muted">กำลังโหลด...</p>
 
       <div v-else-if="paymentError" class="state-card payment-expired">
@@ -268,6 +281,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.payment-booked-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .summary-card {

@@ -62,6 +62,13 @@ watch(menuOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
+watch(
+  () => router.currentRoute.value.fullPath,
+  () => {
+    closeMenu()
+  }
+)
+
 onMounted(() => {
   window.addEventListener('keydown', onMenuKeydown)
 })

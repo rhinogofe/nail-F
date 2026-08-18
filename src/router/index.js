@@ -11,6 +11,7 @@ import ReviewsView from '../views/ReviewsView.vue'
 import AdminView from '../views/AdminView.vue'
 import PaymentView from '../views/PaymentView.vue'
 import ChatView from '../views/ChatView.vue'
+import { dismissBlockingOverlays } from '../utils/dismissBlockingOverlays'
 
 const shopChildren = [
   { path: 'login', component: LoginView, meta: { guest: true } },
@@ -106,6 +107,10 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+router.afterEach(() => {
+  dismissBlockingOverlays()
 })
 
 export default router
