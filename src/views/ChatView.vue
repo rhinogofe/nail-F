@@ -27,7 +27,9 @@ const uploading = ref(false)
 const uploadProgress = ref('')
 const errorMessage = ref('')
 const messagesRef = ref(null)
+const bottomAnchorRef = ref(null)
 const imageInputRef = ref(null)
+let scrollCleanup = null
 const lightboxSrc = ref('')
 
 const conversations = ref([])
@@ -229,17 +231,59 @@ async function deleteConversation() {
 }
 
 function scrollToBottom() {
+  scrollCleanup?.()
+  scrollCleanup = null
+
   const run = () => {
     const el = messagesRef.value
+    const anchor = bottomAnchorRef.value
     if (el) el.scrollTop = el.scrollHeight
+    if (anchor) anchor.scrollIntoView({ block: 'end', behavior: 'auto' })
   }
-  nextTick(() => {
-    run()
-    requestAnimationFrame(() => {
+
+  const timers = []
+  const schedule = () => {
+    nextTick(() => {
       run()
-      requestAnimationFrame(run)
+      requestAnimationFrame(() => {
+        run()
+        requestAnimationFrame(run)
+      })
     })
-  })
+  }
+
+  schedule()
+  for (const ms of [50, 150, 300, 500, 800]) {
+    timers.push(setTimeout(run, ms))
+  }
+
+  const el = messagesRef.value
+  if (el && typeof ResizeObserver !== 'undefined') {
+    let lastHeight = 0
+    let stableTicks = 0
+    const ro = new ResizeObserver(() => {
+      const h = el.scrollHeight
+      if (h === lastHeight) {
+        stableTicks += 1
+        if (stableTicks >= 2) {
+          run()
+          ro.disconnect()
+        }
+      } else {
+        lastHeight = h
+        stableTicks = 0
+        run()
+      }
+    })
+    ro.observe(el)
+    timers.push(setTimeout(() => ro.disconnect(), 2500))
+    scrollCleanup = () => {
+      timers.forEach(clearTimeout)
+      ro.disconnect()
+    }
+  } else {
+    scrollCleanup = () => timers.forEach(clearTimeout)
+  }
 }
 
 function toggleSidebar() {
@@ -288,6 +332,7 @@ async function loadAdminMessages(userId, silent = false) {
     activeUser.value = data.user
     messages.value = data.messages || []
     selectedUserId.value = userId
+    if (!silent) loading.value = false
     await loadConversations()
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดข้อความไม่สำเร็จ'
@@ -392,12 +437,18 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  scrollCleanup?.()
   mobileMq?.removeEventListener('change', onViewportChange)
 })
 
 watch(
-  () => messages.value.length,
-  () => scrollToBottom()
+  () => [selectedUserId.value, loading.value],
+  ([uid, isLoading], prev) => {
+    const [prevUid, prevLoading] = prev ?? ['', true]
+    if (!uid || isLoading || messages.value.length === 0) return
+    if (uid !== prevUid || (prevLoading && !isLoading)) scrollToBottom()
+  },
+  { flush: 'post' }
 )
 
 watch(
@@ -525,8 +576,8 @@ watch(
 
           <template v-if="selectedUserId">
             <div ref="messagesRef" class="chat-messages" aria-live="polite">
-              <p v-if="loading" class="chat-empty muted">กำลังโหลด...</p>
-              <p v-else-if="messages.length === 0" class="chat-empty muted">{{ emptyHint }}</p>
+              <p v-if="loading && messages.length === 0" class="chat-empty muted">กำลังโหลด...</p>
+              <p v-else-if="!loading && messages.length === 0" class="chat-empty muted">{{ emptyHint }}</p>
               <div
                 v-for="msg in messages"
                 :key="msg.id"
@@ -553,6 +604,7 @@ watch(
                   <time class="chat-time">{{ formatTime(msg.created_at) }}</time>
                 </div>
               </div>
+              <div ref="bottomAnchorRef" class="chat-scroll-anchor" aria-hidden="true" />
             </div>
 
             <form v-if="!selectedIsSystem" class="chat-compose" @submit.prevent="sendMessage">
@@ -615,7 +667,8 @@ watch(
       <p v-if="uploadProgress" class="chat-upload-progress muted">{{ uploadProgress }}</p>
 
       <div ref="messagesRef" class="chat-messages" aria-live="polite">
-        <p v-if="messages.length === 0" class="chat-empty muted">{{ emptyHint }}</p>
+        <p v-if="loading && messages.length === 0" class="chat-empty muted">กำลังโหลด...</p>
+        <p v-else-if="messages.length === 0" class="chat-empty muted">{{ emptyHint }}</p>
         <div
           v-for="msg in messages"
           :key="msg.id"
@@ -632,6 +685,7 @@ watch(
             <time class="chat-time">{{ formatTime(msg.created_at) }}</time>
           </div>
         </div>
+        <div ref="bottomAnchorRef" class="chat-scroll-anchor" aria-hidden="true" />
       </div>
 
       <form class="chat-compose" @submit.prevent="sendMessage">
@@ -1088,6 +1142,14 @@ watch(
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+}
+
+.chat-scroll-anchor {
+  flex-shrink: 0;
+  width: 100%;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .chat-empty {
