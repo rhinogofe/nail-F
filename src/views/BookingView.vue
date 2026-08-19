@@ -65,6 +65,7 @@ const pendingSlot = ref(null)
 const selectedOptionIds = ref([])
 const selectedCategoryId = ref('')
 const serviceError = ref('')
+const selectedServicesExpanded = ref(false)
 
 const isSlots2hMode = computed(() => bookingStore.bookingDisplayMode === 'slots_2h')
 
@@ -107,6 +108,14 @@ const selectedServicesTotalMinutes = computed(() =>
 const selectedServicesTotalDurationLabel = computed(() =>
   formatDurationMinutes(selectedServicesTotalMinutes.value)
 )
+const selectedServicesSummaryLine = computed(() => {
+  const count = selectedServicesForDisplay.value.length
+  const parts = [`${count} บริการ`, selectedServicesTotalDurationLabel.value]
+  if (selectedServicesTotalPrice.value != null) {
+    parts.push(`${selectedServicesTotalPrice.value.toLocaleString('th-TH')} บาท`)
+  }
+  return parts.join(' · ')
+})
 function categorySelectionCount(categoryId) {
   return selectedOptionalServices.value.filter((opt) => {
     const catId = opt.category_id || UNCategorized_CATEGORY_ID
@@ -614,6 +623,7 @@ function closeBookSheet() {
   selectedOptionIds.value = []
   selectedCategoryId.value = ''
   serviceError.value = ''
+  selectedServicesExpanded.value = false
   pendingSlot.value = null
 }
 
@@ -745,6 +755,7 @@ function selectBookingCategory(categoryId) {
 
 function backFromServicesStep() {
   serviceError.value = ''
+  selectedServicesExpanded.value = false
   sheetStep.value = 'confirm'
 }
 
@@ -1140,7 +1151,7 @@ onUnmounted(() => {
     <Teleport to="body">
     <Transition name="fade">
       <div v-if="showModal" class="overlay" @click.self="closeBookSheet">
-        <div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet" :class="{ 'sheet-services': sheetStep === 'services' }" role="dialog" aria-modal="true">
           <div class="sheet-handle"></div>
 
           <!-- Step 1: ยืนยันรายละเอียด -->
@@ -1185,28 +1196,136 @@ onUnmounted(() => {
 
           <!-- Step 2: เลือกบริการ -->
           <template v-else>
-            <h3 class="sheet-title">เลือกบริการ</h3>
-            <p v-if="hasCategoryStep" class="sheet-sub">เลื่อนหมวดซ้าย–ขวา แล้วเลือกบริการได้หลายหมวด</p>
-            <p v-else-if="requiredLocationLabel" class="sheet-sub">สถานที่ให้บริการ {{ requiredLocationLabel }}</p>
-            <p v-else class="sheet-sub">เลือกบริการสำหรับคิวนี้</p>
+            <div class="sheet-services-layout">
+              <div class="sheet-header">
+                <h3 class="sheet-title">เลือกบริการ</h3>
+                <p v-if="hasCategoryStep" class="sheet-sub">เลื่อนหมวดซ้าย–ขวา แล้วเลือกบริการได้หลายหมวด</p>
+                <p v-else-if="requiredLocationLabel" class="sheet-sub">สถานที่ให้บริการ {{ requiredLocationLabel }}</p>
+                <p v-else class="sheet-sub">เลือกบริการสำหรับคิวนี้</p>
 
-            <div class="sheet-info sheet-info-compact">
-              <div class="info-row">
-                <span class="info-label"><i class="ti ti-calendar info-ic" aria-hidden="true"></i>วันที่</span>
-                <span class="info-val">{{ selectedDateLabel }}</span>
+                <div class="sheet-info sheet-info-compact">
+                  <div class="info-row">
+                    <span class="info-label"><i class="ti ti-calendar info-ic" aria-hidden="true"></i>วันที่</span>
+                    <span class="info-val">{{ selectedDateLabel }}</span>
+                  </div>
+                  <div class="info-row">
+                    <span class="info-label"><i class="ti ti-clock info-ic" aria-hidden="true"></i>เวลา</span>
+                    <span class="info-val">{{ pendingTimeLabel }}</span>
+                  </div>
+                  <div v-if="serviceDurationExtendHint" class="info-row">
+                    <span class="info-label"><i class="ti ti-hourglass info-ic" aria-hidden="true"></i>ระยะเวลา</span>
+                    <span class="info-val">{{ serviceDurationExtendHint }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="info-row">
-                <span class="info-label"><i class="ti ti-clock info-ic" aria-hidden="true"></i>เวลา</span>
-                <span class="info-val">{{ pendingTimeLabel }}</span>
+
+              <div class="sheet-body">
+                <div v-if="hasCategoryStep" class="category-strip-wrap">
+                  <div class="category-strip">
+                    <button
+                      v-for="cat in bookableCategories"
+                      :key="cat.id"
+                      type="button"
+                      class="category-pill"
+                      :class="{
+                        active: selectedCategoryId === cat.id,
+                        picked: categorySelectionCount(cat.id) > 0,
+                      }"
+                      @click="selectBookingCategory(cat.id)"
+                    >
+                      {{ cat.name }}
+                      <span v-if="categorySelectionCount(cat.id)" class="category-pill-count">
+                        {{ categorySelectionCount(cat.id) }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="option-list">
+                  <label
+                    v-for="opt in requiredOptions"
+                    :key="`req-${opt.id}`"
+                    class="option-card selected required"
+                  >
+                    <input
+                      v-model="selectedOptionIds"
+                      type="checkbox"
+                      class="option-input"
+                      :value="opt.id"
+                      disabled
+                    />
+                    <span class="option-check" aria-hidden="true">
+                      <i class="ti ti-check"></i>
+                    </span>
+                    <span class="option-body">
+                      <span class="option-name">
+                        {{ opt.option_name }}
+                        <span class="option-required-tag">บังคับ</span>
+                      </span>
+                      <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
+                    </span>
+                    <span class="option-meta">
+                      <span v-if="Number(opt.duration_min) > 0" class="option-duration">{{ formatOptionDuration(opt) }}</span>
+                    </span>
+                  </label>
+
+                  <label
+                    v-for="opt in categoryOptions"
+                    :key="opt.id"
+                    class="option-card"
+                    :class="{ selected: selectedOptionIds.includes(opt.id) }"
+                  >
+                    <input
+                      v-model="selectedOptionIds"
+                      type="checkbox"
+                      class="option-input"
+                      :value="opt.id"
+                      @change="serviceError = ''"
+                    />
+                    <span class="option-check" aria-hidden="true">
+                      <i class="ti ti-check"></i>
+                    </span>
+                    <span class="option-body">
+                      <span class="option-name">{{ opt.option_name }}</span>
+                      <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
+                    </span>
+                    <span class="option-meta">
+                      <span v-if="Number(opt.duration_min) > 0" class="option-duration">{{ formatOptionDuration(opt) }}</span>
+                      <span v-if="Number(opt.price) > 0" class="option-price">
+                        {{ Number(opt.price).toLocaleString('th-TH') }} บ.
+                      </span>
+                    </span>
+                  </label>
+                </div>
               </div>
-              <div v-if="serviceDurationExtendHint" class="info-row">
-                <span class="info-label"><i class="ti ti-hourglass info-ic" aria-hidden="true"></i>ระยะเวลา</span>
-                <span class="info-val">{{ serviceDurationExtendHint }}</span>
-              </div>
-              <template v-if="selectedServicesForDisplay.length">
-                <div class="info-row info-row-stack">
-                  <span class="info-label"><i class="ti ti-list-check info-ic" aria-hidden="true"></i>บริการที่เลือก</span>
-                  <ul class="selected-services-items">
+
+              <div class="sheet-footer">
+                <p v-if="serviceExtendBlockMessage" class="sheet-warn sheet-warn-footer" role="alert">
+                  <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+                  {{ serviceExtendBlockMessage }}
+                </p>
+
+                <p v-if="serviceError" class="sheet-error sheet-error-footer">{{ serviceError }}</p>
+
+                <div v-if="selectedServicesForDisplay.length" class="sheet-selected-summary">
+                  <button
+                    type="button"
+                    class="selected-summary-toggle"
+                    :aria-expanded="selectedServicesExpanded"
+                    @click="selectedServicesExpanded = !selectedServicesExpanded"
+                  >
+                    <span class="info-label">
+                      <i class="ti ti-list-check info-ic" aria-hidden="true"></i>
+                      บริการที่เลือก
+                    </span>
+                    <span class="selected-summary-line">{{ selectedServicesSummaryLine }}</span>
+                    <i
+                      class="ti selected-summary-chevron"
+                      :class="selectedServicesExpanded ? 'ti-chevron-down' : 'ti-chevron-up'"
+                      aria-hidden="true"
+                    ></i>
+                  </button>
+                  <ul v-if="selectedServicesExpanded" class="selected-services-items selected-services-items-footer">
                     <li
                       v-for="opt in selectedServicesForDisplay"
                       :key="`picked-${opt.id}`"
@@ -1228,117 +1347,21 @@ onUnmounted(() => {
                       </button>
                     </li>
                   </ul>
-                  <span class="selected-services-total">
-                    รวมเวลา {{ selectedServicesTotalDurationLabel }}
-                    <template v-if="selectedServicesTotalPrice != null">
-                      · {{ selectedServicesTotalPrice.toLocaleString('th-TH') }} บาท
-                    </template>
-                  </span>
                 </div>
-              </template>
-            </div>
 
-            <div v-if="hasCategoryStep" class="category-strip-wrap">
-              <div class="category-strip">
-                <button
-                  v-for="cat in bookableCategories"
-                  :key="cat.id"
-                  type="button"
-                  class="category-pill"
-                  :class="{
-                    active: selectedCategoryId === cat.id,
-                    picked: categorySelectionCount(cat.id) > 0,
-                  }"
-                  @click="selectBookingCategory(cat.id)"
-                >
-                  {{ cat.name }}
-                  <span v-if="categorySelectionCount(cat.id)" class="category-pill-count">
-                    {{ categorySelectionCount(cat.id) }}
-                  </span>
-                </button>
+                <div class="sheet-actions">
+                  <button type="button" class="btn-cancel" :disabled="busy" @click="backFromServicesStep">ย้อนกลับ</button>
+                  <button
+                    type="button"
+                    class="btn-confirm"
+                    :disabled="busy || !canSubmitBooking"
+                    @click="submitBooking"
+                  >
+                    ยืนยันการจอง
+                    <i class="ti ti-check" aria-hidden="true"></i>
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <div class="option-list">
-              <label
-                v-for="opt in requiredOptions"
-                :key="`req-${opt.id}`"
-                class="option-card selected required"
-              >
-                <input
-                  v-model="selectedOptionIds"
-                  type="checkbox"
-                  class="option-input"
-                  :value="opt.id"
-                  disabled
-                />
-                <span class="option-check" aria-hidden="true">
-                  <i class="ti ti-check"></i>
-                </span>
-                <span class="option-body">
-                  <span class="option-name">
-                    {{ opt.option_name }}
-                    <span class="option-required-tag">บังคับ</span>
-                  </span>
-                  <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
-                </span>
-                <span class="option-meta">
-                  <span v-if="Number(opt.duration_min) > 0" class="option-duration">{{ formatOptionDuration(opt) }}</span>
-                </span>
-              </label>
-
-              <label
-                v-for="opt in categoryOptions"
-                :key="opt.id"
-                class="option-card"
-                :class="{ selected: selectedOptionIds.includes(opt.id) }"
-              >
-                <input
-                  v-model="selectedOptionIds"
-                  type="checkbox"
-                  class="option-input"
-                  :value="opt.id"
-                  @change="serviceError = ''"
-                />
-                <span class="option-check" aria-hidden="true">
-                  <i class="ti ti-check"></i>
-                </span>
-                <span class="option-body">
-                  <span class="option-name">{{ opt.option_name }}</span>
-                  <span v-if="opt.description" class="option-desc">{{ opt.description }}</span>
-                </span>
-                <span class="option-meta">
-                  <span v-if="Number(opt.duration_min) > 0" class="option-duration">{{ formatOptionDuration(opt) }}</span>
-                  <span v-if="Number(opt.price) > 0" class="option-price">
-                    {{ Number(opt.price).toLocaleString('th-TH') }} บ.
-                  </span>
-                </span>
-              </label>
-            </div>
-
-            <p v-if="selectedServicesForDisplay.length && !serviceExtendBlockMessage" class="services-duration-summary">
-              <i class="ti ti-hourglass" aria-hidden="true"></i>
-              รวมเวลาบริการที่เลือก <strong>{{ selectedServicesTotalDurationLabel }}</strong>
-            </p>
-
-            <p v-if="serviceExtendBlockMessage" class="sheet-warn" role="alert">
-              <i class="ti ti-alert-triangle" aria-hidden="true"></i>
-              {{ serviceExtendBlockMessage }}
-            </p>
-
-            <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>
-
-            <div class="sheet-actions">
-              <button type="button" class="btn-cancel" :disabled="busy" @click="backFromServicesStep">ย้อนกลับ</button>
-              <button
-                type="button"
-                class="btn-confirm"
-                :disabled="busy || !canSubmitBooking"
-                @click="submitBooking"
-              >
-                ยืนยันการจอง
-                <i class="ti ti-check" aria-hidden="true"></i>
-              </button>
             </div>
           </template>
         </div>
@@ -1676,6 +1699,91 @@ onUnmounted(() => {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+}
+.sheet.sheet-services {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.sheet-services-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.sheet-header {
+  flex-shrink: 0;
+}
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-bottom: 4px;
+}
+.sheet-footer {
+  flex-shrink: 0;
+  margin: 0 -20px;
+  padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sheet-warn-footer,
+.sheet-error-footer {
+  margin: 0;
+}
+.sheet-selected-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.selected-summary-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary-light) 45%, white);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.selected-summary-toggle .info-label {
+  flex-shrink: 0;
+}
+.selected-summary-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selected-summary-chevron {
+  flex-shrink: 0;
+  font-size: 16px;
+  color: var(--color-text-muted);
+}
+.selected-services-items-footer {
+  max-height: min(28vh, 160px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.sheet-services .option-list {
+  max-height: none;
+  overflow-y: visible;
+  margin-bottom: 0;
 }
 .sheet-handle {
   width: 36px; height: 4px; background: var(--color-border);
