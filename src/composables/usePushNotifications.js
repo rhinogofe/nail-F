@@ -6,13 +6,17 @@ import {
   getPushHelpText,
   isIosDevice,
   isStandalonePwa,
+  updateReceiveAllShopPush,
 } from '../utils/pushNotifications'
 
 export function usePushNotifications() {
   const enabled = ref(false)
   const configured = ref(false)
   const supported = ref(false)
+  const isSuperAdmin = ref(false)
+  const receiveAllShopPush = ref(false)
   const loading = ref(false)
+  const prefsLoading = ref(false)
   const errorMessage = ref('')
   const helpText = ref('')
 
@@ -24,8 +28,24 @@ export function usePushNotifications() {
     configured.value = Boolean(status.configured)
     supported.value = Boolean(status.supported)
     enabled.value = Boolean(status.enabled)
+    isSuperAdmin.value = Boolean(status.is_super_admin)
+    receiveAllShopPush.value = Boolean(status.receive_all_shop_push)
     helpText.value = getPushHelpText(status)
     return status
+  }
+
+  async function toggleReceiveAllShopPush(nextValue) {
+    prefsLoading.value = true
+    errorMessage.value = ''
+    try {
+      const data = await updateReceiveAllShopPush(nextValue)
+      receiveAllShopPush.value = Boolean(data?.receive_all_shop_push)
+    } catch (err) {
+      errorMessage.value = err?.response?.data?.error || 'บันทึกการตั้งค่าไม่สำเร็จ'
+      throw err
+    } finally {
+      prefsLoading.value = false
+    }
   }
 
   async function turnOn() {
@@ -74,7 +94,10 @@ export function usePushNotifications() {
     enabled,
     configured,
     supported,
+    isSuperAdmin,
+    receiveAllShopPush,
     loading,
+    prefsLoading,
     errorMessage,
     helpText,
     needsIosInstall,
@@ -82,5 +105,6 @@ export function usePushNotifications() {
     toggle,
     turnOn,
     turnOff,
+    toggleReceiveAllShopPush,
   }
 }

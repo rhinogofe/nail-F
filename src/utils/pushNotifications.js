@@ -108,10 +108,26 @@ export async function fetchPushStatus() {
       enabled: deviceEnabled,
       supported: true,
       reason: null,
+      is_super_admin: Boolean(data?.is_super_admin),
+      receive_all_shop_push: Boolean(data?.receive_all_shop_push),
     }
   } catch {
-    return { configured: isFirebaseConfigured(), enabled: false, supported: true, reason: null }
+    return {
+      configured: isFirebaseConfigured(),
+      enabled: false,
+      supported: true,
+      reason: null,
+      is_super_admin: false,
+      receive_all_shop_push: false,
+    }
   }
+}
+
+export async function updateReceiveAllShopPush(enabled) {
+  const { data } = await api.patch('/api/push/preferences', {
+    receive_all_shop_push: Boolean(enabled),
+  })
+  return data
 }
 
 export function getStoredFcmToken() {

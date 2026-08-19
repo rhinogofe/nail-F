@@ -1,19 +1,27 @@
 <script setup>
 import { computed } from 'vue'
+import { useAuthStore } from '../stores/auth'
 import { usePushNotifications } from '../composables/usePushNotifications'
+
+const auth = useAuthStore()
 
 const {
   enabled,
   configured,
   supported,
+  isSuperAdmin,
+  receiveAllShopPush,
   loading,
+  prefsLoading,
   errorMessage,
   helpText,
   needsIosInstall,
   toggle,
+  toggleReceiveAllShopPush,
 } = usePushNotifications()
 
 const canToggle = computed(() => configured.value && supported.value)
+const showAllShopToggle = computed(() => isSuperAdmin.value || auth.isSuperAdmin)
 
 const statusNote = computed(() => {
   if (!configured.value) return 'รอตั้งค่า Firebase บนเซิร์ฟเวอร์ (backend .env)'
@@ -40,10 +48,27 @@ async function onToggle(event) {
     event.target.checked = !next
   }
 }
+
+async function onAllShopToggle(event) {
+  const next = event.target.checked
+  if (prefsLoading.value) {
+    event.target.checked = !next
+    return
+  }
+  try {
+    await toggleReceiveAllShopPush(next)
+    if (auth.user) {
+      auth.user = { ...auth.user, receive_all_shop_push: next }
+    }
+  } catch {
+    event.target.checked = !next
+  }
+}
 </script>
 
 <template>
-  <div class="push-toggle-card" @click.stop>
+  <div class="push-settings" @click.stop>
+  <div class="push-toggle-card">
     <div class="push-toggle-copy">
       <strong class="push-toggle-title">
         <i class="ti ti-bell" aria-hidden="true"></i>
@@ -93,9 +118,43 @@ async function onToggle(event) {
       </span>
     </label>
   </div>
+
+  <div v-if="showAllShopToggle" class="push-toggle-card push-toggle-card-sub">
+    <div class="push-toggle-copy">
+      <strong class="push-toggle-title">
+        <i class="ti ti-building-store" aria-hidden="true"></i>
+        แจ้งเตือนทุกสาขา
+      </strong>
+      <p class="push-toggle-desc muted">
+        ปิด = ได้แจ้งเตือนเฉพาะร้าน default (ร้านของคุณ) · เปิด = รับ push จากทุกร้องในระบบ
+      </p>
+    </div>
+
+    <label class="push-toggle-switch" :class="{ disabled: prefsLoading }">
+      <input
+        type="checkbox"
+        :checked="receiveAllShopPush"
+        :disabled="prefsLoading"
+        @change="onAllShopToggle"
+      />
+      <span class="push-toggle-track" aria-hidden="true">
+        <span class="push-toggle-thumb"></span>
+      </span>
+    </label>
+  </div>
+  </div>
 </template>
 
 <style scoped>
+.push-settings {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.push-toggle-card-sub {
+  background: #fff;
+}
+
 .push-toggle-card {
   display: flex;
   align-items: flex-start;
