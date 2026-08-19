@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import AppUpdateBanner from './components/AppUpdateBanner.vue'
+import { useAppUpdate } from './composables/useAppUpdate'
 import {
   initPushNotificationsWhenReady,
 } from './utils/pushNotifications'
@@ -9,6 +11,7 @@ import {
 const route = useRoute()
 const auth = useAuthStore()
 const isAdminRoute = computed(() => /\/admin$/.test(route.path))
+const { updateAvailable, reload } = useAppUpdate()
 
 let stopPushListener = null
 
@@ -38,6 +41,7 @@ watch(() => auth.isLoggedIn, () => {
 
 <template>
   <div class="app-shell" :class="{ 'app-shell--admin': isAdminRoute }">
+    <AppUpdateBanner :visible="updateAvailable" @reload="reload" />
     <router-view />
   </div>
 </template>

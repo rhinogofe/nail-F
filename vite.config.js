@@ -82,6 +82,37 @@ self.addEventListener('notificationclick', (event) => {
 `
 }
 
+function appVersionPlugin() {
+  let buildId = 'dev'
+
+  return {
+    name: 'app-version',
+    config(_, { command }) {
+      if (command === 'build') {
+        buildId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      }
+      return {
+        define: {
+          __APP_BUILD_ID__: JSON.stringify(buildId),
+        },
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use('/version.json', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(`${JSON.stringify({ buildId: 'dev' })}\n`)
+      })
+    },
+    closeBundle() {
+      writeFileSync(
+        resolve(process.cwd(), 'dist/version.json'),
+        `${JSON.stringify({ buildId })}\n`,
+      )
+    },
+  }
+}
+
 function firebaseMessagingSwPlugin() {
   let swSource = ''
 
@@ -104,5 +135,5 @@ function firebaseMessagingSwPlugin() {
 }
 
 export default defineConfig({
-  plugins: [vue(), firebaseMessagingSwPlugin()],
+  plugins: [vue(), appVersionPlugin(), firebaseMessagingSwPlugin()],
 })
