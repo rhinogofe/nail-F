@@ -1403,7 +1403,15 @@ watch(dayHourEndH, () => {
 })
 
 // ── Users ────────────────────────────────────
+const USER_PAGE_SIZE = 100
 const users = ref([])
+const usersTotal = ref(0)
+const usersHasMore = ref(false)
+const usersLoading = ref(false)
+const usersLoadingMore = ref(false)
+const usersLoaded = ref(false)
+const usersListRef = ref(null)
+const usersSentinelRef = ref(null)
 const userSearch = ref('')
 const userEditOpen = ref(false)
 const userEditItem = ref(null)
@@ -1473,22 +1481,73 @@ function openAdminChat(userId) {
   router.push(shopPath(`/chat?userId=${userId}`))
 }
 
-const filteredUsers = computed(() => {
-  const q = userSearch.value.trim().toLowerCase()
-  if (!q) return users.value
-  return users.value.filter(u =>
-    u.name?.toLowerCase().includes(q) ||
-    u.email?.toLowerCase().includes(q)
-  )
-})
+const filteredUsers = computed(() => users.value)
 
-async function loadUsers() {
+let usersObserver = null
+let userSearchDebounce = null
+
+async function loadUsers({ reset = false } = {}) {
+  if (usersLoading.value || usersLoadingMore.value) return
+  if (!reset && !usersHasMore.value) return
+
+  if (reset) {
+    usersLoading.value = true
+  } else {
+    usersLoadingMore.value = true
+  }
+
   try {
-    const { data } = await api.get('/api/admin/users')
-    users.value = data
+    const offset = reset ? 0 : users.value.length
+    const q = userSearch.value.trim()
+    const params = { limit: USER_PAGE_SIZE, offset }
+    if (q) params.q = q
+
+    const { data } = await api.get('/api/admin/users', { params })
+    const rows = Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : [])
+
+    if (reset) {
+      users.value = rows
+    } else {
+      const existing = new Set(users.value.map((u) => u.id))
+      for (const user of rows) {
+        if (!existing.has(user.id)) users.value.push(user)
+      }
+    }
+
+    usersTotal.value = Number(data?.total ?? rows.length)
+    usersHasMore.value = Boolean(
+      data?.has_more ?? (offset + rows.length < usersTotal.value),
+    )
+    usersLoaded.value = true
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดผู้ใช้ไม่สำเร็จ'
+  } finally {
+    usersLoading.value = false
+    usersLoadingMore.value = false
+    nextTick(setupUsersInfiniteScroll)
   }
+}
+
+async function ensureUsersLoaded() {
+  if (!usersLoaded.value && !usersLoading.value) {
+    await loadUsers({ reset: true })
+  }
+}
+
+function setupUsersInfiniteScroll() {
+  usersObserver?.disconnect()
+  usersObserver = null
+  if (activeTab.value !== 'users' || !usersSentinelRef.value || !usersHasMore.value) return
+
+  usersObserver = new IntersectionObserver(
+    (entries) => {
+      if (!entries[0]?.isIntersecting) return
+      if (!usersHasMore.value || usersLoading.value || usersLoadingMore.value) return
+      void loadUsers()
+    },
+    { root: null, rootMargin: '160px' },
+  )
+  usersObserver.observe(usersSentinelRef.value)
 }
 
 function openStaffAdd() {
@@ -1740,6 +1799,7 @@ function switchTab(tab) {
   errorMessage.value = ''
   if (tab === 'revenue') loadRevenueSummary()
   if (tab === 'reviews') loadShowcaseClips()
+  if (tab === 'users' && !usersLoaded.value) loadUsers({ reset: true })
   if (tab === 'ui') activeUiSection.value = 0
   if (tab === 'blocks') activeBlocksSection.value = 'shop-hours'
   if (isMobile.value) {
@@ -2970,6 +3030,7 @@ async function editBooking(item) {
   bookingEditOpen.value = true
 
   try {
+    await ensureUsersLoaded()
     const { data: hoursData } = await api.get('/api/bookings/shop-hours')
     shopOpenHour.value = normalizeShopOpenHour(hoursData?.open_hour)
     shopLastBookingHour.value = normalizeShopLastBookingHour(hoursData?.last_booking_hour, shopOpenHour.value)
@@ -3229,6 +3290,7 @@ async function openBookingAdd() {
   bookingAddOpen.value = true
 
   try {
+    await ensureUsersLoaded()
     const [hoursRes, optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
       api.get('/api/bookings/shop-hours'),
       api.get('/api/bookings/options', {
@@ -4102,7 +4164,6 @@ onMounted(loadShopHours)
 onMounted(loadDayHoursMonth)
 onMounted(loadAdvanceDays)
 onMounted(loadBookingDisplay)
-onMounted(loadUsers)
 onMounted(loadShowcaseClips)
 onMounted(() => {
   adminMobileMq = window.matchMedia('(max-width: 640px)')
@@ -4114,6 +4175,8 @@ onMounted(() => {
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
   window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
+  usersObserver?.disconnect()
+  if (userSearchDebounce) clearTimeout(userSearchDebounce)
 })
 
 watch(shopSlug, () => {
@@ -4123,6 +4186,25 @@ watch(shopSlug, () => {
   loadChatNotifySetting()
   loadRegisterShopPinSetting()
   loadSetupWizardDismissed()
+  users.value = []
+  usersTotal.value = 0
+  usersHasMore.value = false
+  usersLoaded.value = false
+  if (activeTab.value === 'users') loadUsers({ reset: true })
+})
+
+watch(userSearch, () => {
+  if (activeTab.value !== 'users') return
+  if (userSearchDebounce) clearTimeout(userSearchDebounce)
+  userSearchDebounce = setTimeout(() => {
+    loadUsers({ reset: true })
+  }, 300)
+})
+
+watch([activeTab, usersHasMore, usersSentinelRef], () => {
+  if (activeTab.value === 'users') {
+    nextTick(setupUsersInfiniteScroll)
+  }
 })
 </script>
 
@@ -6468,8 +6550,14 @@ watch(shopSlug, () => {
         </button>
       </div>
 
-      <p v-if="filteredUsers.length === 0" class="muted">ไม่พบผู้ใช้</p>
+      <p v-if="usersTotal > 0" class="muted admin-users-count">
+        แสดง {{ users.length }} จาก {{ usersTotal }} คน
+      </p>
 
+      <p v-if="usersLoading" class="muted">กำลังโหลดรายชื่อ...</p>
+      <p v-else-if="filteredUsers.length === 0" class="muted">ไม่พบผู้ใช้</p>
+
+      <div ref="usersListRef" class="admin-users-list">
       <div v-for="u in filteredUsers" :key="u.id" class="admin-item user-item">
         <div class="user-info">
           <strong>{{ u.name }}</strong>
@@ -6504,6 +6592,15 @@ watch(shopSlug, () => {
           <button v-if="!u.is_admin" class="btn danger" @click="deleteUser(u)">ลบ</button>
         </div>
       </div>
+      <div ref="usersSentinelRef" class="admin-users-sentinel" aria-hidden="true"></div>
+      </div>
+      <p v-if="usersLoadingMore" class="muted admin-users-loading">กำลังโหลดเพิ่ม...</p>
+      <p
+        v-else-if="usersHasMore && filteredUsers.length > 0"
+        class="muted admin-users-load-hint"
+      >
+        เลื่อนลงล่างสุดเพื่อโหลดเพิ่มอีก {{ USER_PAGE_SIZE }} คน
+      </p>
     </section>
 
     <Teleport to="body">
@@ -7629,6 +7726,27 @@ watch(shopSlug, () => {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+.admin-users-count {
+  margin: 0 0 10px;
+}
+
+.admin-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-users-sentinel {
+  width: 100%;
+  height: 1px;
+}
+
+.admin-users-loading,
+.admin-users-load-hint {
+  margin: 12px 0 0;
+  text-align: center;
 }
 
 .admin-push-reminder {
