@@ -10,6 +10,7 @@ import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optio
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
+import { isFirebaseConfigured } from '../utils/firebaseConfig'
 
 /** Above teleported admin modals (.booking-edit-backdrop z-index 2000) */
 const adminSwal = Swal.mixin({
@@ -41,13 +42,16 @@ const accountMenuRef = ref(null)
 const {
   enabled: pushEnabled,
   configured: pushConfigured,
-  supported: pushSupported,
+  needsIosInstall,
   refreshStatus: refreshPushStatus,
 } = usePushNotifications()
 
-const showPushOffBanner = computed(
-  () => pushConfigured.value && pushSupported.value && !pushEnabled.value,
-)
+const showPushOffBanner = computed(() => {
+  if (pushEnabled.value) return false
+  if (pushConfigured.value) return true
+  // iOS Safari (ยังไม่ Add to Home) รายงาน supported=false แต่ยังควรเตือนให้ตั้งค่า
+  return needsIosInstall.value && isFirebaseConfigured()
+})
 
 function openAccountMenuForPushHelp() {
   accountMenuRef.value?.open?.()
