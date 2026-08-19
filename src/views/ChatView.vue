@@ -34,6 +34,13 @@ const imageInputRef = ref(null)
 let scrollCleanup = null
 const lightboxSrc = ref('')
 
+// How close to the end still counts as "reading the newest messages".
+const BOTTOM_LOCK_PX = 90
+const isPinnedToBottom = ref(true)
+const hasNewBelow = ref(false)
+let programmaticScrollUntil = 0
+let nextScrollMode = 'instant'
+
 const conversations = ref([])
 const selectedUserId = ref('')
 const activeUser = ref(null)
@@ -204,10 +211,12 @@ async function sendChatPayload({ body = '', imageData = null, imageMime = null }
   sending.value = true
   errorMessage.value = ''
   try {
+    // Sending always brings you back to the newest message, like every other
+    // messenger, even if you were reading history.
+    nextScrollMode = 'send'
     const data = await postChatPayload({ body: text, imageData, imageMime })
     if (data) messages.value = [...messages.value, data]
     if (isAdminMode.value) await loadConversations()
-    scrollToBottom()
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'ส่งข้อความไม่สำเร็จ'
   } finally {
@@ -256,60 +265,65 @@ async function deleteMessage(msg) {
   }
 }
 
-function scrollToBottom() {
-  scrollCleanup?.()
-  scrollCleanup = null
+function distanceFromBottom() {
+  const el = messagesRef.value
+  if (!el) return 0
+  return el.scrollHeight - el.scrollTop - el.clientHeight
+}
 
-  const run = () => {
-    const el = messagesRef.value
-    const anchor = bottomAnchorRef.value
-    if (el) el.scrollTop = el.scrollHeight
-    if (anchor) anchor.scrollIntoView({ block: 'end', behavior: 'auto' })
-  }
+// Programmatic scrolls fire scroll events too; ignore them so a smooth scroll
+// passing through the middle of the list is not mistaken for the user reading
+// older messages.
+function jumpToBottom(smooth = false) {
+  const el = messagesRef.value
+  if (!el) return
+  programmaticScrollUntil = Date.now() + (smooth ? 700 : 150)
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  isPinnedToBottom.value = true
+  hasNewBelow.value = false
+}
+
+function onMessagesScroll() {
+  if (Date.now() < programmaticScrollUntil) return
+  const atBottom = distanceFromBottom() <= BOTTOM_LOCK_PX
+  isPinnedToBottom.value = atBottom
+  if (atBottom) hasNewBelow.value = false
+}
+
+// Images and web fonts change the list height after render, so re-pin a few
+// times while the layout settles — but only while the user is still at the end.
+function scrollToBottom({ smooth = false, force = false } = {}) {
+  if (!force && !isPinnedToBottom.value) return
+  scrollCleanup?.()
 
   const timers = []
-  const schedule = () => {
-    nextTick(() => {
-      run()
-      requestAnimationFrame(() => {
-        run()
-        requestAnimationFrame(run)
-      })
-    })
+  const repin = () => {
+    if (!isPinnedToBottom.value) return
+    jumpToBottom(false)
   }
 
-  schedule()
-  for (const ms of [50, 150, 300, 500, 800]) {
-    timers.push(setTimeout(run, ms))
-  }
+  nextTick(() => {
+    jumpToBottom(smooth)
+    requestAnimationFrame(repin)
+    for (const ms of [80, 250, 600]) timers.push(setTimeout(repin, ms))
+  })
 
-  const el = messagesRef.value
-  if (el && typeof ResizeObserver !== 'undefined') {
-    let lastHeight = 0
-    let stableTicks = 0
-    const ro = new ResizeObserver(() => {
-      const h = el.scrollHeight
-      if (h === lastHeight) {
-        stableTicks += 1
-        if (stableTicks >= 2) {
-          run()
-          ro.disconnect()
-        }
-      } else {
-        lastHeight = h
-        stableTicks = 0
-        run()
-      }
-    })
-    ro.observe(el)
-    timers.push(setTimeout(() => ro.disconnect(), 2500))
-    scrollCleanup = () => {
-      timers.forEach(clearTimeout)
-      ro.disconnect()
-    }
-  } else {
-    scrollCleanup = () => timers.forEach(clearTimeout)
+  scrollCleanup = () => {
+    timers.forEach(clearTimeout)
+    scrollCleanup = null
   }
+}
+
+function onMessagesMediaLoad(event) {
+  if (event.target?.tagName !== 'IMG') return
+  if (!isPinnedToBottom.value) return
+  jumpToBottom(false)
+}
+
+function resetScrollState() {
+  isPinnedToBottom.value = true
+  hasNewBelow.value = false
+  nextScrollMode = 'instant'
 }
 
 function toggleSidebar() {
@@ -364,7 +378,7 @@ async function loadAdminMessages(userId, silent = false) {
     errorMessage.value = err?.response?.data?.error || 'โหลดข้อความไม่สำเร็จ'
   } finally {
     if (!silent) loading.value = false
-    if (!silent) scrollToBottom()
+    if (!silent) scrollToBottom({ force: true })
   }
 }
 
@@ -386,19 +400,23 @@ async function refreshChat(silent = false) {
     errorMessage.value = err?.response?.data?.error || 'โหลดข้อความไม่สำเร็จ'
   } finally {
     if (!silent) loading.value = false
-    if (!isAdminMode.value || selectedUserId.value) scrollToBottom()
+    if (!silent && (!isAdminMode.value || selectedUserId.value)) {
+      scrollToBottom({ force: true })
+    }
   }
 }
 
 async function selectConversation(conv) {
   if (!conv?.id) return
   closeSidebarAfterSelect()
+  resetScrollState()
   await loadAdminMessages(conv.id)
 }
 
 async function openCustomerChat(userId) {
   if (!userId) return
   closeSidebarAfterSelect()
+  resetScrollState()
   await loadAdminMessages(String(userId))
 }
 
@@ -445,6 +463,17 @@ function onFcmPushReceived() {
   refreshChat(true)
 }
 
+watch(messagesRef, (el, prevEl) => {
+  if (prevEl) {
+    prevEl.removeEventListener('scroll', onMessagesScroll)
+    prevEl.removeEventListener('load', onMessagesMediaLoad, true)
+  }
+  if (el) {
+    el.addEventListener('scroll', onMessagesScroll, { passive: true })
+    el.addEventListener('load', onMessagesMediaLoad, true)
+  }
+})
+
 onMounted(async () => {
   mobileMq = window.matchMedia('(max-width: 640px)')
   onViewportChange()
@@ -471,15 +500,36 @@ onUnmounted(() => {
   window.removeEventListener(FCM_PUSH_RECEIVED_EVENT, onFcmPushReceived)
   if (pollTimer) clearInterval(pollTimer)
   scrollCleanup?.()
+  const el = messagesRef.value
+  if (el) {
+    el.removeEventListener('scroll', onMessagesScroll)
+    el.removeEventListener('load', onMessagesMediaLoad, true)
+  }
   mobileMq?.removeEventListener('change', onViewportChange)
 })
 
 watch(
-  () => [selectedUserId.value, loading.value],
-  ([uid, isLoading], prev) => {
-    const [prevUid, prevLoading] = prev ?? ['', true]
-    if (!uid || isLoading || messages.value.length === 0) return
-    if (uid !== prevUid || (prevLoading && !isLoading)) scrollToBottom()
+  () => messages.value.at(-1)?.id || '',
+  (newId, oldId) => {
+    if (!newId) return
+
+    if (nextScrollMode === 'instant') {
+      nextScrollMode = 'auto'
+      scrollToBottom({ force: true })
+      return
+    }
+    if (nextScrollMode === 'send') {
+      nextScrollMode = 'auto'
+      scrollToBottom({ smooth: true, force: true })
+      return
+    }
+
+    if (newId === oldId) return
+    if (isPinnedToBottom.value) {
+      scrollToBottom({ smooth: true })
+    } else {
+      hasNewBelow.value = true
+    }
   },
   { flush: 'post' }
 )
@@ -489,6 +539,7 @@ watch(
   async (userId) => {
     if (isAdminMode.value && userId) {
       closeSidebarAfterSelect()
+      resetScrollState()
       await loadAdminMessages(String(userId))
     }
   }
@@ -651,6 +702,19 @@ watch(
               <div ref="bottomAnchorRef" class="chat-scroll-anchor" aria-hidden="true" />
             </div>
 
+            <Transition name="chat-jump">
+              <button
+                v-if="!isPinnedToBottom && messages.length"
+                type="button"
+                class="chat-jump-btn"
+                :class="{ 'chat-jump-btn--new': hasNewBelow }"
+                @click="jumpToBottom(true)"
+              >
+                <i class="ti ti-arrow-down" aria-hidden="true"></i>
+                {{ hasNewBelow ? 'ข้อความใหม่' : 'ล่าสุด' }}
+              </button>
+            </Transition>
+
             <form v-if="!selectedIsSystem" class="chat-compose" @submit.prevent="sendMessage">
               <input
                 ref="imageInputRef"
@@ -733,6 +797,19 @@ watch(
         <div ref="bottomAnchorRef" class="chat-scroll-anchor" aria-hidden="true" />
       </div>
 
+      <Transition name="chat-jump">
+        <button
+          v-if="!isPinnedToBottom && messages.length"
+          type="button"
+          class="chat-jump-btn"
+          :class="{ 'chat-jump-btn--new': hasNewBelow }"
+          @click="jumpToBottom(true)"
+        >
+          <i class="ti ti-arrow-down" aria-hidden="true"></i>
+          {{ hasNewBelow ? 'ข้อความใหม่' : 'ล่าสุด' }}
+        </button>
+      </Transition>
+
       <form class="chat-compose" @submit.prevent="sendMessage">
         <input
           ref="imageInputRef"
@@ -787,8 +864,12 @@ watch(
 </template>
 
 <style scoped>
+/* A fixed viewport-height shell keeps the document itself unscrollable, so the
+   message list is the only thing that moves and the compose bar never drifts
+   under the bottom nav. */
 .chat-page {
-  min-height: 100dvh;
+  position: relative;
+  height: 100dvh;
   max-width: 430px;
   width: 100%;
   margin: 0 auto;
@@ -1009,6 +1090,8 @@ watch(
 }
 
 .chat-thread-head {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1118,12 +1201,14 @@ watch(
 
 .chat-alert {
   margin: 8px 12px 0;
+  flex-shrink: 0;
 }
 
 .chat-upload-progress {
   margin: 6px 16px 0;
   font-size: 12px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .chat-empty-state {
@@ -1159,6 +1244,8 @@ watch(
 
 /* ── Shared messages ── */
 .chat-header {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1166,6 +1253,17 @@ watch(
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-elevated);
   flex-shrink: 0;
+}
+
+@media (display-mode: standalone) {
+  .chat-header {
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  }
+
+  .chat-thread-head,
+  .chat-sidebar-head {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
 }
 
 .chat-header-text {
@@ -1192,6 +1290,45 @@ watch(
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-jump-btn {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--page-nav-padding-bottom) + 72px);
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-md, 0 4px 14px rgba(45, 36, 36, 0.16));
+}
+
+.chat-jump-btn--new {
+  background: var(--color-primary);
+  border-color: transparent;
+  color: var(--color-on-primary, #fff);
+}
+
+.chat-jump-enter-active,
+.chat-jump-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.chat-jump-enter-from,
+.chat-jump-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 8px);
 }
 
 .chat-scroll-anchor {
