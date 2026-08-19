@@ -7756,23 +7756,29 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .admin-push-reminder {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 3px;
   width: 100%;
   margin: 0 0 var(--space-3);
+  padding: 6px 10px;
   border: none;
-  font: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 500;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
   transition: filter var(--transition), transform var(--transition);
 }
 
 .admin-push-reminder i {
-  margin-right: 2px;
-  font-size: 16px;
+  flex-shrink: 0;
+  margin-right: 1px;
+  font-size: 12px;
 }
 
 .admin-push-reminder-link {
+  flex-shrink: 0;
   text-decoration: underline;
   text-underline-offset: 2px;
   font-weight: 700;
