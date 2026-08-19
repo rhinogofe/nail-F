@@ -8,6 +8,8 @@ import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
+import { usePushNotifications } from '../composables/usePushNotifications'
+import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
 
 /** Above teleported admin modals (.booking-edit-backdrop z-index 2000) */
 const adminSwal = Swal.mixin({
@@ -35,6 +37,25 @@ const { shopPath, shopSlug } = useShopRoute()
 const auth = useAuthStore()
 const shopStore = useShopStore()
 const uiSettingsStore = useUiSettingsStore()
+const accountMenuRef = ref(null)
+const {
+  enabled: pushEnabled,
+  configured: pushConfigured,
+  supported: pushSupported,
+  refreshStatus: refreshPushStatus,
+} = usePushNotifications()
+
+const showPushOffBanner = computed(
+  () => pushConfigured.value && pushSupported.value && !pushEnabled.value,
+)
+
+function openAccountMenuForPushHelp() {
+  accountMenuRef.value?.open?.()
+}
+
+function onPushDeviceStatusChanged() {
+  void refreshPushStatus()
+}
 
 async function confirmAdminSave(title, message) {
   const opts = {
@@ -4088,9 +4109,11 @@ onMounted(() => {
   updateAdminMobileLayout()
   adminMobileMq.addEventListener('change', updateAdminMobileLayout)
   loadSetupWizardDismissed()
+  window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
 })
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
+  window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
 })
 
 watch(shopSlug, () => {
@@ -4111,7 +4134,7 @@ watch(shopSlug, () => {
         <p class="muted admin-sub">{{ shopStore.shopName || shopSlug }} · {{ auth.user?.name || '-' }}</p>
       </div>
       <div class="admin-top-actions">
-        <AccountMenuDrawer />
+        <AccountMenuDrawer ref="accountMenuRef" />
         <button type="button" class="btn admin-share-btn" @click="shareShopLink">
           <i class="ti ti-share-2" aria-hidden="true"></i>
           แชร์ลิงก์ร้าน
@@ -4122,6 +4145,18 @@ watch(shopSlug, () => {
         </button>
       </div>
     </header>
+
+    <button
+      v-if="showPushOffBanner"
+      type="button"
+      class="admin-push-reminder alert-banner warning"
+      @click="openAccountMenuForPushHelp"
+    >
+      <i class="ti ti-bell-off" aria-hidden="true"></i>
+      แจ้งเตือนนอกแอปยังปิดอยู่ — กด
+      <span class="admin-push-reminder-link">บรรทัดนี้</span>
+      เพื่อดูวิธีเปิด
+    </button>
 
     <div class="admin-tab-wrap">
     <nav class="admin-nav" aria-label="เมนูแอดมิน">
@@ -7594,6 +7629,35 @@ watch(shopSlug, () => {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+.admin-push-reminder {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  margin: 0 0 var(--space-3);
+  border: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: filter var(--transition), transform var(--transition);
+}
+
+.admin-push-reminder i {
+  margin-right: 2px;
+  font-size: 16px;
+}
+
+.admin-push-reminder-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 700;
+}
+
+.admin-push-reminder:active {
+  transform: scale(0.99);
 }
 
 .alert {

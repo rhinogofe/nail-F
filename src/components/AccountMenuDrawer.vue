@@ -77,6 +77,11 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onMenuKeydown)
   if (menuOpen.value) document.body.style.overflow = ''
 })
+
+defineExpose({
+  open: openMenu,
+  close: closeMenu,
+})
 </script>
 
 <template>
