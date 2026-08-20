@@ -3286,10 +3286,6 @@ async function saveBookingEdit() {
       start_minute: slot.startMinute,
       nailoption_ids: bookingEditSelectedIds.value,
     }
-    if (!extendBookingByServices.value) {
-      payload.end_hour = slot.endHour
-      payload.end_minute = slot.endMinute
-    }
     const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, payload)
     message.value = data?.message || 'บันทึกแล้ว'
     const movedDate = bookingEditDate.value
