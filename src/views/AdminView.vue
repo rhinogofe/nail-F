@@ -521,11 +521,16 @@ const settingsSectionById = Object.fromEntries(
 )
 
 const visibleSettingsSections = computed(() =>
-  settingsSections.filter(
-    (section) =>
-      !section.superAdminOnly
-      || (isSuperAdmin.value && shopSlug.value === 'default')
-  )
+  settingsSections.filter((section) => {
+    if (section.superAdminOnly && !(isSuperAdmin.value && shopSlug.value === 'default')) {
+      return false
+    }
+    if (section.key === 'line') {
+      if (isSuperAdmin.value && shopSlug.value === 'default') return true
+      return linePushEnabled.value
+    }
+    return true
+  })
 )
 
 const activeSettingsSection = ref('deposit')
@@ -678,6 +683,12 @@ function selectUiSection(index) {
 watch(visibleUiFieldGroups, (groups) => {
   if (activeUiSection.value >= groups.length) {
     activeUiSection.value = 0
+  }
+})
+
+watch(visibleSettingsSections, (sections) => {
+  if (!sections.some((s) => s.key === activeSettingsSection.value)) {
+    activeSettingsSection.value = sections[0]?.key || 'deposit'
   }
 })
 
