@@ -1,8 +1,16 @@
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Swal from 'sweetalert2'
 import api from '../api/axios'
+import { useUiSettingsStore } from '../stores/uiSettings'
 import { compressImage } from '../utils/compressChatImage'
+
+const uiSettingsStore = useUiSettingsStore()
+
+const showSlipSection = computed(() => {
+  const raw = String(uiSettingsStore.get('ui_payment_slip_upload_enabled', '0')).trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
+})
 
 const props = defineProps({
   active: { type: Boolean, default: false },
@@ -272,9 +280,9 @@ function onWindowFocus() {
 }
 
 watch(
-  () => [props.active, props.bookingDate],
-  ([isActive]) => {
-    if (!isActive) {
+  () => [props.active, props.bookingDate, showSlipSection.value],
+  ([isActive, , enabled]) => {
+    if (!isActive || !enabled) {
       stopPolling()
       return
     }
@@ -302,7 +310,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="admin-booking-slips card-inner">
+  <div v-if="showSlipSection" class="admin-booking-slips card-inner">
     <header class="admin-booking-slips-head">
       <div>
         <h4>{{ bookingDate ? `สลิปวันที่ ${formatBookingDate(bookingDate)}` : 'สลิปชำระเงิน (จอง)' }}</h4>
