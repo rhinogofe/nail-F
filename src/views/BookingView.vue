@@ -37,6 +37,7 @@ import BrandMark from '../components/BrandMark.vue'
 import {
   buildBookableCategories,
   optionsForCategory,
+  resolveLocationMapUrl,
   UNCategorized_CATEGORY_ID,
 } from '../utils/bookingOptionsResponse'
 
@@ -358,6 +359,12 @@ const requiredLocationLabel = computed(() =>
     .filter(opt => opt.is_required)
     .map(opt => opt.option_name)
     .join(', ')
+)
+const requiredLocationMapUrl = computed(() =>
+  resolveLocationMapUrl(
+    nailOptions.value.filter((opt) => opt.is_required).map((opt) => opt.option_name),
+    bookingStore.serviceLocations
+  )
 )
 const hasSelectedServices = computed(() => selectedOptionIds.value.length > 0)
 const canSubmitBooking = computed(() => {
@@ -1055,6 +1062,16 @@ onUnmounted(() => {
         <span class="section-label">
           {{ selectedDateLabel }}<template v-if="requiredLocationLabel"> สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
         </span>
+        <a
+          v-if="requiredLocationMapUrl"
+          :href="requiredLocationMapUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="map-link-btn"
+        >
+          <i class="ti ti-map-pin" aria-hidden="true"></i>
+          ดูแผนที่
+        </a>
       </div>
 
       <p v-if="usesCustomDayHours" class="custom-hours-note">
@@ -1174,7 +1191,19 @@ onUnmounted(() => {
               </div>
               <div v-if="requiredLocationLabel" class="info-row">
                 <span class="info-label"><i class="ti ti-map-pin info-ic" aria-hidden="true"></i>สถานที่</span>
-                <span class="info-val">{{ requiredLocationLabel }}</span>
+                <span class="info-val info-val-with-action">
+                  {{ requiredLocationLabel }}
+                  <a
+                    v-if="requiredLocationMapUrl"
+                    :href="requiredLocationMapUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="map-link-btn map-link-btn--inline"
+                  >
+                    <i class="ti ti-map-pin" aria-hidden="true"></i>
+                    ดูแผนที่
+                  </a>
+                </span>
               </div>
             </div>
 
@@ -1200,7 +1229,19 @@ onUnmounted(() => {
               <div class="sheet-header">
                 <h3 class="sheet-title">เลือกบริการ</h3>
                 <p v-if="hasCategoryStep" class="sheet-sub">เลื่อนหมวดซ้าย–ขวา แล้วเลือกบริการได้หลายหมวด</p>
-                <p v-else-if="requiredLocationLabel" class="sheet-sub">สถานที่ให้บริการ {{ requiredLocationLabel }}</p>
+                <p v-else-if="requiredLocationLabel" class="sheet-sub sheet-sub-with-map">
+                  <span>สถานที่ให้บริการ {{ requiredLocationLabel }}</span>
+                  <a
+                    v-if="requiredLocationMapUrl"
+                    :href="requiredLocationMapUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="map-link-btn map-link-btn--inline"
+                  >
+                    <i class="ti ti-map-pin" aria-hidden="true"></i>
+                    ดูแผนที่
+                  </a>
+                </p>
                 <p v-else class="sheet-sub">เลือกบริการสำหรับคิวนี้</p>
 
                 <div class="sheet-info sheet-info-compact">
@@ -1575,6 +1616,36 @@ onUnmounted(() => {
   padding: 14px 0 10px;
 }
 .section-label { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+.map-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary-light) 40%, white);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.map-link-btn--inline { margin-left: 8px; padding: 4px 8px; font-size: 11px; }
+.info-val-with-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sheet-sub-with-map {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .custom-hours-note {
   margin: 0 0 10px;
   padding: 8px 10px;

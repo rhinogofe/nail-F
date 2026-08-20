@@ -11,6 +11,7 @@ import ReviewsView from '../views/ReviewsView.vue'
 import AdminView from '../views/AdminView.vue'
 import PaymentView from '../views/PaymentView.vue'
 import ChatView from '../views/ChatView.vue'
+import ShopLocationView from '../views/ShopLocationView.vue'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
 import { releaseAllBodyScrollLocks } from '../utils/bodyScrollLock'
 
@@ -19,6 +20,7 @@ const shopChildren = [
   { path: 'register-shop', component: () => import('../views/RegisterShopView.vue'), meta: { registerShop: true } },
   { path: 'bookings', component: BookingView, meta: { requiresAuth: true } },
   { path: 'reviews', component: ReviewsView, meta: { requiresAuth: true } },
+  { path: 'location', component: ShopLocationView, meta: { requiresAuth: true } },
   { path: 'chat', component: ChatView, meta: { requiresAuth: true } },
   { path: 'profile', component: ProfileView, meta: { requiresAuth: true } },
   { path: 'payment/:bookingId', component: PaymentView, meta: { requiresAuth: true } },
@@ -44,6 +46,7 @@ const router = createRouter({
     { path: '/login', redirect: '/default/login' },
     { path: '/bookings', redirect: '/default/bookings' },
     { path: '/reviews', redirect: '/default/reviews' },
+    { path: '/location', redirect: '/default/location' },
     { path: '/chat', redirect: '/default/chat' },
     { path: '/profile', redirect: '/default/profile' },
     { path: '/admin', redirect: '/default/admin' },

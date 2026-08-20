@@ -51,6 +51,8 @@ export const useUiSettingsStore = defineStore('uiSettings', {
     tagline: (state) => state.settings.ui_tagline || FALLBACK.ui_tagline,
     logoUrl: (state) => resolveUiImageUrl(state.settings.ui_logo_url, state.loadedForSlug),
     heroImageUrl: (state) => resolveUiImageUrl(state.settings.ui_hero_image_url, state.loadedForSlug),
+    showShopLocationNav: (state) => /^https?:\/\//i.test(String(state.settings.ui_shop_map_url || '').trim()),
+    shopLocationNavLabel: (state) => state.settings.ui_shop_location_nav_label || 'ที่อยู่ร้าน',
     get: (state) => (key, fallback = '') => state.settings[key] ?? fallback,
   },
   actions: {

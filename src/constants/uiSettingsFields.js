@@ -13,6 +13,12 @@ export const UI_FORM_DEFAULTS = {
   ui_page_title: 'Nail Thuean',
   ui_logo_url: '',
   ui_hero_image_url: '',
+  ui_shop_map_url: '',
+  ui_shop_map_embed_url: '',
+  ui_shop_address_detail: '',
+  ui_shop_location_nav_label: 'ที่อยู่ร้าน',
+  ui_shop_location_page_title: 'ที่อยู่ร้าน',
+  ui_shop_open_maps_btn: 'เปิดใน Google Maps',
   ui_line_chat_url: 'https://line.me',
   ui_bank_name: 'ธนาคารกสิกรไทย',
   ui_bank_account_name: 'Nail Studio',
@@ -70,7 +76,7 @@ export const UI_FORM_DEFAULTS = {
 export const UI_FIELD_GROUPS = [
   {
     title: 'แบรนด์ & รูปภาพ',
-    hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง (ลงท้าย .jpg/.png หรือ i.ibb.co/...)',
+    hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง · ใส่ลิงก์แผนที่ร้านเพื่อแสดงปุ่ม "ที่อยู่ร้าน" · ถ้าต้องการให้เห็นแผนที่ในแอป ให้ใส่ลิงก์ฝังแผนที่จาก Google Maps (แชร์ → ฝังแผนที่ / Embed a map)',
     fields: [
       { key: 'ui_brand_main', label: 'ชื่อแบรนด์ (ส่วนหลัก)', placeholder: 'Nail' },
       { key: 'ui_brand_accent', label: 'ชื่อแบรนด์ (ส่วนเน้น)', placeholder: 'Thuean' },
@@ -78,6 +84,26 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_page_title', label: 'ชื่อแท็บเบราว์เซอร์', placeholder: 'Nail Thuean' },
       { key: 'ui_logo_url', label: 'โลโก้', placeholder: 'อัปโหลดหรือวาง URL', uploadKind: 'logo' },
       { key: 'ui_hero_image_url', label: 'ภาพปก Login', placeholder: 'อัปโหลดหรือวาง URL', uploadKind: 'hero' },
+      {
+        key: 'ui_shop_map_url',
+        label: 'ลิงก์แผนที่ร้าน (เปิด Maps)',
+        placeholder: 'https://maps.google.com/...',
+      },
+      {
+        key: 'ui_shop_map_embed_url',
+        label: 'ลิงก์ / ฝังแผนที่ (แสดงในแอป)',
+        placeholder: 'จาก Google Maps → แชร์ → ฝังแผนที่ (Embed a map)',
+      },
+      {
+        key: 'ui_shop_address_detail',
+        label: 'รายละเอียดที่อยู่',
+        placeholder: 'ชั้น 3 อาคาร X ใกล้ BTS ...',
+        multiline: true,
+        rows: 3,
+      },
+      { key: 'ui_shop_location_nav_label', label: 'ชื่อปุ่มแถบล่าง', placeholder: 'ที่อยู่ร้าน' },
+      { key: 'ui_shop_location_page_title', label: 'หัวข้อหน้าที่อยู่', placeholder: 'ที่อยู่ร้าน' },
+      { key: 'ui_shop_open_maps_btn', label: 'ปุ่มเปิด Maps สำรอง', placeholder: 'เปิดใน Google Maps' },
     ],
   },
   {

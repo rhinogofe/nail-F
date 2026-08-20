@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChatUnread } from '../composables/useChatUnread'
+import { useUiSettingsStore } from '../stores/uiSettings'
 
 defineProps({
   active: {
@@ -14,10 +15,13 @@ defineProps({
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const ui = useUiSettingsStore()
 const { unreadCount } = useChatUnread()
 
 const shopSlug = computed(() => route.params.shopSlug || localStorage.getItem('shopSlug') || 'default')
 const showAdminNav = computed(() => auth.canAccessShopAdmin(shopSlug.value))
+const showLocationNav = computed(() => ui.showShopLocationNav)
+const locationNavLabel = computed(() => ui.shopLocationNavLabel)
 
 function go(path) {
   router.push(`/${shopSlug.value}${path}`)
@@ -45,6 +49,17 @@ function go(path) {
     >
       <i class="ti ti-star" aria-hidden="true"></i>
       <span>รีวิว</span>
+    </button>
+    <button
+      v-if="showLocationNav"
+      type="button"
+      class="nav-item"
+      :class="{ active: active === 'location' }"
+      :aria-current="active === 'location' ? 'page' : undefined"
+      @click="go('/location')"
+    >
+      <i class="ti ti-map-pin" aria-hidden="true"></i>
+      <span>{{ locationNavLabel }}</span>
     </button>
     <button
       type="button"
@@ -123,6 +138,13 @@ function go(path) {
 .nav-item i {
   font-size: 20px;
   line-height: 1;
+}
+
+.nav-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-item.active {

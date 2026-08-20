@@ -33,6 +33,7 @@ export const useBookingStore = defineStore('booking', {
     nailOptions: [],
     allNailOptions: [],
     serviceCategories: [],
+    serviceLocations: [],
     myBookings: [],
     loading: false,
     shopOpenHour: 9,
@@ -147,6 +148,7 @@ export const useBookingStore = defineStore('booking', {
       const normalized = normalizeBookingOptionsResponse(data)
       this.serviceCategories = normalized.categories
       this.nailOptions = normalized.options
+      this.serviceLocations = normalized.locations
       return this.nailOptions
     },
     async fetchAllNailOptions() {
@@ -154,6 +156,7 @@ export const useBookingStore = defineStore('booking', {
         const { data } = await api.get('/api/bookings/options')
         const normalized = normalizeBookingOptionsResponse(data)
         this.allNailOptions = normalized.options
+        this.serviceLocations = normalized.locations
         return this.allNailOptions
       } catch {
         return this.allNailOptions

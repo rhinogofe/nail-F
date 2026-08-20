@@ -296,6 +296,7 @@ const locationForm = ref({
   name: '',
   color: '#3b82f6',
   description: '',
+  map_url: '',
   is_active: true,
   sort_order: 0,
 })
@@ -509,7 +510,7 @@ const settingsSections = [
   { key: 'unpaid', id: 'settings-unpaid', label: 'ยกเลิกอัตโนมัติ', icon: 'ti-clock-pause' },
   { key: 'shops', id: 'settings-shops', label: 'ร้าน / สาขา', icon: 'ti-building-store' },
   { key: 'register-pin', id: 'settings-register-pin', label: 'รหัสสร้างร้านค้า', icon: 'ti-lock', superAdminOnly: true },
-  { key: 'locations', id: 'settings-locations', label: 'สถานที่บริการ', icon: 'ti-map-pin' },
+  { key: 'locations', id: 'settings-locations', label: 'สถานที่บริการในแต่ละวัน', icon: 'ti-map-pin' },
   { key: 'use-coupon', id: 'settings-use-coupon', label: 'ใช้คูปอง', icon: 'ti-scan' },
 ]
 
@@ -639,7 +640,7 @@ const setupWizardSteps = computed(() => [
   },
   {
     key: 'locations',
-    label: 'เพิ่มสถานที่ (ถ้ามีหลายจุด)',
+    label: 'เพิ่มสถานที่รายวัน (ถ้ามีหลายจุด)',
     done: serviceLocations.value.length > 0,
     optional: true,
     go: () => goToSettingsSection('locations'),
@@ -3666,6 +3667,7 @@ function resetLocationForm() {
     name: '',
     color: '#3b82f6',
     description: '',
+    map_url: '',
     is_active: true,
     sort_order: serviceLocations.value.length,
   }
@@ -3781,6 +3783,7 @@ function startEditLocation(item) {
     name: item.name,
     color: item.color && isValidHexColor(item.color) ? item.color : '#3b82f6',
     description: item.description || '',
+    map_url: item.map_url || '',
     is_active: Boolean(item.is_active),
     sort_order: Number(item.sort_order) || 0,
   }
@@ -3812,6 +3815,7 @@ async function saveServiceLocation() {
     name,
     color: colorValue,
     description: String(locationForm.value.description || '').trim() || null,
+    map_url: String(locationForm.value.map_url || '').trim() || null,
     is_active: Boolean(locationForm.value.is_active),
     sort_order: Number(locationForm.value.sort_order) || 0,
   }
@@ -4087,7 +4091,7 @@ async function saveNailOption() {
       message.value = 'เพิ่มบริการแล้ว'
     }
     if (isEdit) {
-      resetOptionForm()
+    resetOptionForm()
     } else if (selectedServiceDate.value) {
       resetOptionFormForDay()
     } else {
@@ -4410,40 +4414,40 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </button>
         </div>
 
-        <div class="admin-filter-row">
-          <label class="admin-filter-item">
-            สถานะ
-            <select v-model="status" @change="loadBookings" class="admin-input">
-              <option value="">ทั้งหมด</option>
-              <option value="awaiting_payment">รอชำระเงิน</option>
-              <option value="pending">ชำระแล้ว / รอให้บริการ</option>
-              <option value="done">ทำเสร็จแล้ว</option>
-              <option value="cancelled">ยกเลิกแล้ว</option>
-            </select>
-          </label>
-        </div>
+      <div class="admin-filter-row">
+        <label class="admin-filter-item">
+          สถานะ
+          <select v-model="status" @change="loadBookings" class="admin-input">
+            <option value="">ทั้งหมด</option>
+            <option value="awaiting_payment">รอชำระเงิน</option>
+            <option value="pending">ชำระแล้ว / รอให้บริการ</option>
+            <option value="done">ทำเสร็จแล้ว</option>
+            <option value="cancelled">ยกเลิกแล้ว</option>
+          </select>
+        </label>
+      </div>
 
-        <p v-if="loading" class="muted">กำลังโหลด...</p>
+      <p v-if="loading" class="muted">กำลังโหลด...</p>
 
         <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
-        <div v-for="item in filtered" :key="item.id" class="admin-item">
+      <div v-for="item in filtered" :key="item.id" class="admin-item">
           <div class="admin-item-body">
             <strong>{{ bookingTimeRange(item) }}</strong>
-            <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
-            <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
-            <p class="muted">
-              บริการ:
-              {{
-                item.nail_options?.length
-                  ? item.nail_options.map((opt) => opt.option_name).join(', ')
-                  : '-'
-              }}
-            </p>
+          <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
+          <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
+          <p class="muted">
+            บริการ:
+            {{
+              item.nail_options?.length
+                ? item.nail_options.map((opt) => opt.option_name).join(', ')
+                : '-'
+            }}
+          </p>
             <p class="muted">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
             <p v-if="item.total != null && item.total !== ''" class="muted">
               ยอด {{ formatBookingTotal(item.total) }}
             </p>
-          </div>
+        </div>
           <div class="row admin-booking-actions">
             <button
               type="button"
@@ -4463,20 +4467,20 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             >
               แก้ไขข้อมูล
             </button>
-            <button
-              v-if="item.status === 'awaiting_payment'"
-              class="btn"
-              @click="confirmPayment(item.id)"
-            >
-              ยืนยันชำระเงิน
-            </button>
-            <button
-              v-if="item.status === 'awaiting_payment'"
-              class="btn danger"
-              @click="cancelUnpaid(item.id)"
-            >
-              ยกเลิกคิวไม่ชำระ
-            </button>
+          <button
+            v-if="item.status === 'awaiting_payment'"
+            class="btn"
+            @click="confirmPayment(item.id)"
+          >
+            ยืนยันชำระเงิน
+          </button>
+          <button
+            v-if="item.status === 'awaiting_payment'"
+            class="btn danger"
+            @click="cancelUnpaid(item.id)"
+          >
+            ยกเลิกคิวไม่ชำระ
+          </button>
             <button
               v-if="item.status === 'pending'"
               class="btn"
@@ -4484,20 +4488,20 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             >
               เปลี่ยนเป็นรอชำระ
             </button>
-            <button
-              v-if="item.status === 'pending'"
-              class="btn primary"
+          <button
+            v-if="item.status === 'pending'"
+            class="btn primary"
               @click="markDone(item)"
-            >
+          >
               ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
-            </button>
-            <button
-              v-if="item.status === 'pending'"
-              class="btn danger"
-              @click="cancelPaid(item.id)"
-            >
-              ยกเลิกคิว (เลื่อนวัน)
-            </button>
+          </button>
+          <button
+            v-if="item.status === 'pending'"
+            class="btn danger"
+            @click="cancelPaid(item.id)"
+          >
+            ยกเลิกคิว (เลื่อนวัน)
+          </button>
             <button
               v-if="item.status === 'cancelled'"
               type="button"
@@ -4513,8 +4517,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             >
               ลบ
             </button>
-          </div>
         </div>
+      </div>
       </template>
     </section>
 
@@ -4754,15 +4758,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <div v-if="showEveryDayForm && !optionForm.id" id="services-option-form-everyday" class="service-option-form card-inner admin-settings-section">
             <h4>เพิ่มบริการทุกวัน</h4>
-            <div class="admin-form-grid admin-option-grid">
-              <label>
-                ชื่อบริการ *
-                <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
-              </label>
-              <label>
-                รายละเอียด
-                <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
-              </label>
+      <div class="admin-form-grid admin-option-grid">
+        <label>
+          ชื่อบริการ *
+          <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
+        </label>
+        <label>
+          รายละเอียด
+          <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+        </label>
               <label>
                 หมวดหมู่
                 <select v-model="optionForm.category_id" class="admin-input">
@@ -4772,14 +4776,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   </option>
                 </select>
               </label>
-              <label>
-                ราคา (บาท)
-                <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
-              </label>
-              <label>
-                ระยะเวลา (นาที)
+        <label>
+          ราคา (บาท)
+          <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
+        </label>
+        <label>
+          ระยะเวลา (นาที)
                 <input v-model.number="optionForm.duration_min" type="number" min="0" step="1" class="admin-input" />
-              </label>
+        </label>
               <label class="admin-color-field admin-color-field-full">
                 <span class="admin-color-label-row">
                   สีแสดงในปฏิทิน
@@ -4911,14 +4915,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div v-if="!optionForm.id" id="services-option-form-day" class="service-option-form card-inner admin-settings-section">
           <h4>เพิ่มบริการอื่น</h4>
           <div class="admin-form-grid admin-option-grid">
-            <label>
+        <label>
               ชื่อบริการ *
               <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
-            </label>
-            <label>
+        </label>
+        <label>
               รายละเอียด
               <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
-            </label>
+        </label>
             <label>
               หมวดหมู่
               <select v-model="optionForm.category_id" class="admin-input">
@@ -4948,7 +4952,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 <div class="color-picker-row">
                   <input v-model="optionForm.color" type="color" class="admin-color-input" />
                   <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
-                </div>
+      </div>
                 <div class="color-preset-row">
                   <button
                     v-for="preset in optionColorPresets"
@@ -4966,36 +4970,36 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <p v-else class="muted admin-color-hint">ไม่ใช้สี — วันในปฏิทินจะไม่เปลี่ยนจากบริการนี้</p>
             </label>
           </div>
-          <div class="admin-form-row">
-            <label class="admin-checkbox">
-              <input v-model="optionForm.is_active" type="checkbox" />
-              แสดงให้ลูกค้าเลือกจอง
-            </label>
+      <div class="admin-form-row">
+        <label class="admin-checkbox">
+          <input v-model="optionForm.is_active" type="checkbox" />
+          แสดงให้ลูกค้าเลือกจอง
+        </label>
             <label class="admin-checkbox">
               <input v-model="optionForm.is_required" type="checkbox" />
               บังคับเลือกเมื่อจอง
             </label>
-            <button class="btn primary admin-action-btn" @click="saveNailOption">
+        <button class="btn primary admin-action-btn" @click="saveNailOption">
               เพิ่มบริการ
-            </button>
+        </button>
           </div>
-        </div>
+      </div>
 
         <h4 class="admin-subtitle">รายการในวันนี้ ({{ selectedDayOptions.length }})</h4>
         <div v-if="selectedDayOptions.length === 0" class="muted">ยังไม่มีบริการในวันนี้</div>
         <div v-for="(item, index) in selectedDayOptions" :key="item.id" class="admin-item">
-          <div>
-            <strong>{{ item.option_name }}</strong>
+        <div>
+          <strong>{{ item.option_name }}</strong>
             <span v-if="item.category_name" class="badge-category">{{ item.category_name }}</span>
             <span v-if="item.color" class="option-color-dot" :style="{ background: item.color }" :title="item.color"></span>
             <span v-else class="badge-no-color">ไม่ใช้สี</span>
-            <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
-              {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
-            </span>
+          <span :class="item.is_active ? 'badge-active' : 'badge-inactive'">
+            {{ item.is_active ? 'เปิดใช้งาน' : 'ปิด' }}
+          </span>
             <span v-if="item.is_required" class="badge-required">บังคับเลือก</span>
             <span v-if="isLocationPresetName(item.option_name)" class="badge-location">สถานที่</span>
             <span v-if="!formatDateKey(item.show_from_date) && !formatDateKey(item.show_to_date)" class="badge-everyday">ทุกวัน</span>
-            <p class="muted">{{ item.description || '-' }}</p>
+          <p class="muted">{{ item.description || '-' }}</p>
             <p class="muted">
               ราคา {{ Number(item.price) }} บาท
               <template v-if="Number(item.duration_min) > 0"> · {{ item.duration_min }} นาที</template>
@@ -5005,8 +5009,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               {{ optionShowRangeText(item) }}
             </p>
             <p class="muted">ลำดับแสดงในวันนี้ {{ index + 1 }}</p>
-          </div>
-          <div class="row">
+        </div>
+        <div class="row">
             <button
               type="button"
               class="btn service-order-btn"
@@ -5025,10 +5029,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             >
               <i class="ti ti-chevron-down" aria-hidden="true"></i>
             </button>
-            <button class="btn" @click="startEditOption(item)">แก้ไข</button>
-            <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
-          </div>
+          <button class="btn" @click="startEditOption(item)">แก้ไข</button>
+          <button class="btn danger" @click="removeNailOption(item)">ลบ</button>
         </div>
+      </div>
       </template>
     </section>
 
@@ -5584,8 +5588,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'locations'" id="settings-locations" class="admin-settings-section">
-      <h3>สถานที่ให้บริการ (ปุ่มลัด)</h3>
-      <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเพิ่มบริการในแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำในรายการนี้</p>
+      <h3>สถานที่บริการในแต่ละวัน (ปุ่มลัด)</h3>
+      <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเปิดบริการแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำ · ลิงก์แผนที่ใช้ปุ่ม "ดูแผนที่" ตอนจอง/ชำระเงิน</p>
 
       <div v-if="!locationForm.id" class="service-option-form card-inner">
         <h4>เพิ่มสถานที่ใหม่</h4>
@@ -5601,6 +5605,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <label>
             ลำดับแสดง
             <input v-model.number="locationForm.sort_order" type="number" min="0" step="1" class="admin-input" />
+          </label>
+          <label>
+            ลิงก์แผนที่
+            <input v-model="locationForm.map_url" type="url" class="admin-input" placeholder="https://maps.google.com/..." />
           </label>
           <label class="admin-color-field">
             สีในปฏิทิน
@@ -5643,6 +5651,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             {{ item.is_active ? 'แสดงปุ่ม' : 'ซ่อนปุ่ม' }}
           </span>
           <p class="muted">{{ item.description || '-' }}</p>
+          <p v-if="item.map_url" class="muted">แผนที่: {{ item.map_url }}</p>
           <p class="muted">ลำดับ {{ item.sort_order }}</p>
         </div>
         <div class="row">
@@ -5982,7 +5991,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 <div v-if="dayHourFormOpen && !dayHourEditingId" class="day-hour-form card-inner">
                   <h4>เพิ่มช่วงเวลา</h4>
                   <div class="admin-form-grid admin-option-grid">
-                    <label>
+        <label>
                       เริ่ม (ชม.)
                       <select v-model.number="dayHourStartH" class="admin-input">
                         <option v-for="h in dayHourAvailableStartHours" :key="`sh-${h}`" :value="h">
@@ -6013,7 +6022,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                           {{ String(m).padStart(2, '0') }}
                         </option>
                       </select>
-                    </label>
+        </label>
                   </div>
                   <div class="admin-form-row">
                     <button type="button" class="btn primary admin-action-btn" :disabled="dayHourSaving" @click="saveDayHourEntry">
@@ -6021,7 +6030,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     </button>
                     <button type="button" class="btn admin-action-btn" @click="closeDayHourForm">ยกเลิก</button>
                   </div>
-                </div>
+      </div>
 
                 <div v-if="!dayHourFormOpen || dayHourEditingId" class="day-hour-actions">
                   <button
@@ -6182,51 +6191,51 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <h3>ปิดล่วงหน้า 7 / 15 / 30 วัน</h3>
               <p class="muted">ปิดทั้งวัน หรือ บางช่วงเวลา ตั้งแต่วันที่ที่เลือก</p>
 
-              <div class="bulk-block-box">
-                <div class="admin-form-grid admin-bulk-settings">
-                  <label>
-                    ประเภท
-                    <select v-model="bulkBlockType" class="admin-input">
-                      <option value="partial">ปิดบางช่วงเวลา</option>
-                      <option value="full_day">ปิดทั้งวัน</option>
-                    </select>
-                  </label>
-                  <label v-if="bulkBlockType === 'partial'">
-                    เริ่ม (ชม.)
-                    <input v-model="bulkBlockStart" type="number" min="0" max="23" class="admin-input" />
-                  </label>
-                  <label v-if="bulkBlockType === 'partial'">
-                    ถึง (ชม.)
-                    <input v-model="bulkBlockEnd" type="number" min="1" max="24" class="admin-input" />
-                  </label>
+      <div class="bulk-block-box">
+        <div class="admin-form-grid admin-bulk-settings">
+          <label>
+            ประเภท
+            <select v-model="bulkBlockType" class="admin-input">
+              <option value="partial">ปิดบางช่วงเวลา</option>
+              <option value="full_day">ปิดทั้งวัน</option>
+            </select>
+          </label>
+          <label v-if="bulkBlockType === 'partial'">
+            เริ่ม (ชม.)
+            <input v-model="bulkBlockStart" type="number" min="0" max="23" class="admin-input" />
+          </label>
+          <label v-if="bulkBlockType === 'partial'">
+            ถึง (ชม.)
+            <input v-model="bulkBlockEnd" type="number" min="1" max="24" class="admin-input" />
+          </label>
+        </div>
+        <div class="admin-form-grid admin-bulk-grid">
+          <label>
+            เริ่มจากวันที่
+            <input v-model="bulkStartDate" type="date" class="admin-input" />
+          </label>
+          <label>
+            จำนวนวัน
+            <input v-model.number="bulkDays" type="number" min="1" max="90" class="admin-input" />
+          </label>
+        </div>
+        <div class="admin-form-row">
+          <label class="admin-label-grow">
+            หมายเหตุ
+            <input v-model="bulkBlockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
+          </label>
+        </div>
+        <p class="bulk-preview">{{ bulkPreviewText }}</p>
+        <div class="bulk-preset-row">
+          <button type="button" class="btn" :class="{ primary: bulkDays === 7 }" @click="bulkDays = 7">7 วัน</button>
+          <button type="button" class="btn" :class="{ primary: bulkDays === 15 }" @click="bulkDays = 15">15 วัน</button>
+          <button type="button" class="btn" :class="{ primary: bulkDays === 30 }" @click="bulkDays = 30">30 วัน</button>
+          <button type="button" class="btn primary admin-action-btn" @click="createBulkBlocks">
+            ยืนยันปิดล่วงหน้า
+          </button>
                 </div>
-                <div class="admin-form-grid admin-bulk-grid">
-                  <label>
-                    เริ่มจากวันที่
-                    <input v-model="bulkStartDate" type="date" class="admin-input" />
-                  </label>
-                  <label>
-                    จำนวนวัน
-                    <input v-model.number="bulkDays" type="number" min="1" max="90" class="admin-input" />
-                  </label>
-                </div>
-                <div class="admin-form-row">
-                  <label class="admin-label-grow">
-                    หมายเหตุ
-                    <input v-model="bulkBlockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
-                  </label>
-                </div>
-                <p class="bulk-preview">{{ bulkPreviewText }}</p>
-                <div class="bulk-preset-row">
-                  <button type="button" class="btn" :class="{ primary: bulkDays === 7 }" @click="bulkDays = 7">7 วัน</button>
-                  <button type="button" class="btn" :class="{ primary: bulkDays === 15 }" @click="bulkDays = 15">15 วัน</button>
-                  <button type="button" class="btn" :class="{ primary: bulkDays === 30 }" @click="bulkDays = 30">30 วัน</button>
-                  <button type="button" class="btn primary admin-action-btn" @click="createBulkBlocks">
-                    ยืนยันปิดล่วงหน้า
-                  </button>
-                </div>
-              </div>
-            </div>
+        </div>
+      </div>
 
             <div v-show="activeBlocksSection === 'calendar'" class="admin-settings-section">
               <template v-if="!selectedBlockDate">
@@ -6316,30 +6325,30 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 </div>
 
                 <h4 class="admin-subtitle">เพิ่มรายการปิดวันนี้</h4>
-                <div class="admin-form-grid">
-                  <label>
-                    ประเภท
-                    <select v-model="blockType" class="admin-input">
-                      <option value="partial">ปิดบางช่วงเวลา</option>
-                      <option value="full_day">ปิดทั้งวัน</option>
-                    </select>
-                  </label>
-                  <label v-if="blockType === 'partial'">
-                    เริ่ม
-                    <input v-model="blockStart" type="number" min="0" max="23" class="admin-input" />
-                  </label>
-                  <label v-if="blockType === 'partial'">
-                    ถึง
-                    <input v-model="blockEnd" type="number" min="1" max="24" class="admin-input" />
-                  </label>
-                </div>
-                <div class="admin-form-row">
-                  <label class="admin-label-grow">
-                    หมายเหตุ
-                    <input v-model="blockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
-                  </label>
+      <div class="admin-form-grid">
+        <label>
+          ประเภท
+          <select v-model="blockType" class="admin-input">
+            <option value="partial">ปิดบางช่วงเวลา</option>
+            <option value="full_day">ปิดทั้งวัน</option>
+          </select>
+        </label>
+        <label v-if="blockType === 'partial'">
+          เริ่ม
+          <input v-model="blockStart" type="number" min="0" max="23" class="admin-input" />
+        </label>
+        <label v-if="blockType === 'partial'">
+          ถึง
+          <input v-model="blockEnd" type="number" min="1" max="24" class="admin-input" />
+        </label>
+      </div>
+      <div class="admin-form-row">
+        <label class="admin-label-grow">
+          หมายเหตุ
+          <input v-model="blockNote" type="text" placeholder="เช่น พนักงานไม่พอ / ร้านปิดปรับปรุง" class="admin-input" />
+        </label>
                   <button class="btn primary admin-action-btn" @click="createBlock">เพิ่มรายการปิด</button>
-                </div>
+      </div>
 
                 <h4 class="admin-subtitle admin-extra-title">เปิดรับเพิ่ม (นอกเวลาปกติ)</h4>
                 <p class="muted admin-extra-hint">
@@ -6348,7 +6357,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
                 <div v-if="selectedDayExtraHours.length === 0" class="muted">ยังไม่มีช่วงเปิดเพิ่มในวันนี้</div>
                 <div v-for="item in selectedDayExtraHours" :key="item.id" class="admin-item admin-extra-item">
-                  <div>
+        <div>
                     <strong>เปิดเพิ่ม {{ item.start_hour }}:00 – {{ item.end_hour }}:00</strong>
                     <p v-if="item.note" class="muted">{{ item.note }}</p>
                   </div>
@@ -6382,7 +6391,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     <!-- ── รีวิว TikTok / Instagram ── -->
     <section v-show="activeTab === 'reviews'" class="card admin-section">
       <h3>จัดการคลิปรีวิว (TikTok / Instagram)</h3>
-      <p class="muted">
+          <p class="muted">
         วางลิงก์ทีละคลิป
         · TikTok: .../video/123 หรือ .../photo/123 · vm.tiktok.com
         · Instagram: .../p/... หรือ .../reel/...
@@ -6416,7 +6425,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <option :value="false">ปิด</option>
           </select>
         </label>
-      </div>
+        </div>
 
       <div class="row">
         <button type="button" class="btn primary" @click="saveShowcaseClip">
@@ -7442,7 +7451,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               ลำดับแสดง
               <input v-model.number="locationForm.sort_order" type="number" min="0" step="1" class="admin-input" />
             </label>
-            <label class="admin-color-field">
+            <label>
+            ลิงก์แผนที่
+            <input v-model="locationForm.map_url" type="url" class="admin-input" placeholder="https://maps.google.com/..." />
+          </label>
+          <label class="admin-color-field">
               สีในปฏิทิน
               <div class="color-picker-row">
                 <input v-model="locationForm.color" type="color" class="admin-color-input" />

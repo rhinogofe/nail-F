@@ -1,11 +1,24 @@
 export function normalizeBookingOptionsResponse(data) {
   if (Array.isArray(data)) {
-    return { categories: [], options: data }
+    return { categories: [], options: data, locations: [] }
   }
   return {
     categories: data?.categories || [],
     options: data?.options || [],
+    locations: data?.locations || [],
   }
+}
+
+export function resolveLocationMapUrl(requiredOptionNames, serviceLocations) {
+  const names = Array.isArray(requiredOptionNames) ? requiredOptionNames : [requiredOptionNames]
+  for (const name of names) {
+    const trimmed = String(name || '').trim()
+    if (!trimmed) continue
+    const loc = (serviceLocations || []).find((item) => item.name === trimmed && item.map_url)
+    const url = String(loc?.map_url || '').trim()
+    if (url) return url
+  }
+  return ''
 }
 
 export const UNCategorized_CATEGORY_ID = '__none__'

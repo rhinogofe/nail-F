@@ -47,6 +47,8 @@ const qrError = ref('')
 const copyHint = ref('')
 const paymentLoading = ref(true)
 const paymentError = ref('')
+const locationName = ref('')
+const locationMapUrl = ref('')
 const bookingStatus = ref('')
 const bookingCreatedAt = ref('')
 const unpaidSettings = ref({ enabled: true, expireHours: 24 })
@@ -157,6 +159,8 @@ onMounted(async () => {
     const info = infoRes.data
     bookingStatus.value = info?.booking?.status || ''
     bookingCreatedAt.value = info?.booking?.created_at || ''
+    locationName.value = info?.location_name || ''
+    locationMapUrl.value = info?.location_map_url || ''
     if (info?.unpaid_expire) {
       unpaidSettings.value = {
         enabled: info.unpaid_expire.enabled !== false,
@@ -227,6 +231,22 @@ onUnmounted(() => {
         <div class="summary-row">
           <span class="summary-label"><i class="ti ti-clock" aria-hidden="true"></i> เวลา</span>
           <span class="summary-val">{{ startHour }}:00 – {{ endHour }}:00</span>
+        </div>
+        <div v-if="locationName" class="summary-row">
+          <span class="summary-label"><i class="ti ti-map-pin" aria-hidden="true"></i> สถานที่</span>
+          <span class="summary-val summary-val-with-action">
+            {{ locationName }}
+            <a
+              v-if="locationMapUrl"
+              :href="locationMapUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="map-link-btn map-link-btn--inline"
+            >
+              <i class="ti ti-map-pin" aria-hidden="true"></i>
+              ดูแผนที่
+            </a>
+          </span>
         </div>
         <div class="summary-row">
           <span class="summary-label"><i class="ti ti-hash" aria-hidden="true"></i> Booking ID</span>
@@ -337,6 +357,31 @@ onUnmounted(() => {
   font-weight: 500;
   color: var(--color-text-primary);
 }
+
+.summary-val-with-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.map-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary-light) 40%, white);
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.map-link-btn--inline { margin-left: 8px; }
 
 .summary-deposit {
   margin-top: var(--space-2);
