@@ -10,7 +10,7 @@ import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { compressChatImage } from '../utils/compressChatImage'
-import { FCM_PUSH_RECEIVED_EVENT } from '../utils/pushNotifications'
+import { FCM_PUSH_RECEIVED_EVENT, ensurePushTokenRegistered } from '../utils/pushNotifications'
 
 const ui = useUiSettingsStore()
 const auth = useAuthStore()
@@ -479,6 +479,10 @@ onMounted(async () => {
   onViewportChange()
   mobileMq.addEventListener('change', onViewportChange)
   window.addEventListener(FCM_PUSH_RECEIVED_EVENT, onFcmPushReceived)
+
+  if (!isAdminMode.value) {
+    void ensurePushTokenRegistered()
+  }
 
   const userId = route.query.userId
   if (isAdminMode.value) {

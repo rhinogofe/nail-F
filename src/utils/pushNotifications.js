@@ -262,11 +262,15 @@ export async function disableBrowserPush() {
 
 // A notification for the exact conversation the user is currently reading is
 // pure noise, so skip it there — everywhere else the notification still fires.
-function isAlreadyViewing(url) {
+function isAlreadyViewing(url, payload) {
   if (typeof window === 'undefined' || document.visibilityState !== 'visible') return false
   try {
     const target = new URL(url, window.location.origin)
     if (target.pathname !== window.location.pathname) return false
+    const pushTarget = payload?.data?.target || ''
+    if (pushTarget === 'customer') {
+      return target.pathname.endsWith('/chat')
+    }
     const targetUser = target.searchParams.get('userId') || ''
     const currentUser = new URLSearchParams(window.location.search).get('userId') || ''
     return targetUser === currentUser
@@ -282,7 +286,7 @@ export async function showOsNotificationFromPayload(payload) {
   const body = payload?.notification?.body || payload?.data?.body || ''
   const url = payload?.data?.url || payload?.fcmOptions?.link || '/'
 
-  if (isAlreadyViewing(url)) return
+  if (isAlreadyViewing(url, payload)) return
   const options = {
     body,
     icon: '/favicon.svg',
@@ -337,15 +341,25 @@ export async function startPushNotificationListener() {
 }
 
 
+export async function ensurePushTokenRegistered() {
+  if (!canUseBrowserPush()) return null
+  if (Notification.permission !== 'granted') {
+    if (getStoredFcmToken()) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY)
+      notifyPushDeviceStatusChanged()
+    }
+    return null
+  }
+  if (!getStoredFcmToken()) return null
+
+  await resyncPushToken({ force: true })
+  await startPushNotificationListener()
+  attachPushTokenAutoSync()
+  return getStoredFcmToken()
+}
+
 export function initPushNotificationsWhenReady() {
   if (!canUseBrowserPush() || !getStoredFcmToken()) {
-    return Promise.resolve(null)
-  }
-  if (Notification.permission !== 'granted') {
-    // Permission was revoked in OS/browser settings — clear the stale device state
-    // so the toggle shows OFF instead of pretending push still works.
-    localStorage.removeItem(TOKEN_STORAGE_KEY)
-    notifyPushDeviceStatusChanged()
     return Promise.resolve(null)
   }
 
@@ -365,10 +379,10 @@ export function initPushNotificationsWhenReady() {
 
 async function initPushNotificationsWhenReadyImpl() {
   await waitForServiceWorkerRegistration()
-  const stop = await startPushNotificationListener()
-  attachPushTokenAutoSync()
-  await resyncPushToken({ force: true })
-  return stop
+  await ensurePushTokenRegistered()
+  return () => {
+    stopPushNotificationListener()
+  }
 }
 
 export async function ensurePushServiceWorker() {
