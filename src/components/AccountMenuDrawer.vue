@@ -149,10 +149,10 @@ defineExpose({
 
 <style scoped>
 .account-menu-trigger {
+  flex-shrink: 0;
   border: none;
   cursor: pointer;
   font-family: inherit;
-  flex-shrink: 0;
   transition: transform var(--transition), box-shadow var(--transition);
 }
 

@@ -238,9 +238,11 @@ onUnmounted(() => lockBodyScroll(false))
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .hdr-title-wrap {
+  flex: 1 1 0;
   min-width: 0;
 }
 

@@ -162,7 +162,9 @@ onMounted(async () => {
   <div class="app-page app-page--nav profile-page">
     <header class="hdr app-header">
       <div class="hdr-top">
-        <BrandMark />
+        <div class="hdr-brand-wrap">
+          <BrandMark />
+        </div>
         <AccountMenuDrawer />
       </div>
       <h1 class="page-title app-page-title">{{ ui.get('ui_profile_title', 'บัญชีของฉัน') }}</h1>
@@ -320,6 +322,12 @@ onMounted(async () => {
   justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
+  min-width: 0;
+}
+
+.hdr-brand-wrap {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .page-title {

@@ -764,7 +764,9 @@ watch(
     <!-- ── ลูกค้า ── -->
     <template v-else>
       <header class="chat-header">
-        <BrandMark compact />
+        <div class="chat-header-brand">
+          <BrandMark />
+        </div>
         <div class="chat-header-text">
           <h1>{{ ui.get('ui_chat_title', 'แชท') }}</h1>
           <p class="muted">พูดคุยกับแอดมินร้าน</p>
@@ -1253,6 +1255,13 @@ watch(
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-elevated);
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.chat-header-brand {
+  flex: 0 1 38%;
+  min-width: 0;
+  max-width: 38%;
 }
 
 @media (display-mode: standalone) {
@@ -1267,7 +1276,7 @@ watch(
 }
 
 .chat-header-text {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
 }
 

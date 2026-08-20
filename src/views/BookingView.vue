@@ -990,7 +990,9 @@ onUnmounted(() => {
     <!-- ── HEADER ── -->
     <header class="hdr app-header">
       <div class="hdr-top">
-        <BrandMark show-sparkle />
+        <div class="hdr-brand-wrap">
+          <BrandMark show-sparkle />
+        </div>
         <AccountMenuDrawer />
       </div>
 
@@ -1457,20 +1459,12 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+  min-width: 0;
 }
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-h3);
-  font-weight: 600;
-  color: var(--color-text-primary);
-  letter-spacing: -0.3px;
-  line-height: 1;
-  white-space: nowrap;
+.hdr-brand-wrap {
+  flex: 1 1 0;
+  min-width: 0;
 }
-.brand-accent { color: var(--color-primary); }
-.brand-icon-sm { font-size: 16px; color: var(--color-primary); line-height: 1; }
 
 .hdr-bar {
   display: flex;
