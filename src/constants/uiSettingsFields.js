@@ -18,6 +18,7 @@ export const UI_FORM_DEFAULTS = {
   ui_bank_account_name: 'Nail Studio',
   ui_bank_account_no: '',
   ui_promptpay_id: '',
+  ui_kshop_qr_url: '',
   ui_thai_qr_label: 'สแกน Thai QR เพื่อชำระมัดจำ',
   ui_line_button_label: 'ส่งสลิปทาง LINE',
   ui_line_message_template:
@@ -81,14 +82,21 @@ export const UI_FIELD_GROUPS = [
   },
   {
     title: 'ชำระเงิน & LINE',
-    hint: 'ใช้ {bookingId} {date} {start} {end} {amount} {hours} ในข้อความ LINE ได้',
+    hint: 'QR ชำระมัดจำ — ใส่ PromptPay เพื่อสร้าง QR อัตโนมัติ หรืออัปโหลดรูป QR จาก KShop (เลือกอย่างใดอย่างหนึ่ง) · ใช้ {bookingId} {date} {start} {end} {amount} {hours} ในข้อความ LINE ได้',
     fields: [
       { key: 'ui_payment_page_title', label: 'หัวข้อหน้าชำระเงิน' },
       { key: 'ui_line_chat_url', label: 'ลิงก์ LINE (เปิดแชท)' },
       { key: 'ui_bank_name', label: 'ชื่อธนาคาร' },
       { key: 'ui_bank_account_name', label: 'ชื่อบัญชี' },
       { key: 'ui_bank_account_no', label: 'เลขบัญชี' },
-      { key: 'ui_promptpay_id', label: 'PromptPay / เบอร์โทร' },
+      { key: 'ui_promptpay_id', label: 'PromptPay / เบอร์โทร', hideWhen: 'ui_kshop_qr_url' },
+      {
+        key: 'ui_kshop_qr_url',
+        label: 'รูป QR KShop',
+        placeholder: 'อัปโหลดหรือวาง URL',
+        uploadKind: 'kshop_qr',
+        hideWhen: 'ui_promptpay_id',
+      },
       { key: 'ui_thai_qr_label', label: 'ข้อความใต้ QR' },
       { key: 'ui_line_button_label', label: 'ปุ่มส่งสลิป LINE' },
       {

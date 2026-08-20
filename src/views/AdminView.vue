@@ -545,7 +545,6 @@ const blocksSectionById = {
 }
 const activeBlocksSection = ref('shop-hours')
 const blocksNavOpen = ref(false)
-const bookingActionItem = ref(null)
 const setupWizardDismissed = ref(false)
 const isMobile = ref(false)
 let adminMobileMq = null
@@ -601,15 +600,6 @@ function toggleUiNav() {
 
 function toggleBlocksNav() {
   blocksNavOpen.value = !blocksNavOpen.value
-}
-
-function openBookingActions(item) {
-  if (!isMobile.value) return
-  bookingActionItem.value = item
-}
-
-function closeBookingActions() {
-  bookingActionItem.value = null
 }
 
 function loadSetupWizardDismissed() {
@@ -1009,7 +999,13 @@ async function saveUiSettingsAdmin() {
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch('/api/admin/settings/ui', uiForm.value)
+    const payload = { ...uiForm.value }
+    if (uiFieldHasValue('ui_promptpay_id')) {
+      payload.ui_kshop_qr_url = ''
+    } else if (uiFieldHasValue('ui_kshop_qr_url')) {
+      payload.ui_promptpay_id = ''
+    }
+    const { data } = await api.patch('/api/admin/settings/ui', payload)
     uiForm.value = { ...(data.settings || {}) }
     uiSettingsStore.applyLocal(data.settings || uiForm.value)
     message.value = 'บันทึกการตั้งค่า UI แล้ว'
@@ -1025,6 +1021,15 @@ function uiPreviewUrl(key) {
 
 function uiImageFieldHint(key) {
   return imageUrlHint(uiForm.value[key])
+}
+
+function uiFieldHasValue(key) {
+  return String(uiForm.value[key] || '').trim() !== ''
+}
+
+function shouldShowUiField(field) {
+  if (!field?.hideWhen) return true
+  return !uiFieldHasValue(field.hideWhen)
 }
 
 function triggerUiImageUpload(kind) {
@@ -1045,7 +1050,7 @@ async function onUiImageSelected(event) {
   message.value = ''
   errorMessage.value = ''
   try {
-    const maxWidth = kind === 'logo' ? 800 : 1920
+    const maxWidth = kind === 'logo' ? 800 : kind === 'kshop_qr' ? 1200 : 1920
     const { base64, mime } = await compressImage(file, { maxWidth, quality: 0.85 })
     const { data } = await api.post('/api/admin/settings/ui/upload', {
       kind,
@@ -1054,7 +1059,11 @@ async function onUiImageSelected(event) {
     })
     uiForm.value = { ...(data.settings || uiForm.value) }
     uiSettingsStore.applyLocal(data.settings || uiForm.value)
-    message.value = kind === 'logo' ? 'อัปโหลดโลโก้แล้ว' : 'อัปโหลดภาพปกแล้ว'
+    message.value = kind === 'logo'
+      ? 'อัปโหลดโลโก้แล้ว'
+      : kind === 'kshop_qr'
+        ? 'อัปโหลด QR KShop แล้ว'
+        : 'อัปโหลดภาพปกแล้ว'
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || err?.message || 'อัปโหลดรูปไม่สำเร็จ'
   } finally {
@@ -1879,7 +1888,6 @@ function openBookingDay(iso) {
 }
 
 function closeBookingDay() {
-  closeBookingActions()
   selectedBookingDate.value = ''
   bookings.value = []
 }
@@ -4408,13 +4416,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <p v-if="loading" class="muted">กำลังโหลด...</p>
 
         <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
-        <div
-          v-for="item in filtered"
-          :key="item.id"
-          class="admin-item"
-          :class="{ 'admin-item--actionable': isMobile }"
-          @click="openBookingActions(item)"
-        >
+        <div v-for="item in filtered" :key="item.id" class="admin-item">
           <div class="admin-item-body">
             <strong>{{ bookingTimeRange(item) }}</strong>
             <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
@@ -4431,12 +4433,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <p v-if="item.total != null && item.total !== ''" class="muted">
               ยอด {{ formatBookingTotal(item.total) }}
             </p>
-            <p v-if="isMobile" class="admin-item-tap-hint">
-              <i class="ti ti-chevron-right" aria-hidden="true"></i>
-              กดเพื่อจัดการคิว
-            </p>
           </div>
-          <div class="row admin-booking-actions-desktop" @click.stop>
+          <div class="row admin-booking-actions">
             <button
               type="button"
               class="btn"
@@ -5726,7 +5724,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <h4 class="ui-settings-group-title">{{ group.title }}</h4>
             <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
             <div class="admin-form-grid admin-option-grid">
-              <label v-for="field in group.fields" :key="field.key" class="ui-field-label">
+              <label
+                v-for="field in group.fields"
+                v-show="shouldShowUiField(field)"
+                :key="field.key"
+                class="ui-field-label"
+              >
                 {{ field.label }}
                 <textarea
                   v-if="field.multiline"
@@ -5778,8 +5781,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   class="ui-image-preview ui-image-preview--wide"
                   @error="($event.target.style.display = 'none')"
                 />
+                <img
+                  v-if="field.key === 'ui_kshop_qr_url' && uiPreviewUrl('ui_kshop_qr_url')"
+                  :src="uiPreviewUrl('ui_kshop_qr_url')"
+                  alt="preview kshop qr"
+                  class="ui-image-preview"
+                  @error="($event.target.style.display = 'none')"
+                />
                 <p
-                  v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url') && uiImageFieldHint(field.key)"
+                  v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url' || field.key === 'ui_kshop_qr_url') && uiImageFieldHint(field.key)"
                   class="muted ui-image-url-warn"
                 >
                   {{ uiImageFieldHint(field.key) }}
@@ -6529,110 +6539,6 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         เลื่อนลงล่างสุดเพื่อโหลดเพิ่มอีก {{ USER_PAGE_SIZE }} คน
       </p>
     </section>
-
-    <Teleport to="body">
-      <Transition name="admin-sheet-fade">
-        <div
-          v-if="bookingActionItem"
-          class="admin-action-sheet-backdrop"
-          @click.self="closeBookingActions"
-        >
-          <div class="admin-action-sheet" role="dialog" aria-labelledby="booking-action-sheet-title">
-            <div class="admin-action-sheet-handle" aria-hidden="true"></div>
-            <h3 id="booking-action-sheet-title">{{ bookingTimeRange(bookingActionItem) }}</h3>
-            <p class="muted admin-action-sheet-meta">
-              {{ bookingActionItem.user_name }} · {{ statusLabel(bookingActionItem.status) }}
-            </p>
-            <p class="muted admin-action-sheet-meta">
-              {{
-                bookingActionItem.nail_options?.length
-                  ? bookingActionItem.nail_options.map((opt) => opt.option_name).join(', ')
-                  : '-'
-              }}
-            </p>
-            <div class="admin-action-sheet-actions">
-              <button
-                type="button"
-                class="btn"
-                @click="openSendMessageModal({ id: bookingActionItem.user_id, name: bookingActionItem.user_name, email: bookingActionItem.user_email }); closeBookingActions()"
-              >
-                ส่งข้อความ
-              </button>
-              <button type="button" class="btn primary" @click="openAdminChat(bookingActionItem.user_id); closeBookingActions()">
-                ไปแชท
-              </button>
-              <button
-                v-if="bookingActionItem.status !== 'cancelled'"
-                type="button"
-                class="btn"
-                @click="editBooking(bookingActionItem); closeBookingActions()"
-              >
-                แก้ไขข้อมูล
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'awaiting_payment'"
-                type="button"
-                class="btn primary"
-                @click="confirmPayment(bookingActionItem.id); closeBookingActions()"
-              >
-                ยืนยันชำระเงิน
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'awaiting_payment'"
-                type="button"
-                class="btn danger"
-                @click="cancelUnpaid(bookingActionItem.id); closeBookingActions()"
-              >
-                ยกเลิกคิวไม่ชำระ
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'pending'"
-                type="button"
-                class="btn"
-                @click="revertPayment(bookingActionItem.id); closeBookingActions()"
-              >
-                เปลี่ยนเป็นรอชำระ
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'pending'"
-                type="button"
-                class="btn primary"
-                @click="markDone(bookingActionItem); closeBookingActions()"
-              >
-                ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'pending'"
-                type="button"
-                class="btn danger"
-                @click="cancelPaid(bookingActionItem.id); closeBookingActions()"
-              >
-                ยกเลิกคิว (เลื่อนวัน)
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'cancelled'"
-                type="button"
-                class="btn primary"
-                @click="restoreBooking(bookingActionItem); closeBookingActions()"
-              >
-                คืนสถานะจอง
-              </button>
-              <button
-                v-if="bookingActionItem.status === 'cancelled'"
-                type="button"
-                class="btn danger"
-                @click="deleteBooking(bookingActionItem.id); closeBookingActions()"
-              >
-                ลบ
-              </button>
-              <button type="button" class="btn admin-action-sheet-close" @click="closeBookingActions">
-                ปิด
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
 
     <Teleport to="body">
       <div
@@ -10199,122 +10105,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   min-width: 100px;
 }
 
-.admin-booking-actions-desktop {
-  display: none;
-}
-
-@media (max-width: 820px) {
-  .admin-item--actionable {
-    cursor: pointer;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: 12px;
-    background: var(--color-surface-elevated);
-    transition: background var(--transition, 0.15s ease);
-  }
-
-  .admin-item--actionable:active {
-    background: var(--color-surface-muted, #f8fafc);
-  }
-
-  .admin-item-tap-hint {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--color-primary);
-    font-weight: 600;
-  }
-
-  .admin-item-tap-hint i {
-    font-size: 14px;
-  }
-}
-
-.admin-action-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--z-admin-modal, 2000) + 1);
+.admin-booking-actions {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
-  overscroll-behavior: contain;
-}
-
-.admin-action-sheet {
-  width: 100%;
-  max-width: 430px;
-  max-height: min(88dvh, 640px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  margin: 0 auto;
-  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-  border-radius: var(--radius-sheet, 16px) var(--radius-sheet, 16px) 0 0;
-  background: var(--color-surface-elevated);
-  box-shadow: var(--shadow-sheet, 0 -8px 32px rgba(15, 23, 42, 0.12));
-}
-
-.admin-action-sheet-handle {
-  width: 36px;
-  height: 4px;
-  margin: 0 auto 12px;
-  border-radius: 99px;
-  background: var(--color-border);
-}
-
-.admin-action-sheet h3 {
-  margin: 0 0 6px;
-  font-size: var(--text-h3, 18px);
-}
-
-.admin-action-sheet-meta {
-  margin: 0 0 4px;
-  font-size: 13px;
-}
-
-.admin-action-sheet-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.admin-action-sheet-actions .btn {
-  width: 100%;
-  justify-content: center;
-  min-height: var(--btn-secondary-height, 44px);
-}
-
-.admin-action-sheet-close {
-  margin-top: 4px;
-}
-
-.admin-sheet-fade-enter-active,
-.admin-sheet-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.admin-sheet-fade-enter-active .admin-action-sheet,
-.admin-sheet-fade-leave-active .admin-action-sheet {
-  transition: transform 0.25s ease;
-}
-
-.admin-sheet-fade-enter-from,
-.admin-sheet-fade-leave-to {
-  opacity: 0;
-}
-
-.admin-sheet-fade-enter-from .admin-action-sheet,
-.admin-sheet-fade-leave-to .admin-action-sheet {
-  transform: translateY(100%);
-}
-
-@media (min-width: 821px) {
-  .admin-booking-actions-desktop {
-    display: flex;
-  }
 }
 </style>

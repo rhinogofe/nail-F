@@ -9,10 +9,11 @@ import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
+import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 
 const route = useRoute()
 const router = useRouter()
-const { shopPath } = useShopRoute()
+const { shopSlug, shopPath } = useShopRoute()
 const ui = useUiSettingsStore()
 
 const bookingId = computed(() => route.params.bookingId)
@@ -31,6 +32,11 @@ const bankAccountName = computed(() => ui.get('ui_bank_account_name', 'Nail Stud
 const bankAccountNo = computed(() => ui.get('ui_bank_account_no', ''))
 const depositAmount = ref(300)
 const promptpayId = computed(() => ui.get('ui_promptpay_id', ''))
+const kshopQrUrl = computed(() => {
+  const raw = ui.get('ui_kshop_qr_url', '')
+  return raw ? resolveUiImageUrl(raw, shopSlug.value) : ''
+})
+const useKshopQr = computed(() => !!kshopQrUrl.value)
 const thaiQrLabel = computed(() => ui.get('ui_thai_qr_label', 'สแกน Thai QR เพื่อชำระมัดจำ'))
 const paymentPageTitle = computed(() => ui.get('ui_payment_page_title', 'ชำระเงินมัดจำ'))
 const lineButtonLabel = computed(() => ui.get('ui_line_button_label', 'ส่งสลิปทาง LINE'))
@@ -110,6 +116,11 @@ async function copyAccountNo() {
 async function generateThaiQr() {
   qrError.value = ''
   qrCodeImage.value = ''
+
+  if (useKshopQr.value) {
+    qrCodeImage.value = kshopQrUrl.value
+    return
+  }
 
   if (!promptpayId.value) {
     qrError.value = ui.get('ui_qr_not_configured', 'ยังไม่ได้ตั้งค่า PromptPay ID')
@@ -234,7 +245,7 @@ onUnmounted(() => {
       <section class="qr-panel">
         <p class="qr-label">{{ thaiQrLabel }}</p>
         <div class="qr-card">
-          <img v-if="qrCodeImage" :src="qrCodeImage" alt="Thai QR Code" class="qr-image" />
+          <img v-if="qrCodeImage" :src="qrCodeImage" alt="QR ชำระมัดจำ" class="qr-image" />
           <p v-else class="qr-error">{{ qrError || 'กำลังสร้าง QR...' }}</p>
         </div>
       </section>
