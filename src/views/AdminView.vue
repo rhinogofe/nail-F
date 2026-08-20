@@ -267,6 +267,7 @@ const unpaidExpireHoursSaved = ref(24)
 const settingToggleSaving = ref('')
 const useCouponCode = ref('')
 const nailOptions = ref([])
+const nailOptionsLoaded = ref(false)
 const serviceMonth = ref(todayYm())
 const selectedServiceDate = ref('')
 const showEveryDayForm = ref(false)
@@ -679,7 +680,7 @@ const setupWizardProgress = computed(() => {
 })
 
 const showSetupWizard = computed(
-  () => !setupWizardDismissed.value && nailOptions.value.length === 0
+  () => nailOptionsLoaded.value && !setupWizardDismissed.value && nailOptions.value.length === 0
 )
 
 function selectSettingsSection(key) {
@@ -4138,6 +4139,8 @@ async function loadNailOptions() {
     nailOptions.value = data
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
+  } finally {
+    nailOptionsLoaded.value = true
   }
 }
 
@@ -4360,6 +4363,9 @@ watch(shopSlug, () => {
   loadChatNotifySetting()
   loadRegisterShopPinSetting()
   loadSetupWizardDismissed()
+  nailOptionsLoaded.value = false
+  nailOptions.value = []
+  void loadNailOptions()
   users.value = []
   usersTotal.value = 0
   usersHasMore.value = false
@@ -4998,7 +5004,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
           </div>
 
-          <div v-if="everyDayOptions.length === 0 && !showEveryDayForm" class="muted">ยังไม่มีบริการทุกวัน</div>
+          <div v-if="!nailOptionsLoaded" class="muted">กำลังโหลดบริการ...</div>
+          <div v-else-if="everyDayOptions.length === 0 && !showEveryDayForm" class="muted">ยังไม่มีบริการทุกวัน</div>
           <div v-for="(item, index) in everyDayOptions" :key="item.id" class="admin-item">
             <div>
               <strong>{{ item.option_name }}</strong>
