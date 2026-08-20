@@ -21,7 +21,7 @@ const adminSwal = Swal.mixin({
     container: 'swal-over-app-modal',
   },
 })
-import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey } from '../utils/bookingSlots'
+import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey, formatDurationMinutes, sumOptionDurationMinutes, applyServiceDurationToSlot } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
 import { imageUrlHint } from '../utils/imageUrl'
@@ -473,6 +473,41 @@ const bookingEditCurrentHourLabel = computed(() => {
   if (!bookingEditItem.value) return '-'
   return slotLabel(bookingRowToSlot(bookingEditItem.value, bookingSlotHours.value))
 })
+
+const bookingEditSelectedSlot = computed(() => {
+  const key = bookingEditMoveToSlotKey.value || bookingEditOriginalSlotKey.value
+  return key ? parseSlotKey(key) : null
+})
+
+const bookingEditSelectedTotalMinutes = computed(() =>
+  sumOptionDurationMinutes(bookingEditOptions.value, bookingEditSelectedIds.value)
+)
+
+const bookingEditPredictedSlot = computed(() => {
+  const base = bookingEditSelectedSlot.value
+  if (!base) return null
+  if (!extendBookingByServices.value) return base
+  return applyServiceDurationToSlot(
+    base,
+    bookingEditSelectedTotalMinutes.value,
+    bookingSlotHours.value
+  ) || base
+})
+
+const bookingEditPredictedEndLabel = computed(() => {
+  const slot = bookingEditPredictedSlot.value
+  return slot ? slotLabel(slot) : ''
+})
+
+const bookingEditServiceDurationLabel = computed(() =>
+  formatDurationMinutes(bookingEditSelectedTotalMinutes.value)
+)
+
+function formatBookingOptionDuration(opt) {
+  const mins = Number(opt?.duration_min)
+  if (!Number.isFinite(mins) || mins <= 0) return ''
+  return formatDurationMinutes(mins)
+}
 
 const bookingAddUsers = computed(() => {
   const q = bookingAddUserQuery.value.trim().toLowerCase()
@@ -7330,6 +7365,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             เวลาปัจจุบัน: {{ bookingEditCurrentHourLabel }}
           </p>
 
+          <p
+            v-if="bookingEditSelectedIds.length && (bookingEditSelectedTotalMinutes > 0 || extendBookingByServices)"
+            class="booking-edit-duration-summary"
+          >
+            <span v-if="bookingEditSelectedTotalMinutes > 0">
+              รวมเวลาบริการ {{ bookingEditServiceDurationLabel }}
+            </span>
+            <span v-if="extendBookingByServices && bookingEditPredictedEndLabel">
+              <template v-if="bookingEditSelectedTotalMinutes > 0"> · </template>
+              คาดว่าจบ {{ bookingEditPredictedEndLabel }}
+            </span>
+          </p>
+
           <label class="booking-edit-field">
             ย้ายไปเวลา
             <select
@@ -7405,6 +7453,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   />
                   <span class="booking-edit-option-name">
                     {{ opt.option_name }}
+                    <span v-if="formatBookingOptionDuration(opt)" class="booking-edit-option-duration">
+                      {{ formatBookingOptionDuration(opt) }}
+                    </span>
                     <span class="booking-edit-required">บังคับ</span>
                   </span>
                   <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
@@ -7442,7 +7493,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     :value="String(opt.id)"
                     @change="bookingEditError = ''"
                   />
-                  <span class="booking-edit-option-name">{{ opt.option_name }}</span>
+                  <span class="booking-edit-option-name">
+                    {{ opt.option_name }}
+                    <span v-if="formatBookingOptionDuration(opt)" class="booking-edit-option-duration">
+                      {{ formatBookingOptionDuration(opt) }}
+                    </span>
+                  </span>
                   <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
                 </label>
               </div>
@@ -9761,6 +9817,30 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .booking-edit-option-input {
   margin-top: 3px;
+}
+
+.booking-edit-current-hour {
+  margin: 0 0 8px;
+}
+
+.booking-edit-duration-summary {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f0f9ff;
+  color: #0c4a6e;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.booking-edit-option-duration {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .booking-edit-option-name {
