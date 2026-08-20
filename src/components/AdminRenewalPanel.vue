@@ -30,6 +30,8 @@ const errorMessage = ref('')
 const settings = ref({
   promptpay_id: '',
   description: '',
+  qr_instruction: 'สแกน QR PromptPay แล้วอัปโหลดสลิปด้านล่าง',
+  promptpay_account_name: '',
   price_per_month_no_line: 149,
   price_per_month_with_line: 249,
   banner_days_before: 7,
@@ -40,6 +42,8 @@ const settings = ref({
 const settingsForm = ref({
   promptpay_id: '',
   description: '',
+  qr_instruction: 'สแกน QR PromptPay แล้วอัปโหลดสลิปด้านล่าง',
+  promptpay_account_name: '',
   price_per_month_no_line: 149,
   price_per_month_with_line: 249,
   banner_days_before: 7,
@@ -227,6 +231,8 @@ function applySettings(data) {
   settings.value = {
     promptpay_id: data?.promptpay_id || '',
     description: data?.description || '',
+    qr_instruction: data?.qr_instruction || 'สแกน QR PromptPay แล้วอัปโหลดสลิปด้านล่าง',
+    promptpay_account_name: data?.promptpay_account_name || '',
     price_per_month_no_line: Number(data?.price_per_month_no_line) || 149,
     price_per_month_with_line: Number(data?.price_per_month_with_line) || 249,
     banner_days_before: Number(data?.banner_days_before) ?? 7,
@@ -236,6 +242,8 @@ function applySettings(data) {
   settingsForm.value = {
     promptpay_id: settings.value.promptpay_id,
     description: settings.value.description,
+    qr_instruction: settings.value.qr_instruction,
+    promptpay_account_name: settings.value.promptpay_account_name,
     price_per_month_no_line: settings.value.price_per_month_no_line,
     price_per_month_with_line: settings.value.price_per_month_with_line,
     banner_days_before: settings.value.banner_days_before,
@@ -522,6 +530,8 @@ async function saveSettings() {
     const { data } = await api.patch('/api/admin/usage-renewal/settings', {
       promptpay_id: settingsForm.value.promptpay_id,
       description: settingsForm.value.description,
+      qr_instruction: settingsForm.value.qr_instruction,
+      promptpay_account_name: settingsForm.value.promptpay_account_name,
       price_per_month_no_line: noLine,
       price_per_month_with_line: withLine,
       banner_days_before: bannerDays,
@@ -748,6 +758,24 @@ onUnmounted(() => {
               class="admin-input admin-textarea"
               rows="3"
               placeholder="อธิบายขั้นตอนต่ออายุ..."
+            />
+          </label>
+          <label class="admin-label-grow admin-renewal-desc">
+            ข้อความใต้ QR (หน้าต่ออายุสาขา)
+            <input
+              v-model="settingsForm.qr_instruction"
+              type="text"
+              class="admin-input"
+              placeholder="สแกน QR PromptPay แล้วอัปโหลดสลิปด้านล่าง"
+            />
+          </label>
+          <label class="admin-label-grow admin-renewal-desc">
+            ชื่อบัญชี PromptPay (แสดงใต้ข้อความ QR)
+            <input
+              v-model="settingsForm.promptpay_account_name"
+              type="text"
+              class="admin-input"
+              placeholder="เช่น นายสมชาย ใจดี"
             />
           </label>
         </div>
@@ -985,7 +1013,10 @@ onUnmounted(() => {
         <div v-if="hasRenewalSelection" class="admin-renewal-qr-block">
           <h4>{{ selectedSummaryLabel }}</h4>
           <p class="admin-renewal-total">รวม {{ formatBaht(selectedPrice) }}</p>
-          <p class="muted">สแกน QR PromptPay แล้วอัปโหลดสลิปด้านล่าง</p>
+          <p v-if="settings.qr_instruction" class="muted">{{ settings.qr_instruction }}</p>
+          <p v-if="settings.promptpay_account_name" class="admin-renewal-promptpay-name">
+            ชื่อบัญชี PromptPay: {{ settings.promptpay_account_name }}
+          </p>
           <p v-if="qrError" class="alert error">{{ qrError }}</p>
           <img
             v-else-if="qrCodeImage"
@@ -1452,6 +1483,11 @@ onUnmounted(() => {
   font-size: 1.1rem;
   font-weight: 600;
   margin: 0 0 8px;
+}
+
+.admin-renewal-promptpay-name {
+  margin: 0 0 8px;
+  font-size: 0.9375rem;
 }
 
 .admin-renewal-price-hint {
