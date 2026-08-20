@@ -30,6 +30,7 @@ export const UI_FORM_DEFAULTS = {
   ui_line_message_template:
     'ส่งสลิปมัดจำคิว\nBooking: {bookingId}\nวันที่: {date}\nเวลา: {start} – {end}\nยอด: {amount} บาท',
   ui_payment_page_title: 'ชำระเงินมัดจำ',
+  ui_payment_slip_upload_enabled: '0',
   ui_payment_notice_off: 'กรุณาชำระมัดจำและส่งสลิปให้แอดมินยืนยัน',
   ui_payment_notice_timer:
     'กรุณาชำระภายใน {hours} ชม. นับจากเวลาจอง มิฉะนั้นคิวจะถูกยกเลิกอัตโนมัติ',
@@ -108,8 +109,14 @@ export const UI_FIELD_GROUPS = [
   },
   {
     title: 'ชำระเงิน',
-    hint: 'QR ชำระมัดจำ — ใส่ PromptPay เพื่อสร้าง QR อัตโนมัติ หรืออัปโหลดรูป QR จาก KShop (เลือกอย่างใดอย่างหนึ่ง) · ลิงก์ LINE เปิดแชทใช้ส่งสลิปบนหน้าชำระเงิน',
+    hint: 'QR ชำระมัดจำ — ใส่ PromptPay เพื่อสร้าง QR อัตโนมัติ หรืออัปโหลดรูป QR จาก KShop (เลือกอย่างใดอย่างหนึ่ง) · ลิงก์ LINE เปิดแชทใช้ส่งสลิปบนหน้าชำระเงิน · สไลด์อัปโหลดสลิปบันทึกทันที',
     fields: [
+      {
+        key: 'ui_payment_slip_upload_enabled',
+        label: 'เปิดปุ่มอัปโหลดสลิปในหน้าชำระเงิน',
+        type: 'toggle',
+        hint: 'ปิดแล้วลูกค้ายังส่งสลิปทาง LINE ได้ตามเดิม',
+      },
       { key: 'ui_payment_page_title', label: 'หัวข้อหน้าชำระเงิน' },
       { key: 'ui_line_chat_url', label: 'ลิงก์ LINE (เปิดแชท — หน้าชำระเงิน)' },
       { key: 'ui_bank_name', label: 'ชื่อธนาคาร' },

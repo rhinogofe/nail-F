@@ -139,10 +139,10 @@ export function isPushEnabledOnDevice() {
 }
 
 function buildNotificationTag(payload) {
-  const bookingId = payload?.data?.bookingId || payload?.data?.booking_id || ''
   const messageId = payload?.data?.messageId || payload?.data?.message_id || ''
-  if (bookingId) return `nail-booking-${bookingId}`
+  const bookingId = payload?.data?.bookingId || payload?.data?.booking_id || ''
   if (messageId) return `nail-msg-${messageId}`
+  if (bookingId) return `nail-booking-${bookingId}`
   return `nail-push-${Date.now()}`
 }
 

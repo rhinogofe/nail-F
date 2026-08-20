@@ -185,6 +185,43 @@ function makeDynamicSlot(startM, endM, baseDurationMinutes) {
   return makeBookingSlot(hour, minute, endHour, endMinute)
 }
 
+function packDynamicSlotsInRange({
+  rangeStartM,
+  rangeEndM,
+  occupied,
+  slotLenM,
+  minGapMinutes,
+}) {
+  const result = []
+  let cursor = rangeStartM
+
+  while (cursor < rangeEndM) {
+    const inside = occupied.find((o) => cursor >= o.startM && cursor < o.endM)
+    if (inside) {
+      cursor = inside.endM
+      continue
+    }
+
+    const nextStart = occupied
+      .filter((o) => o.startM > cursor)
+      .reduce((min, o) => Math.min(min, o.startM), rangeEndM)
+    const gapEnd = Math.min(nextStart, rangeEndM)
+    const space = gapEnd - cursor
+
+    if (space >= slotLenM) {
+      result.push(makeDynamicSlot(cursor, cursor + slotLenM))
+      cursor += slotLenM
+    } else if (space >= minGapMinutes) {
+      result.push(makeDynamicSlot(cursor, cursor + space))
+      cursor += space
+    } else {
+      cursor = gapEnd >= rangeEndM ? rangeEndM : nextStart
+    }
+  }
+
+  return result
+}
+
 export function buildDynamicBookableSlots({
   slotHours = DEFAULT_SLOT_HOURS,
   bookings = [],
@@ -213,33 +250,29 @@ export function buildDynamicBookableSlots({
   ])
   if (occupied.some((o) => o.fullDay)) return []
 
-  const result = []
-  let cursor = timelineStartM
-
-  while (cursor < maxEndM) {
-    const inside = occupied.find((o) => cursor >= o.startM && cursor < o.endM)
-    if (inside) {
-      cursor = inside.endM
-      continue
-    }
-
-    const nextStart = occupied
-      .filter((o) => o.startM > cursor)
-      .reduce((min, o) => Math.min(min, o.startM), maxEndM)
-
-    const space = nextStart - cursor
-    if (space >= slotLenM) {
-      result.push(makeDynamicSlot(cursor, cursor + slotLenM))
-      cursor += slotLenM
-    } else if (space >= minGapMinutes) {
-      result.push(makeDynamicSlot(cursor, cursor + space))
-      cursor += space
-    } else {
-      cursor = nextStart
-    }
+  const windows = normalizeDayWindows(dayWindows)
+  if (windows.length) {
+    return windows.flatMap((window) => {
+      const rangeStartM = toMinutesFromHm(window.start_hour, window.start_minute)
+      const rangeEndM = toMinutesFromHm(window.end_hour, window.end_minute)
+      if (rangeEndM <= rangeStartM) return []
+      return packDynamicSlotsInRange({
+        rangeStartM,
+        rangeEndM,
+        occupied,
+        slotLenM,
+        minGapMinutes,
+      })
+    })
   }
 
-  return result
+  return packDynamicSlotsInRange({
+    rangeStartM: timelineStartM,
+    rangeEndM: maxEndM,
+    occupied,
+    slotLenM,
+    minGapMinutes,
+  })
 }
 
 export function buildDynamicTimelineSlots(params) {
@@ -335,15 +368,26 @@ function isSlotBlockedByMinutes(slot, blocks) {
   })
 }
 
-function hasBookingOverlapForSlot(slot, bookings, excludeBookingId) {
+function hasBookingOverlapForSlot(slot, bookings, excludeBookingId, slotHours = DEFAULT_SLOT_HOURS) {
   const startM = slotStartMinutes(slot)
   const endM = slotEndMinutes(slot)
   return (bookings || []).some((b) => {
     if (b.status === 'cancelled') return false
     if (String(b.id) === String(excludeBookingId ?? '')) return false
-    const existing = bookingRowToSlot(b)
+    const existing = bookingRowToSlot(b, slotHours)
     return rangesOverlap(startM, endM, slotStartMinutes(existing), slotEndMinutes(existing))
   })
+}
+
+export function findBookingForSlot(slot, bookings, slotHours = DEFAULT_SLOT_HOURS, excludeBookingId = null) {
+  const startM = slotStartMinutes(slot)
+  const endM = slotEndMinutes(slot)
+  return (bookings || []).find((b) => {
+    if (b.status === 'cancelled') return false
+    if (String(b.id) === String(excludeBookingId ?? '')) return false
+    const existing = bookingRowToSlot(b, slotHours)
+    return rangesOverlap(startM, endM, slotStartMinutes(existing), slotEndMinutes(existing))
+  }) || null
 }
 
 /** 1 รายการที่ตั้งในแอดมิน = 1 คิวจอง (แสดงเวลา ชม:นาที ตรงตามที่ตั้ง) */
@@ -360,9 +404,9 @@ export function buildDayWindowSlots({ dayWindows, blocks = [] }) {
     .sort((a, b) => slotStartMinutes(a) - slotStartMinutes(b))
 }
 
-export function canBookDayWindowSlot(slot, { blocks = [], bookings = [], excludeBookingId = null }) {
+export function canBookDayWindowSlot(slot, { blocks = [], bookings = [], excludeBookingId = null, slotHours = DEFAULT_SLOT_HOURS }) {
   if (isSlotBlockedByMinutes(slot, blocks)) return false
-  if (hasBookingOverlapForSlot(slot, bookings, excludeBookingId)) return false
+  if (hasBookingOverlapForSlot(slot, bookings, excludeBookingId, slotHours)) return false
   return true
 }
 
@@ -540,13 +584,8 @@ function activeBookings(bookings, excludeBookingId) {
 
 function hasBookingOverlap(hour, bookings, excludeBookingId, slotHours) {
   const slot = normalizeBookingSlotHours(slotHours)
-  const slotEnd = hour + slot
-  return activeBookings(bookings, excludeBookingId).some((b) => {
-    const start = normalizeStartHour(b.start_hour)
-    if (start == null) return false
-    const end = Number(b.end_hour ?? start + slot)
-    return start < slotEnd && end > hour
-  })
+  const candidate = hourToSlot(hour, slot)
+  return hasBookingOverlapForSlot(candidate, bookings, excludeBookingId, slotHours)
 }
 
 function isSlotRangeBlockedForBooking(hour, blocks, slotHours) {
@@ -696,6 +735,52 @@ export function parseSlotKey(key) {
   return makeBookingSlot(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]))
 }
 
+export function shouldUseDynamicCustomDaySlots({ dayWindows, extendByServices, bookings }) {
+  const windows = normalizeDayWindows(dayWindows)
+  if (!windows.length) return Boolean(extendByServices)
+  if (!extendByServices) return false
+  return (bookings || []).some((b) => b.status !== 'cancelled')
+}
+
+export function buildVisibleBookingSlots(params) {
+  const windows = normalizeDayWindows(params.dayWindows)
+  const slotHours = normalizeBookingSlotHours(params.slotHours)
+
+  if (windows.length) {
+    if (!shouldUseDynamicCustomDaySlots(params)) {
+      return buildDayWindowSlots({
+        dayWindows: windows,
+        blocks: params.blocks || [],
+      })
+    }
+    return buildDynamicTimelineSlots(params).all
+  }
+
+  if (params.extendByServices) {
+    return buildDynamicTimelineSlots(params).all
+  }
+
+  return buildVisibleSlots(params).map((h) => hourToSlot(h, slotHours))
+}
+
+export function canBookVisibleSlot(slot, params) {
+  if (normalizeDayWindows(params.dayWindows).length) {
+    if (!shouldUseDynamicCustomDaySlots(params)) {
+      return canBookDayWindowSlot(slot, {
+        blocks: params.blocks,
+        bookings: params.bookings,
+        excludeBookingId: params.excludeBookingId,
+        slotHours: params.slotHours,
+      })
+    }
+    return isDynamicSlotAvailable(slot, params)
+  }
+  if (params.extendByServices) {
+    return isDynamicSlotAvailable(slot, params)
+  }
+  return canBookSlot(slot.startHour, params)
+}
+
 export function buildBookableDayWindowSlots(params) {
   const windows = normalizeDayWindows(params.dayWindows)
   if (!windows.length) return []
@@ -704,104 +789,72 @@ export function buildBookableDayWindowSlots(params) {
       blocks: params.blocks,
       bookings: params.bookings,
       excludeBookingId: params.excludeBookingId,
+      slotHours: params.slotHours,
     }))
     .sort((a, b) => slotStartMinutes(a) - slotStartMinutes(b))
 }
 
-export function buildBookingSlotSelectOptions(params, { excludeSlotKey = null, includeSlotKey = null } = {}) {
-  const windows = normalizeDayWindows(params.dayWindows)
-  const slot = normalizeBookingSlotHours(params.slotHours)
-  const isSlotsBlockMode = params.displayMode === 'slots_2h'
-
-  if (params.extendByServices) {
-    let slots = buildDynamicBookableSlots(params)
-    if (excludeSlotKey) {
-      slots = slots.filter((s) => slotKey(s) !== excludeSlotKey)
-    }
-    const options = slots.map((s) => ({
-      key: slotKey(s),
-      hour: s.startHour,
-      startMinute: s.startMinute,
-      endHour: s.endHour,
-      endMinute: s.endMinute,
-      slot: s,
-      label: slotLabel(s),
-    }))
-    if (includeSlotKey && !options.some((o) => o.key === includeSlotKey)) {
-      const parsed = parseSlotKey(includeSlotKey)
-      if (parsed) {
-        options.push({
-          key: includeSlotKey,
-          hour: parsed.startHour,
-          startMinute: parsed.startMinute,
-          endHour: parsed.endHour,
-          endMinute: parsed.endMinute,
-          slot: parsed,
-          label: slotLabel(parsed),
-        })
-        options.sort((a, b) => slotStartMinutes(a.slot) - slotStartMinutes(b.slot))
-      }
-    }
-    return options
+function slotsToSelectOptions(slots, { excludeSlotKey = null, includeSlotKey = null } = {}) {
+  let filtered = slots
+  if (excludeSlotKey) {
+    filtered = filtered.filter((s) => slotKey(s) !== excludeSlotKey)
   }
-
-  if (windows.length) {
-    let slots = buildBookableDayWindowSlots(params)
-    if (excludeSlotKey) {
-      slots = slots.filter((s) => slotKey(s) !== excludeSlotKey)
-    }
-    const options = slots.map((s) => ({
-      key: slotKey(s),
-      hour: s.startHour,
-      startMinute: s.startMinute,
-      endHour: s.endHour,
-      endMinute: s.endMinute,
-      slot: s,
-      label: slotLabel(s),
-    }))
-    if (includeSlotKey && !options.some((o) => o.key === includeSlotKey)) {
-      const parsed = parseSlotKey(includeSlotKey)
-      if (parsed) {
-        options.push({
-          key: includeSlotKey,
-          hour: parsed.startHour,
-          startMinute: parsed.startMinute,
-          endHour: parsed.endHour,
-          endMinute: parsed.endMinute,
-          slot: parsed,
-          label: slotLabel(parsed),
-        })
-        options.sort((a, b) => slotStartMinutes(a.slot) - slotStartMinutes(b.slot))
-      }
-    }
-    return options
-  }
-
-  let hours = buildBookableSlotHours({
-    ...params,
-    slotHours: slot,
-    openHour: normalizeShopOpenHour(params.openHour),
-    lastBookingHour: normalizeShopLastBookingHour(params.lastBookingHour, params.openHour, slot),
-  })
-  if (includeSlotKey != null && includeSlotKey !== '') {
+  const options = filtered.map((s) => ({
+    key: slotKey(s),
+    hour: s.startHour,
+    startMinute: s.startMinute,
+    endHour: s.endHour,
+    endMinute: s.endMinute,
+    slot: s,
+    label: slotLabel(s),
+  }))
+  if (includeSlotKey && !options.some((o) => o.key === includeSlotKey)) {
     const parsed = parseSlotKey(includeSlotKey)
-    const currentHour = parsed?.startHour ?? Number(includeSlotKey)
-    if (Number.isFinite(currentHour) && !hours.includes(currentHour)) {
-      hours = [...hours, currentHour].sort((a, b) => a - b)
+    if (parsed) {
+      options.push({
+        key: includeSlotKey,
+        hour: parsed.startHour,
+        startMinute: parsed.startMinute,
+        endHour: parsed.endHour,
+        endMinute: parsed.endMinute,
+        slot: parsed,
+        label: slotLabel(parsed),
+      })
+      options.sort((a, b) => slotStartMinutes(a.slot) - slotStartMinutes(b.slot))
     }
   }
-  return hours.map((hour) => {
-    const s = hourToSlot(hour, slot)
-    return {
-      key: slotKey(s),
-      hour,
-      startMinute: 0,
-      endHour: s.endHour,
-      endMinute: 0,
-      slot: s,
-      label: slotTimeLabel(hour, isSlotsBlockMode, slot),
-    }
+  return options
+}
+
+/** Bookable slots for admin/customer select — keeps all bookings in occupancy (no excludeBookingId). */
+export function buildBookableSlotSelectSlots(params) {
+  const occupancyParams = { ...params, excludeBookingId: null }
+  const windows = normalizeDayWindows(occupancyParams.dayWindows)
+  const slot = normalizeBookingSlotHours(occupancyParams.slotHours)
+
+  if (windows.length && !shouldUseDynamicCustomDaySlots(occupancyParams)) {
+    return buildBookableDayWindowSlots(occupancyParams)
+  }
+  if (shouldUseDynamicCustomDaySlots(occupancyParams) || occupancyParams.extendByServices) {
+    return buildDynamicTimelineSlots(occupancyParams).available
+  }
+
+  const hours = buildBookableSlotHours({
+    ...occupancyParams,
+    slotHours: slot,
+    openHour: normalizeShopOpenHour(occupancyParams.openHour),
+    lastBookingHour: normalizeShopLastBookingHour(
+      occupancyParams.lastBookingHour,
+      occupancyParams.openHour,
+      slot
+    ),
   })
+  return hours.map((h) => hourToSlot(h, slot))
+}
+
+export function buildBookingSlotSelectOptions(params, { excludeSlotKey = null, includeSlotKey = null } = {}) {
+  const slots = buildBookableSlotSelectSlots(params)
+  return slotsToSelectOptions(slots, { excludeSlotKey, includeSlotKey })
 }
 
 export function buildBookableSlotHours(params) {

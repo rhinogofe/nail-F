@@ -10,6 +10,7 @@ import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
+import { compressImage } from '../utils/compressChatImage'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,6 +54,24 @@ const bookingStatus = ref('')
 const bookingCreatedAt = ref('')
 const unpaidSettings = ref({ enabled: true, expireHours: 24 })
 
+const slipPreview = ref('')
+const slipMime = ref('')
+const slipUploading = ref(false)
+const slipSubmitting = ref(false)
+const slipDeleting = ref(false)
+const slipLoading = ref(false)
+const slipFileInput = ref(null)
+const submittedSlip = ref(null)
+const submittedSlipImageUrl = ref('')
+const slipMessage = ref('')
+const slipError = ref('')
+
+const slipStatusLabels = {
+  pending: 'รอแอดมินยืนยัน',
+  confirmed: 'ยืนยันแล้ว',
+  cancelled: 'แอดมินยกเลิก — อัปโหลดใหม่ได้',
+}
+
 const unpaidCountdown = useUnpaidCountdown(() => unpaidSettings.value)
 
 const isExpired = computed(() => {
@@ -62,6 +81,97 @@ const isExpired = computed(() => {
 })
 
 const canPay = computed(() => bookingStatus.value === 'awaiting_payment' && !isExpired.value)
+
+const showSlipUpload = computed(() => {
+  const raw = String(ui.get('ui_payment_slip_upload_enabled', '0')).trim().toLowerCase()
+  return raw !== '0' && raw !== 'false' && raw !== 'off'
+})
+
+const canUploadNewSlip = computed(() => {
+  if (!canPay.value || !showSlipUpload.value) return false
+  if (!submittedSlip.value) return true
+  return submittedSlip.value.status === 'cancelled'
+})
+
+const canDeleteSubmittedSlip = computed(() => {
+  if (!submittedSlip.value || !canPay.value) return false
+  return submittedSlip.value.status === 'pending' || submittedSlip.value.status === 'cancelled'
+})
+
+const submittedSlipStatusLabel = computed(() => {
+  if (!submittedSlip.value) return ''
+  return slipStatusLabels[submittedSlip.value.status] || submittedSlip.value.status
+})
+
+function formatSlipDateTime(iso) {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return d.toLocaleString('th-TH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function revokeSubmittedSlipImage() {
+  if (submittedSlipImageUrl.value) {
+    URL.revokeObjectURL(submittedSlipImageUrl.value)
+    submittedSlipImageUrl.value = ''
+  }
+}
+
+async function loadSubmittedSlipImage() {
+  revokeSubmittedSlipImage()
+  if (!submittedSlip.value?.slip_filename) return
+  try {
+    const { data } = await api.get(
+      `/api/bookings/${bookingId.value}/payment-slip/file`,
+      { responseType: 'blob' }
+    )
+    submittedSlipImageUrl.value = URL.createObjectURL(data)
+  } catch {
+    /* แสดงรายการได้แม้โหลดรูปไม่สำเร็จ */
+  }
+}
+
+async function loadPaymentSlip() {
+  if (!showSlipUpload.value) return
+  slipLoading.value = true
+  try {
+    const { data } = await api.get(`/api/bookings/${bookingId.value}/payment-slip`)
+    submittedSlip.value = data?.slip || null
+    if (submittedSlip.value) {
+      await loadSubmittedSlipImage()
+    } else {
+      revokeSubmittedSlipImage()
+    }
+  } catch {
+    submittedSlip.value = null
+    revokeSubmittedSlipImage()
+  } finally {
+    slipLoading.value = false
+  }
+}
+
+async function deletePaymentSlip() {
+  if (!canDeleteSubmittedSlip.value || slipDeleting.value) return
+  slipDeleting.value = true
+  slipError.value = ''
+  slipMessage.value = ''
+  try {
+    const { data } = await api.delete(`/api/bookings/${bookingId.value}/payment-slip`)
+    submittedSlip.value = null
+    revokeSubmittedSlipImage()
+    slipMessage.value = data?.message || 'ลบสลิปแล้ว — อัปโหลดใหม่ได้'
+  } catch (err) {
+    slipError.value = err?.response?.data?.error || 'ลบสลิปไม่สำเร็จ'
+  } finally {
+    slipDeleting.value = false
+  }
+}
 
 const countdownText = computed(() => {
   if (!unpaidSettings.value.enabled || bookingStatus.value !== 'awaiting_payment') return ''
@@ -92,6 +202,64 @@ const lineMessage = computed(() => {
 
 function openLine() {
   window.open(`${lineChatUrl.value}?text=${lineMessage.value}`, '_blank')
+}
+
+function triggerSlipUpload() {
+  if (slipUploading.value || slipSubmitting.value || !canPay.value) return
+  slipFileInput.value?.click()
+}
+
+async function onSlipSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  slipUploading.value = true
+  slipError.value = ''
+  slipMessage.value = ''
+  try {
+    const { base64, mime } = await compressImage(file, { maxWidth: 1600, quality: 0.85 })
+    slipPreview.value = `data:${mime};base64,${base64}`
+    slipMime.value = mime
+  } catch (err) {
+    slipError.value = err?.message || 'อ่านรูปสลิปไม่สำเร็จ'
+    slipPreview.value = ''
+    slipMime.value = ''
+  } finally {
+    slipUploading.value = false
+  }
+}
+
+function clearSlipPreview() {
+  slipPreview.value = ''
+  slipMime.value = ''
+}
+
+async function submitPaymentSlip() {
+  if (!slipPreview.value) {
+    slipError.value = 'กรุณาเลือกรูปสลิปก่อน'
+    return
+  }
+  slipSubmitting.value = true
+  slipError.value = ''
+  slipMessage.value = ''
+  try {
+    const base64 = slipPreview.value.split(',')[1] || ''
+    const { data } = await api.post(`/api/bookings/${bookingId.value}/payment-slip`, {
+      image_data: base64,
+      image_mime: slipMime.value,
+    })
+    submittedSlip.value = data?.slip || null
+    slipMessage.value = data?.message || 'อัปโหลดสลิปแล้ว — รอแอดมินยืนยัน'
+    clearSlipPreview()
+    if (submittedSlip.value) {
+      await loadSubmittedSlipImage()
+    }
+  } catch (err) {
+    slipError.value = err?.response?.data?.error || 'อัปโหลดสลิปไม่สำเร็จ'
+  } finally {
+    slipSubmitting.value = false
+  }
 }
 
 function backToBooking() {
@@ -178,7 +346,10 @@ onMounted(async () => {
   } finally {
     paymentLoading.value = false
   }
-  if (canPay.value) await generateThaiQr()
+  if (canPay.value) {
+    await generateThaiQr()
+    if (showSlipUpload.value) await loadPaymentSlip()
+  }
 
   expiryTimer = setInterval(async () => {
     if (!canPay.value || !unpaidCountdown.isExpired(bookingCreatedAt.value)) return
@@ -194,6 +365,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (expiryTimer) clearInterval(expiryTimer)
+  revokeSubmittedSlipImage()
 })
 </script>
 
@@ -286,6 +458,100 @@ onUnmounted(() => {
         <i class="ti ti-brand-line" aria-hidden="true"></i>
         {{ lineButtonLabel }}
       </button>
+
+      <section v-if="showSlipUpload" class="slip-upload-panel">
+        <p class="slip-upload-label">หรืออัปโหลดสลิปในระบบ</p>
+
+        <p v-if="slipLoading" class="muted slip-loading">กำลังโหลดสลิป...</p>
+
+        <article
+          v-else-if="submittedSlip"
+          class="slip-submitted-card"
+          :class="`status-${submittedSlip.status}`"
+        >
+          <div class="slip-submitted-head">
+            <strong>สลิปที่ส่งแล้ว</strong>
+            <span class="slip-status-badge" :class="submittedSlip.status">
+              {{ submittedSlipStatusLabel }}
+            </span>
+          </div>
+          <p class="muted slip-submitted-meta">
+            อัปโหลดเมื่อ {{ formatSlipDateTime(submittedSlip.created_at) }}
+          </p>
+          <a
+            v-if="submittedSlipImageUrl"
+            :href="submittedSlipImageUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="slip-submitted-link"
+          >
+            <img
+              :src="submittedSlipImageUrl"
+              alt="สลิปที่อัปโหลด"
+              class="slip-submitted-image"
+            />
+          </a>
+          <p v-else class="muted slip-submitted-missing">โหลดรูปสลิปไม่ได้</p>
+          <button
+            v-if="canDeleteSubmittedSlip"
+            type="button"
+            class="btn ghost slip-delete-btn"
+            :disabled="slipDeleting"
+            @click="deletePaymentSlip"
+          >
+            <i class="ti ti-trash" aria-hidden="true"></i>
+            {{ slipDeleting ? 'กำลังลบ...' : 'ลบสลิปเพื่ออัปโหลดใหม่' }}
+          </button>
+        </article>
+
+        <template v-if="canUploadNewSlip">
+        <input
+          ref="slipFileInput"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          class="slip-file-input"
+          @change="onSlipSelected"
+        />
+        <div class="slip-upload-actions">
+          <button
+            type="button"
+            class="btn primary slip-select-btn"
+            :disabled="slipUploading || slipSubmitting"
+            @click="triggerSlipUpload"
+          >
+            <i class="ti ti-upload" aria-hidden="true"></i>
+            {{ slipUploading ? 'กำลังอ่านรูป...' : 'เลือกรูปสลิป' }}
+          </button>
+          <button
+            v-if="slipPreview"
+            type="button"
+            class="btn ghost"
+            :disabled="slipSubmitting"
+            @click="clearSlipPreview"
+          >
+            ล้างรูป
+          </button>
+        </div>
+        <img
+          v-if="slipPreview"
+          :src="slipPreview"
+          alt="ตัวอย่างสลิป"
+          class="slip-preview"
+        />
+        <button
+          v-if="slipPreview"
+          type="button"
+          class="btn primary slip-submit-btn"
+          :disabled="slipSubmitting"
+          @click="submitPaymentSlip"
+        >
+          {{ slipSubmitting ? 'กำลังส่ง...' : 'ส่งสลิปให้แอดมินตรวจ' }}
+        </button>
+        </template>
+
+        <p v-if="slipMessage" class="slip-success">{{ slipMessage }}</p>
+        <p v-if="slipError" class="slip-error">{{ slipError }}</p>
+      </section>
 
       <div class="payment-notice alert-banner warning">
         <i class="ti ti-alert-triangle" aria-hidden="true"></i>
@@ -513,6 +779,154 @@ onUnmounted(() => {
 
 .line-cta i {
   font-size: 22px;
+}
+
+.slip-upload-panel {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-shadow: var(--shadow-card);
+}
+
+.slip-upload-label {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--text-body);
+  text-align: center;
+}
+
+.slip-loading {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-caption);
+}
+
+.slip-submitted-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-muted) 40%, white);
+}
+
+.slip-submitted-card.status-pending {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+}
+
+.slip-submitted-card.status-cancelled {
+  border-color: #cbd5e1;
+}
+
+.slip-submitted-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.slip-status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.slip-status-badge.pending {
+  background: color-mix(in srgb, var(--color-primary) 15%, white);
+  color: var(--color-primary);
+}
+
+.slip-status-badge.cancelled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.slip-submitted-meta {
+  margin: 0;
+  font-size: var(--text-caption);
+}
+
+.slip-submitted-link {
+  display: block;
+  margin: 0 auto;
+}
+
+.slip-submitted-image {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  display: block;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.slip-submitted-missing {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-caption);
+}
+
+.slip-delete-btn {
+  width: 100%;
+  min-height: var(--touch-min);
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 25%, var(--color-border));
+}
+
+.slip-delete-btn i {
+  margin-right: 4px;
+}
+
+.slip-file-input {
+  display: none;
+}
+
+.slip-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.slip-select-btn,
+.slip-submit-btn {
+  width: 100%;
+  min-height: var(--touch-min);
+}
+
+.slip-preview {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.slip-success {
+  margin: 0;
+  color: #15803d;
+  font-size: var(--text-caption);
+  text-align: center;
+}
+
+.slip-error {
+  margin: 0;
+  color: var(--color-error);
+  font-size: var(--text-caption);
+  text-align: center;
+}
+
+.slip-hint {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-caption);
 }
 
 .payment-notice {

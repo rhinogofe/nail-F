@@ -9,6 +9,8 @@ import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import AdminManualPanel from '../components/AdminManualPanel.vue'
+import AdminRenewalPanel from '../components/AdminRenewalPanel.vue'
+import AdminBookingPaymentSlips from '../components/AdminBookingPaymentSlips.vue'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
 import { isFirebaseConfigured } from '../utils/firebaseConfig'
@@ -238,10 +240,12 @@ const chatNotifyCancelAdminEnabled = ref(true)
 const chatNotifyCancelCustomerEnabled = ref(true)
 const chatNotifyPaidAdminEnabled = ref(false)
 const chatNotifyPaidCustomerEnabled = ref(true)
+const chatNotifySlipAdminEnabled = ref(true)
 const chatNotifyCancelAdminTemplate = ref('')
 const chatNotifyCancelCustomerTemplate = ref('')
 const chatNotifyPaidAdminTemplate = ref('')
 const chatNotifyPaidCustomerTemplate = ref('')
+const chatNotifySlipAdminTemplate = ref('')
 const lineEffectiveUsesOwnBot = computed(() =>
   lineUsesOwnBot.value || (lineCanEditUseOwnBot.value && lineUseOwnBot.value)
 )
@@ -459,7 +463,6 @@ const bookingEditHourOptions = computed(() => {
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
     extendByServices: extendBookingByServices.value,
-    excludeBookingId: bookingEditItem.value?.id,
   }, {
     excludeSlotKey: sameDay ? bookingEditOriginalSlotKey.value : null,
   })
@@ -500,9 +503,18 @@ const adminTabs = [
   { key: 'ui', label: 'UI', icon: 'ti-palette' },
   { key: 'blocks', label: 'เวลา', icon: 'ti-calendar-off' },
   { key: 'reviews', label: 'รีวิว', icon: 'ti-star' },
+  { key: 'renewal', label: 'ต่ออายุ', icon: 'ti-refresh' },
   { key: 'manual', label: 'คู่มือ', icon: 'ti-book-2' },
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
+
+const showRenewalTab = computed(
+  () => shopSlug.value !== 'default' || (isSuperAdmin.value && shopSlug.value === 'default')
+)
+
+const visibleAdminTabs = computed(() =>
+  adminTabs.filter((tab) => tab.key !== 'renewal' || showRenewalTab.value)
+)
 
 const settingsSections = [
   { key: 'deposit', id: 'settings-deposit', label: 'มัดจำ', icon: 'ti-cash' },
@@ -760,6 +772,36 @@ const currentBranchUsage = computed(() => {
   return allShops.value.find((shop) => shop.slug === shopSlug.value) || shopStore.shop
 })
 
+const renewalBannerDaysBefore = ref(7)
+
+const branchShopsForRenewal = computed(() =>
+  allShops.value.filter((shop) => shop.slug !== 'default')
+)
+
+async function loadRenewalBannerSetting() {
+  if (shopSlug.value === 'default') return
+  try {
+    const { data } = await api.get('/api/admin/usage-renewal/settings')
+    renewalBannerDaysBefore.value = Math.floor(Number(data?.banner_days_before))
+    if (!Number.isFinite(renewalBannerDaysBefore.value) || renewalBannerDaysBefore.value < 0) {
+      renewalBannerDaysBefore.value = 7
+    }
+  } catch {
+    renewalBannerDaysBefore.value = 7
+  }
+}
+
+const showBranchUsageExpiredBanner = computed(
+  () => shopSlug.value !== 'default' && !!currentBranchUsage.value?.usage_expired
+)
+
+const showBranchUsageWarningBanner = computed(() => {
+  const usage = currentBranchUsage.value
+  if (shopSlug.value === 'default' || !usage || usage.usage_expired) return false
+  if (!usage.usage_limit_days || usage.usage_days_remaining == null) return false
+  return usage.usage_days_remaining <= renewalBannerDaysBefore.value
+})
+
 function formatShopUsageBadge(shop) {
   if (!shop?.usage_limit_days) return null
   if (shop.usage_expired) return { text: 'หมดอายุ', tone: 'expired' }
@@ -856,6 +898,47 @@ async function loadAllShops() {
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรายการร้านไม่สำเร็จ'
   }
+}
+
+const BRANCH_USAGE_POLL_MS = 30000
+let branchUsagePollTimer = null
+let branchUsageRefreshing = false
+
+async function refreshBranchUsage({ silent = false } = {}) {
+  if (shopSlug.value === 'default') return
+  if (branchUsageRefreshing) return
+  branchUsageRefreshing = true
+  try {
+    const { data } = await api.get('/api/admin/shops')
+    allShops.value = data || []
+    await shopStore.loadShop(shopSlug.value)
+    await loadRenewalBannerSetting()
+  } catch (err) {
+    if (!silent) {
+      errorMessage.value = err?.response?.data?.error || 'โหลดข้อมูลการใช้งานไม่สำเร็จ'
+    }
+  } finally {
+    branchUsageRefreshing = false
+  }
+}
+
+function startBranchUsagePolling() {
+  stopBranchUsagePolling()
+  if (shopSlug.value === 'default') return
+  branchUsagePollTimer = setInterval(() => {
+    void refreshBranchUsage({ silent: true })
+  }, BRANCH_USAGE_POLL_MS)
+}
+
+function stopBranchUsagePolling() {
+  if (branchUsagePollTimer) {
+    clearInterval(branchUsagePollTimer)
+    branchUsagePollTimer = null
+  }
+}
+
+function onAdminWindowFocus() {
+  if (shopSlug.value !== 'default') void refreshBranchUsage({ silent: true })
 }
 
 async function createShop() {
@@ -1054,6 +1137,31 @@ function uiFieldHasValue(key) {
 function shouldShowUiField(field) {
   if (!field?.hideWhen) return true
   return !uiFieldHasValue(field.hideWhen)
+}
+
+function isUiFormToggleOn(key) {
+  const value = String(uiForm.value[key] ?? '0').trim().toLowerCase()
+  return value !== '0' && value !== 'false' && value !== 'off'
+}
+
+async function onUiToggleChange(field, checked) {
+  const key = field.key
+  const previous = uiForm.value[key]
+  uiForm.value[key] = checked ? '1' : '0'
+  await autoSaveSettingToggle({
+    key: `ui:${key}`,
+    url: '/api/admin/settings/ui',
+    payload: { [key]: checked ? '1' : '0' },
+    label: field.label,
+    nextValue: checked,
+    revert: () => { uiForm.value[key] = previous },
+    apply: (data) => {
+      if (data?.settings) {
+        uiForm.value = { ...uiForm.value, ...data.settings }
+        uiSettingsStore.applyLocal(data.settings)
+      }
+    },
+  })
 }
 
 function triggerUiImageUpload(kind) {
@@ -1824,6 +1932,14 @@ function providerLabel(p) {
   return { google: 'Google', facebook: 'Facebook', line: 'LINE', phone: 'เบอร์โทร' }[p] || p
 }
 
+async function onRenewalShopsChanged() {
+  if (shopSlug.value !== 'default') {
+    await refreshBranchUsage({ silent: true })
+  } else {
+    await loadAllShops()
+  }
+}
+
 function switchTab(tab) {
   if (activeTab.value === tab) return
   if (activeTab.value === 'services') closeServiceDay()
@@ -2481,6 +2597,7 @@ const chatNotifyToggles = {
   cancel_customer_enabled: { model: chatNotifyCancelCustomerEnabled, label: 'แจ้งลูกค้าเมื่อคิวถูกยกเลิก' },
   paid_admin_enabled: { model: chatNotifyPaidAdminEnabled, label: 'แจ้งแอดมินเมื่อชำระเงินแล้ว' },
   paid_customer_enabled: { model: chatNotifyPaidCustomerEnabled, label: 'แจ้งลูกค้าเมื่อชำระเงินแล้ว' },
+  slip_admin_enabled: { model: chatNotifySlipAdminEnabled, label: 'แจ้งแอดมินเมื่อลูกค้าอัปโหลดสลิป' },
 }
 
 async function saveChatNotifyToggle(field) {
@@ -2580,6 +2697,7 @@ async function loadChatNotifySetting() {
     chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
     chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
     chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
+    chatNotifySlipAdminEnabled.value = data.slip_admin_enabled !== false
     chatNotifyCancelAdminTemplate.value = data.cancel_admin_template
       || data.default_cancel_admin_template
       || ''
@@ -2591,6 +2709,9 @@ async function loadChatNotifySetting() {
       || ''
     chatNotifyPaidCustomerTemplate.value = data.paid_customer_template
       || data.default_paid_customer_template
+      || ''
+    chatNotifySlipAdminTemplate.value = data.slip_admin_template
+      || data.default_slip_admin_template
       || ''
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าแจ้งเตือนในแอปไม่สำเร็จ'
@@ -2619,6 +2740,7 @@ async function saveChatNotifySetting() {
       cancel_customer_enabled: chatNotifyCancelCustomerEnabled.value,
       paid_admin_enabled: chatNotifyPaidAdminEnabled.value,
       paid_customer_enabled: chatNotifyPaidCustomerEnabled.value,
+      slip_admin_enabled: chatNotifySlipAdminEnabled.value,
       new_booking_template: chatNotifyNewBookingTemplate.value,
       upcoming_admin_template: chatNotifyUpcomingAdminTemplate.value,
       upcoming_customer_template: chatNotifyUpcomingCustomerTemplate.value,
@@ -2626,6 +2748,7 @@ async function saveChatNotifySetting() {
       cancel_customer_template: chatNotifyCancelCustomerTemplate.value,
       paid_admin_template: chatNotifyPaidAdminTemplate.value,
       paid_customer_template: chatNotifyPaidCustomerTemplate.value,
+      slip_admin_template: chatNotifySlipAdminTemplate.value,
     })
     chatNotifyNewBookingEnabled.value = data.new_booking_enabled !== false
     chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
@@ -2635,6 +2758,7 @@ async function saveChatNotifySetting() {
     chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
     chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
     chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
+    chatNotifySlipAdminEnabled.value = data.slip_admin_enabled !== false
     chatNotifyNewBookingTemplate.value = data.new_booking_template || chatNotifyNewBookingTemplate.value
     chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template || chatNotifyUpcomingAdminTemplate.value
     chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template || chatNotifyUpcomingCustomerTemplate.value
@@ -2642,6 +2766,7 @@ async function saveChatNotifySetting() {
     chatNotifyCancelCustomerTemplate.value = data.cancel_customer_template || chatNotifyCancelCustomerTemplate.value
     chatNotifyPaidAdminTemplate.value = data.paid_admin_template || chatNotifyPaidAdminTemplate.value
     chatNotifyPaidCustomerTemplate.value = data.paid_customer_template || chatNotifyPaidCustomerTemplate.value
+    chatNotifySlipAdminTemplate.value = data.slip_admin_template || chatNotifySlipAdminTemplate.value
     message.value = 'บันทึกการแจ้งเตือนในแอปแล้ว'
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกแจ้งเตือนในแอปไม่สำเร็จ'
@@ -3117,16 +3242,19 @@ async function saveBookingEdit() {
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, {
+    const payload = {
       total,
       user_id: bookingEditUserId.value,
       booking_date: bookingEditDate.value,
       start_hour: slot.startHour,
       start_minute: slot.startMinute,
-      end_hour: slot.endHour,
-      end_minute: slot.endMinute,
       nailoption_ids: bookingEditSelectedIds.value,
-    })
+    }
+    if (!extendBookingByServices.value) {
+      payload.end_hour = slot.endHour
+      payload.end_minute = slot.endMinute
+    }
+    const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, payload)
     message.value = data?.message || 'บันทึกแล้ว'
     const movedDate = bookingEditDate.value
     closeBookingEdit()
@@ -4190,6 +4318,7 @@ async function shareShopLink() {
 
 onMounted(loadUiSettingsAdmin)
 onMounted(loadAllShops)
+onMounted(loadRenewalBannerSetting)
 onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
@@ -4212,10 +4341,14 @@ onMounted(() => {
   adminMobileMq.addEventListener('change', updateAdminMobileLayout)
   loadSetupWizardDismissed()
   window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
+  startBranchUsagePolling()
+  window.addEventListener('focus', onAdminWindowFocus)
 })
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
   window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
+  stopBranchUsagePolling()
+  window.removeEventListener('focus', onAdminWindowFocus)
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
 })
@@ -4232,6 +4365,13 @@ watch(shopSlug, () => {
   usersHasMore.value = false
   usersLoaded.value = false
   if (activeTab.value === 'users') loadUsers({ reset: true })
+  if (shopSlug.value !== 'default') {
+    void loadRenewalBannerSetting()
+    void refreshBranchUsage({ silent: true })
+    startBranchUsagePolling()
+  } else {
+    stopBranchUsagePolling()
+  }
 })
 
 watch(userSearch, () => {
@@ -4284,7 +4424,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     <div class="admin-tab-wrap">
     <nav class="admin-nav" aria-label="เมนูแอดมิน">
       <button
-        v-for="tab in adminTabs"
+        v-for="tab in visibleAdminTabs"
         :key="tab.key"
         type="button"
         class="admin-nav-item"
@@ -4301,13 +4441,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     <p v-if="message" class="alert success">{{ message }}</p>
     <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
     <p
-      v-if="currentBranchUsage?.usage_expired"
+      v-if="showBranchUsageExpiredBanner"
       class="alert error"
     >
       สาขานี้หมดระยะเวลาใช้งานแล้ว ({{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }}) — ลูกค้าไม่สามารถจองได้ กรุณาติดต่อแอดมินหลักเพื่อต่ออายุ
     </p>
     <p
-      v-else-if="currentBranchUsage?.usage_limit_days && currentBranchUsage.usage_days_remaining != null"
+      v-else-if="showBranchUsageWarningBanner"
       class="alert"
       :class="currentBranchUsage.usage_days_remaining <= 3 ? 'error' : 'success'"
     >
@@ -4405,6 +4545,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <span class="booking-cal-alert inline">!</span> มีคิวยังไม่ชำระ
           </span>
         </div>
+
+        <AdminBookingPaymentSlips
+          :active="activeTab === 'bookings' && !selectedBookingDate"
+          :is-super-admin="isSuperAdmin"
+          :shop-slug="shopSlug"
+          @changed="loadBookingCalendarSummary"
+        />
       </template>
 
       <template v-else>
@@ -4532,6 +4679,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </button>
         </div>
       </div>
+
+        <AdminBookingPaymentSlips
+          :active="activeTab === 'bookings' && !!selectedBookingDate"
+          :booking-date="selectedBookingDate || ''"
+          :is-super-admin="isSuperAdmin"
+          :shop-slug="shopSlug"
+          @changed="loadBookings"
+        />
       </template>
     </section>
 
@@ -5385,6 +5540,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           />
           แจ้งลูกค้าเมื่อชำระเงินแล้ว
         </label>
+        <label class="admin-checkbox admin-label-grow">
+          <input
+            v-model="chatNotifySlipAdminEnabled"
+            type="checkbox"
+            :disabled="settingToggleSaving === 'chat-notify:slip_admin_enabled'"
+            @change="saveChatNotifyToggle('slip_admin_enabled')"
+          />
+          แจ้งแอดมินเมื่อลูกค้าอัปโหลดสลิป
+          <span class="muted">(แชท + push บนมือถือ)</span>
+        </label>
       </div>
       <label class="admin-label-grow" style="display:block;margin-bottom:12px;max-width:240px">
         แจ้งเตือนก่อนถึงคิว (นาที)
@@ -5425,6 +5590,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <label style="grid-column:1/-1">
           ข้อความแจ้งลูกค้า — ชำระเงินแล้ว
           <textarea v-model="chatNotifyPaidCustomerTemplate" class="admin-input" rows="4" />
+        </label>
+        <label style="grid-column:1/-1">
+          ข้อความแจ้งแอดมิน — อัปโหลดสลิป
+          <textarea v-model="chatNotifySlipAdminTemplate" class="admin-input" rows="5" />
         </label>
       </div>
       <p class="muted" style="margin-top:8px">
@@ -5756,12 +5925,37 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <h4 class="ui-settings-group-title">{{ group.title }}</h4>
             <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
             <div class="admin-form-grid admin-option-grid">
-              <label
+              <template
                 v-for="field in group.fields"
-                v-show="shouldShowUiField(field)"
                 :key="field.key"
-                class="ui-field-label"
               >
+                <label
+                  v-if="field.type === 'toggle' && shouldShowUiField(field)"
+                  class="ui-field-label ui-field-toggle"
+                >
+                  <div class="ui-field-toggle-row">
+                    <span class="ui-field-toggle-label">{{ field.label }}</span>
+                    <label
+                      class="ui-slide-switch"
+                      :class="{ disabled: settingToggleSaving === `ui:${field.key}` }"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="isUiFormToggleOn(field.key)"
+                        :disabled="settingToggleSaving === `ui:${field.key}`"
+                        @change="onUiToggleChange(field, $event.target.checked)"
+                      />
+                      <span class="ui-slide-track" aria-hidden="true">
+                        <span class="ui-slide-thumb"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <p v-if="field.hint" class="muted ui-field-toggle-hint">{{ field.hint }}</p>
+                </label>
+                <label
+                  v-else-if="shouldShowUiField(field)"
+                  class="ui-field-label"
+                >
                 {{ field.label }}
                 <textarea
                   v-if="field.multiline"
@@ -5827,6 +6021,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   {{ uiImageFieldHint(field.key) }}
                 </p>
               </label>
+              </template>
             </div>
           </div>
 
@@ -6490,6 +6685,18 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </section>
 
     <AdminManualPanel v-show="activeTab === 'manual'" />
+
+    <AdminRenewalPanel
+      v-if="showRenewalTab"
+      v-show="activeTab === 'renewal'"
+      :is-super-admin="isSuperAdmin"
+      :shop-slug="shopSlug"
+      :active="activeTab === 'renewal'"
+      :branch-usage="currentBranchUsage"
+      :branch-shops="branchShopsForRenewal"
+      :format-usage-expiry-date="formatUsageExpiryDate"
+      @shops-changed="onRenewalShopsChanged"
+    />
 
     <!-- ── ผู้ใช้ ── -->
     <section v-show="activeTab === 'users'" class="card admin-section">
@@ -10020,6 +10227,80 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.ui-field-toggle {
+  grid-column: 1 / -1;
+}
+
+.ui-field-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ui-field-toggle-label {
+  font-weight: 500;
+}
+
+.ui-field-toggle-hint {
+  margin: 0;
+  font-size: var(--text-caption);
+}
+
+.ui-slide-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.ui-slide-switch.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ui-slide-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ui-slide-track {
+  display: block;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.2s ease;
+  position: relative;
+}
+
+.ui-slide-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.ui-slide-switch input:checked + .ui-slide-track {
+  background: var(--color-primary);
+}
+
+.ui-slide-switch input:checked + .ui-slide-track .ui-slide-thumb {
+  transform: translateX(18px);
+}
+
+.ui-slide-switch input:focus-visible + .ui-slide-track {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .ui-color-input {

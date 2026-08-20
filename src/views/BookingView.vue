@@ -12,18 +12,18 @@ import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import api from '../api/axios'
 import { colorForDate, dayTintStyle } from '../utils/nailOptionHelpers'
 import {
-  buildVisibleSlots,
-  buildDayWindowSlots,
+  buildVisibleBookingSlots,
+  canBookVisibleSlot,
+  shouldUseDynamicCustomDaySlots,
   buildDynamicTimelineSlots,
   isDynamicSlotAvailable,
-  canBookSlot,
-  canBookDayWindowSlot,
   getExtendedSlotBlockReason,
   computeEffectiveBookingSlot,
   slotTimeLabel as formatSlotTimeLabel,
   slotLabel,
   hourToSlot,
   slotKey,
+  findBookingForSlot,
   bookingRowToSlot,
   formatSlotDuration,
   sumOptionDurationMinutes,
@@ -433,38 +433,30 @@ function activeBookings() {
 }
 function bookingForSlot(slot) {
   const key = slotKey(slot)
-  return activeBookings().find(
+  const exact = activeBookings().find(
     (b) => slotKey(bookingRowToSlot(b, bookingStore.bookingSlotHours)) === key
   )
+  if (exact) return exact
+  return findBookingForSlot(slot, activeBookings(), bookingStore.bookingSlotHours)
 }
 
 function canBook(slot) {
-  if (bookingStore.extendBookingByServices) {
-    return isDynamicSlotAvailable(slot, dynamicSlotParams())
-  }
-  if (usesCustomDayHours.value) {
-    return canBookDayWindowSlot(slot, {
-      blocks: blockedSlots.value,
-      bookings: bookings.value,
-    })
-  }
-  return canBookSlot(slot.startHour, slotBuildParams.value)
+  return canBookVisibleSlot(slot, {
+    ...slotBuildParams.value,
+    dayWindows: dayHoursForDate.value,
+    blocks: blockedSlots.value,
+    bookings: bookings.value,
+    extendByServices: bookingStore.extendBookingByServices,
+  })
 }
 
-const visibleSlots = computed(() => {
-  const params = slotBuildParams.value
-  if (bookingStore.extendBookingByServices) {
-    return buildDynamicTimelineSlots(dynamicSlotParams()).all
-  }
-  if (usesCustomDayHours.value) {
-    return buildDayWindowSlots({
-      dayWindows: dayHoursForDate.value,
-      blocks: blockedSlots.value,
-    })
-  }
-  return buildVisibleSlots(params)
-    .map((h) => hourToSlot(h, params.slotHours))
-})
+const visibleSlots = computed(() => buildVisibleBookingSlots({
+  ...slotBuildParams.value,
+  dayWindows: dayHoursForDate.value,
+  blocks: blockedSlots.value,
+  bookings: bookings.value,
+  extendByServices: bookingStore.extendBookingByServices,
+}))
 function hasBookingOnDay(iso) {
   return (bookingStore.bookingsByDate[iso] || []).length > 0
 }
@@ -565,7 +557,11 @@ async function ensureSlotStillAvailable(slot, optionIds = []) {
     bookingStore.fetchDayHoursForDate(selectedDate.value),
   ])
 
-  if (bookingStore.extendBookingByServices) {
+  if (shouldUseDynamicCustomDaySlots({
+    dayWindows: dayHoursForDate.value,
+    extendByServices: bookingStore.extendBookingByServices,
+    bookings: bookings.value,
+  })) {
     const params = dynamicSlotParams()
     if (!isDynamicSlotAvailable(slot, params)) {
       serviceError.value = ui.get('ui_slot_taken_error', 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น')
@@ -595,6 +591,21 @@ async function ensureSlotStillAvailable(slot, optionIds = []) {
   if (!stillListed || !stillFree) {
     serviceError.value = ui.get('ui_slot_taken_error', 'เวลานี้เพิ่งถูกจองแล้ว กรุณาเลือกช่วงเวลาอื่น')
     return false
+  }
+
+  if (bookingStore.extendBookingByServices && optionIds.length) {
+    const extended = computeEffectiveBookingSlot(
+      slot,
+      nailOptions.value,
+      optionIds,
+      bookingStore.bookingSlotHours,
+      true,
+    )
+    const reason = extended && getExtendedSlotBlockReason(slot, extended, dynamicSlotParams())
+    if (reason) {
+      serviceError.value = resolveExtendBlockMessage(reason)
+      return false
+    }
   }
 
   return true
