@@ -549,6 +549,11 @@ const setupWizardDismissed = ref(false)
 const isMobile = ref(false)
 let adminMobileMq = null
 
+const uiFieldGroups = UI_FIELD_GROUPS
+const visibleUiFieldGroups = computed(() =>
+  uiFieldGroups.filter((group) => !group.requiresLinePush || linePushEnabled.value)
+)
+
 const activeSettingsSectionMeta = computed(
   () => visibleSettingsSections.value.find((s) => s.key === activeSettingsSection.value)
     || visibleSettingsSections.value[0]
@@ -556,7 +561,7 @@ const activeSettingsSectionMeta = computed(
 )
 
 const activeUiSectionMeta = computed(
-  () => uiFieldGroups[activeUiSection.value] || uiFieldGroups[0]
+  () => visibleUiFieldGroups.value[activeUiSection.value] || visibleUiFieldGroups.value[0] || uiFieldGroups[0]
 )
 
 const activeBlocksSectionMeta = computed(
@@ -667,6 +672,12 @@ function selectUiSection(index) {
   if (isMobile.value) uiNavOpen.value = false
 }
 
+watch(visibleUiFieldGroups, (groups) => {
+  if (activeUiSection.value >= groups.length) {
+    activeUiSection.value = 0
+  }
+})
+
 function selectBlocksSection(key) {
   activeBlocksSection.value = key
   if (key !== 'day-hours') closeDayHoursDate()
@@ -763,7 +774,6 @@ const uiForm = ref({})
 const uiImageUploading = ref('')
 const pendingUiUploadKind = ref('')
 const uiImageFileInput = ref(null)
-const uiFieldGroups = UI_FIELD_GROUPS
 const shopOpenHour = ref(9)
 const shopLastBookingHour = ref(18)
 const hourOptions = Array.from({ length: 24 }, (_, i) => i)
@@ -5683,7 +5693,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </div>
           <nav class="admin-drawer-nav-list" aria-label="หัวข้อ UI">
             <button
-              v-for="(group, idx) in uiFieldGroups"
+              v-for="(group, idx) in visibleUiFieldGroups"
               :key="group.title"
               type="button"
               class="admin-drawer-nav-item"
@@ -5691,7 +5701,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               :aria-current="activeUiSection === idx ? 'true' : undefined"
               @click="selectUiSection(idx)"
             >
-              <i class="ti ti-adjustments" aria-hidden="true"></i>
+              <i class="ti" :class="group.requiresLinePush ? 'ti-brand-line' : 'ti-adjustments'" aria-hidden="true"></i>
               <span>{{ group.title }}</span>
             </button>
           </nav>
@@ -5716,7 +5726,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <div class="admin-drawer-panel">
           <div
-            v-for="(group, idx) in uiFieldGroups"
+            v-for="(group, idx) in visibleUiFieldGroups"
             v-show="activeUiSection === idx"
             :key="group.title"
             class="ui-settings-group admin-settings-section"

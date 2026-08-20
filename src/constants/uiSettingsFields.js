@@ -81,11 +81,11 @@ export const UI_FIELD_GROUPS = [
     ],
   },
   {
-    title: 'ชำระเงิน & LINE',
-    hint: 'QR ชำระมัดจำ — ใส่ PromptPay เพื่อสร้าง QR อัตโนมัติ หรืออัปโหลดรูป QR จาก KShop (เลือกอย่างใดอย่างหนึ่ง) · ใช้ {bookingId} {date} {start} {end} {amount} {hours} ในข้อความ LINE ได้',
+    title: 'ชำระเงิน',
+    hint: 'QR ชำระมัดจำ — ใส่ PromptPay เพื่อสร้าง QR อัตโนมัติ หรืออัปโหลดรูป QR จาก KShop (เลือกอย่างใดอย่างหนึ่ง) · ลิงก์ LINE เปิดแชทใช้ส่งสลิปบนหน้าชำระเงิน',
     fields: [
       { key: 'ui_payment_page_title', label: 'หัวข้อหน้าชำระเงิน' },
-      { key: 'ui_line_chat_url', label: 'ลิงก์ LINE (เปิดแชท)' },
+      { key: 'ui_line_chat_url', label: 'ลิงก์ LINE (เปิดแชท — หน้าชำระเงิน)' },
       { key: 'ui_bank_name', label: 'ชื่อธนาคาร' },
       { key: 'ui_bank_account_name', label: 'ชื่อบัญชี' },
       { key: 'ui_bank_account_no', label: 'เลขบัญชี' },
@@ -98,13 +98,6 @@ export const UI_FIELD_GROUPS = [
         hideWhen: 'ui_promptpay_id',
       },
       { key: 'ui_thai_qr_label', label: 'ข้อความใต้ QR' },
-      { key: 'ui_line_button_label', label: 'ปุ่มส่งสลิป LINE' },
-      {
-        key: 'ui_line_message_template',
-        label: 'ข้อความ LINE (template)',
-        multiline: true,
-        rows: 5,
-      },
       { key: 'ui_payment_notice_off', label: 'แจ้งเตือนชำระ (ปิดตัวจับเวลา)', multiline: true, rows: 2 },
       {
         key: 'ui_payment_notice_timer',
@@ -119,6 +112,20 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_qr_generate_failed', label: 'สร้าง QR ไม่สำเร็จ' },
       { key: 'ui_copy_account_hint', label: 'คำใบ้คัดลอกเลขบัญชี' },
       { key: 'ui_copy_success', label: 'คัดลอกสำเร็จ' },
+    ],
+  },
+  {
+    title: 'LINE',
+    requiresLinePush: true,
+    hint: 'ข้อความปุ่มและ template ส่งสลิปทาง LINE · ใช้ {bookingId} {date} {start} {end} {amount}',
+    fields: [
+      { key: 'ui_line_button_label', label: 'ปุ่มส่งสลิป LINE' },
+      {
+        key: 'ui_line_message_template',
+        label: 'ข้อความ LINE (template)',
+        multiline: true,
+        rows: 5,
+      },
     ],
   },
   {
