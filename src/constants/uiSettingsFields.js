@@ -100,12 +100,23 @@ export const UI_FIELD_GROUPS = [
       {
         key: 'ui_shop_address_detail',
         label: 'รายละเอียดที่อยู่',
-        placeholder: 'ชั้น 3 อาคาร X ใกล้ BTS ...',
+        placeholder: 'ชั้น 3 อาคาร X ใกล้ BTS ... (ไม่บังคับ)',
         multiline: true,
         rows: 3,
+        optional: true,
       },
-      { key: 'ui_shop_location_nav_label', label: 'ชื่อปุ่มแถบล่าง', placeholder: 'ที่อยู่ร้าน' },
-      { key: 'ui_shop_location_page_title', label: 'หัวข้อหน้าที่อยู่', placeholder: 'ที่อยู่ร้าน' },
+      {
+        key: 'ui_shop_location_nav_label',
+        label: 'ชื่อปุ่มแถบล่าง',
+        placeholder: 'ที่อยู่ร้าน',
+        hideInRegister: true,
+      },
+      {
+        key: 'ui_shop_location_page_title',
+        label: 'หัวข้อหน้าที่อยู่',
+        placeholder: 'ที่อยู่ร้าน',
+        hideInRegister: true,
+      },
       {
         key: 'ui_shop_open_maps_btn',
         label: 'ปุ่มเปิด Maps สำรอง',
