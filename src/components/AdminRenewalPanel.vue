@@ -774,6 +774,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <div class="admin-renewal-root">
   <section class="card admin-section admin-renewal">
     <header class="admin-renewal-head">
       <div>
@@ -1312,6 +1313,7 @@ onUnmounted(() => {
       </div>
     </Transition>
   </Teleport>
+  </div>
 </template>
 
 <style scoped>

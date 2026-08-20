@@ -6684,14 +6684,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
     </section>
 
-    <AdminManualPanel v-show="activeTab === 'manual'" />
+    <AdminManualPanel v-if="activeTab === 'manual'" />
 
     <AdminRenewalPanel
-      v-if="showRenewalTab"
-      v-show="activeTab === 'renewal'"
+      v-if="showRenewalTab && activeTab === 'renewal'"
       :is-super-admin="isSuperAdmin"
       :shop-slug="shopSlug"
-      :active="activeTab === 'renewal'"
+      :active="true"
       :branch-usage="currentBranchUsage"
       :branch-shops="branchShopsForRenewal"
       :format-usage-expiry-date="formatUsageExpiryDate"
