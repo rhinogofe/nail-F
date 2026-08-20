@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import generatePayload from 'promptpay-qr'
 import Swal from 'sweetalert2'
@@ -56,6 +56,9 @@ const selectedMonths = ref(null)
 const selectedSpecialId = ref(null)
 const qrCodeImage = ref('')
 const qrError = ref('')
+const showQrModal = ref(false)
+const qrModalLoading = ref(false)
+const qrModalRef = ref(null)
 
 const slipPreview = ref('')
 const slipMime = ref('')
@@ -120,6 +123,24 @@ const selectedSummaryLabel = computed(() => {
   if (!selectedTier.value || !selectedMonths.value) return ''
   const tier = renewalTiers.find((item) => item.key === selectedTier.value)
   return `${tier?.label || selectedTier.value} · ${selectedMonths.value} เดือน`
+})
+
+const selectedDetailLines = computed(() => {
+  if (selectedSpecial.value) {
+    return [
+      `แพ็กเกจ: ${selectedSpecial.value.label}`,
+      `ระยะเวลา: ${selectedSpecial.value.months} เดือน`,
+      `LINE: ${specialLineLabel(selectedSpecial.value.includes_line_push)}`,
+    ]
+  }
+  if (!selectedTier.value || !selectedMonths.value) return []
+  const tier = renewalTiers.find((item) => item.key === selectedTier.value)
+  const rate = tierRate.value[selectedTier.value] || 0
+  return [
+    `แพ็ก: ${tier?.label || selectedTier.value}`,
+    `จำนวน: ${selectedMonths.value} เดือน`,
+    rate > 0 ? `อัตรา: ${rate.toLocaleString('th-TH')} บาท/เดือน` : null,
+  ].filter(Boolean)
 })
 
 const managerPackageChoices = computed(() => settings.value.special_packages || [])
@@ -277,6 +298,7 @@ function selectTier(tierKey) {
 function selectMonths(months) {
   clearSpecialSelection()
   selectedMonths.value = months
+  void openQrModal()
 }
 
 function selectSpecialPackage(packageId) {
@@ -284,6 +306,29 @@ function selectSpecialPackage(packageId) {
   if (!item) return
   clearStandardSelection()
   selectedSpecialId.value = packageId
+  void openQrModal()
+}
+
+function closeQrModal() {
+  showQrModal.value = false
+  qrModalLoading.value = false
+  document.body.style.overflow = ''
+}
+
+function onQrModalBackdropClick(event) {
+  if (event.target === event.currentTarget) closeQrModal()
+}
+
+function onQrModalKeydown(event) {
+  if (event.key === 'Escape') closeQrModal()
+}
+
+async function openQrModal() {
+  if (!hasRenewalSelection.value) return
+  showQrModal.value = true
+  qrModalLoading.value = true
+  await generateQr()
+  qrModalLoading.value = false
 }
 
 async function loadSettings({ silent = false } = {}) {
@@ -666,6 +711,16 @@ watch([selectedTier, selectedMonths, selectedSpecialId], () => {
   void generateQr()
 })
 
+watch(showQrModal, async (open) => {
+  if (!open) {
+    document.body.style.overflow = ''
+    return
+  }
+  document.body.style.overflow = 'hidden'
+  await nextTick()
+  qrModalRef.value?.focus()
+})
+
 const RENEWAL_POLL_MS = 30000
 let renewalPollTimer = null
 const loadedOnce = ref(false)
@@ -713,6 +768,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopRenewalPolling()
   window.removeEventListener('focus', onRenewalWindowFocus)
+  closeQrModal()
   revokeSlipUrls()
 })
 </script>
@@ -1013,18 +1069,10 @@ onUnmounted(() => {
         <div v-if="hasRenewalSelection" class="admin-renewal-qr-block">
           <h4>{{ selectedSummaryLabel }}</h4>
           <p class="admin-renewal-total">รวม {{ formatBaht(selectedPrice) }}</p>
-          <p v-if="settings.qr_instruction" class="muted">{{ settings.qr_instruction }}</p>
-          <p v-if="settings.promptpay_account_name" class="admin-renewal-promptpay-name">
-            ชื่อบัญชี PromptPay: {{ settings.promptpay_account_name }}
-          </p>
-          <p v-if="qrError" class="alert error">{{ qrError }}</p>
-          <img
-            v-else-if="qrCodeImage"
-            :src="qrCodeImage"
-            alt="QR PromptPay ต่ออายุ"
-            class="admin-renewal-qr-img"
-          />
-          <p v-else class="muted">กำลังสร้าง QR...</p>
+          <button type="button" class="btn primary" @click="openQrModal">
+            <i class="ti ti-qrcode" aria-hidden="true"></i>
+            แสดง QR ชำระเงิน
+          </button>
         </div>
 
         <div class="admin-renewal-slip-upload">
@@ -1198,6 +1246,72 @@ onUnmounted(() => {
       </div>
     </template>
   </section>
+
+  <Teleport to="body">
+    <Transition name="admin-renewal-qr-modal">
+      <div
+        v-if="showQrModal"
+        class="admin-renewal-qr-backdrop"
+        role="presentation"
+        @click="onQrModalBackdropClick"
+      >
+        <div
+          ref="qrModalRef"
+          class="admin-renewal-qr-modal card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-renewal-qr-title"
+          tabindex="-1"
+          @click.stop
+          @keydown="onQrModalKeydown"
+        >
+          <button
+            type="button"
+            class="admin-renewal-qr-close"
+            aria-label="ปิด"
+            @click="closeQrModal"
+          >
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
+
+          <h3 id="admin-renewal-qr-title" class="admin-renewal-qr-modal-title">ชำระเงินต่ออายุ</h3>
+          <p class="admin-renewal-qr-modal-subtitle">{{ selectedSummaryLabel }}</p>
+
+          <ul v-if="selectedDetailLines.length" class="admin-renewal-qr-details">
+            <li v-for="(line, index) in selectedDetailLines" :key="index">{{ line }}</li>
+          </ul>
+
+          <p class="admin-renewal-qr-modal-total">ยอดชำระ {{ formatBaht(selectedPrice) }}</p>
+
+          <p v-if="settings.qr_instruction" class="muted admin-renewal-qr-instruction">
+            {{ settings.qr_instruction }}
+          </p>
+          <p v-if="settings.promptpay_account_name" class="admin-renewal-promptpay-name">
+            ชื่อบัญชี PromptPay: {{ settings.promptpay_account_name }}
+          </p>
+
+          <div class="admin-renewal-qr-modal-body">
+            <p v-if="qrModalLoading" class="muted">กำลังสร้าง QR...</p>
+            <p v-else-if="qrError" class="alert error">{{ qrError }}</p>
+            <img
+              v-else-if="qrCodeImage"
+              :src="qrCodeImage"
+              alt="QR PromptPay ต่ออายุ"
+              class="admin-renewal-qr-img"
+            />
+          </div>
+
+          <p class="muted admin-renewal-qr-modal-foot">
+            สแกน QR แล้วอัปโหลดสลิปด้านล่างของหน้านี้
+          </p>
+
+          <button type="button" class="btn primary admin-renewal-qr-modal-btn" @click="closeQrModal">
+            ปิด
+          </button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1505,6 +1619,121 @@ onUnmounted(() => {
 .admin-renewal-qr-block {
   text-align: center;
   margin-bottom: 18px;
+}
+
+.admin-renewal-qr-block .btn {
+  margin-top: 8px;
+}
+
+.admin-renewal-qr-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-admin-modal, 2000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.admin-renewal-qr-modal {
+  position: relative;
+  width: min(100%, 420px);
+  max-height: min(92vh, 720px);
+  overflow-y: auto;
+  padding: 22px 20px 18px;
+  margin: 0;
+  text-align: center;
+}
+
+.admin-renewal-qr-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: var(--surface-2, #f5f0ee);
+  color: var(--color-text-primary, #2d2424);
+  cursor: pointer;
+}
+
+.admin-renewal-qr-modal-title {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+}
+
+.admin-renewal-qr-modal-subtitle {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.admin-renewal-qr-details {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2, #faf8f7);
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.admin-renewal-qr-details li + li {
+  margin-top: 4px;
+}
+
+.admin-renewal-qr-modal-total {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent, #c47b7b);
+}
+
+.admin-renewal-qr-instruction {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
+.admin-renewal-qr-modal-body {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px 0 10px;
+}
+
+.admin-renewal-qr-modal-foot {
+  margin: 0 0 14px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.admin-renewal-qr-modal-btn {
+  width: 100%;
+}
+
+.admin-renewal-qr-modal-enter-active,
+.admin-renewal-qr-modal-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.admin-renewal-qr-modal-enter-active .admin-renewal-qr-modal,
+.admin-renewal-qr-modal-leave-active .admin-renewal-qr-modal {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.admin-renewal-qr-modal-enter-from,
+.admin-renewal-qr-modal-leave-to {
+  opacity: 0;
+}
+
+.admin-renewal-qr-modal-enter-from .admin-renewal-qr-modal,
+.admin-renewal-qr-modal-leave-to .admin-renewal-qr-modal {
+  transform: translateY(12px) scale(0.98);
+  opacity: 0;
 }
 
 .admin-renewal-qr-img {
