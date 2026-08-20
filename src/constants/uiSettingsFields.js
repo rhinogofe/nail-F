@@ -77,7 +77,7 @@ export const UI_FORM_DEFAULTS = {
 export const UI_FIELD_GROUPS = [
   {
     title: 'แบรนด์ & รูปภาพ',
-    hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง · ใส่ลิงก์แผนที่ร้านเพื่อแสดงปุ่ม "ที่อยู่ร้าน" · ถ้าต้องการให้เห็นแผนที่ในแอป ให้ใส่ลิงก์ฝังแผนที่จาก Google Maps (แชร์ → ฝังแผนที่ / Embed a map)',
+    hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง · ชื่อแท็บเบราว์เซอร์ใช้ชื่อร้านจากขั้นต่อก่อน · ลิงก์แผนที่ไม่บังคับ (เพิ่มภายหลังในแอดมินได้)',
     fields: [
       { key: 'ui_brand_main', label: 'ชื่อแบรนด์ (ส่วนหลัก)', placeholder: 'Nail' },
       { key: 'ui_brand_accent', label: 'ชื่อแบรนด์ (ส่วนเน้น)', placeholder: 'Thuean' },
@@ -88,12 +88,14 @@ export const UI_FIELD_GROUPS = [
       {
         key: 'ui_shop_map_url',
         label: 'ลิงก์แผนที่ร้าน (เปิด Maps)',
-        placeholder: 'https://maps.google.com/...',
+        placeholder: 'https://maps.google.com/... (ไม่บังคับ)',
+        optional: true,
       },
       {
         key: 'ui_shop_map_embed_url',
         label: 'ลิงก์ / ฝังแผนที่ (แสดงในแอป)',
-        placeholder: 'จาก Google Maps → แชร์ → ฝังแผนที่ (Embed a map)',
+        placeholder: 'จาก Google Maps → แชร์ → ฝังแผนที่ (ไม่บังคับ)',
+        optional: true,
       },
       {
         key: 'ui_shop_address_detail',
@@ -104,52 +106,66 @@ export const UI_FIELD_GROUPS = [
       },
       { key: 'ui_shop_location_nav_label', label: 'ชื่อปุ่มแถบล่าง', placeholder: 'ที่อยู่ร้าน' },
       { key: 'ui_shop_location_page_title', label: 'หัวข้อหน้าที่อยู่', placeholder: 'ที่อยู่ร้าน' },
-      { key: 'ui_shop_open_maps_btn', label: 'ปุ่มเปิด Maps สำรอง', placeholder: 'เปิดใน Google Maps' },
+      {
+        key: 'ui_shop_open_maps_btn',
+        label: 'ปุ่มเปิด Maps สำรอง',
+        placeholder: 'เปิดใน Google Maps',
+        hideInRegister: true,
+      },
     ],
   },
   {
     title: 'ชำระเงิน',
-    hint: 'QR ชำระมัดจำ — ใส่ PromptPay เพื่อสร้าง QR อัตโนมัติ หรืออัปโหลดรูป QR จาก KShop (เลือกอย่างใดอย่างหนึ่ง) · ลิงก์ LINE เปิดแชทใช้ส่งสลิปบนหน้าชำระเงิน · สไลด์อัปโหลดสลิปบันทึกทันที',
+    hint: 'ลิงก์ LINE ใช้ส่งสลิปบนหน้าชำระเงิน · PromptPay หรือรูป QR KShop เลือกอย่างใดอย่างหนึ่ง (ไม่บังคับ)',
     fields: [
       {
         key: 'ui_payment_slip_upload_enabled',
         label: 'เปิดปุ่มอัปโหลดสลิปในหน้าชำระเงิน',
         type: 'toggle',
         hint: 'ปิดแล้วลูกค้ายังส่งสลิปทาง LINE ได้ตามเดิม',
+        hideInRegister: true,
       },
-      { key: 'ui_payment_page_title', label: 'หัวข้อหน้าชำระเงิน' },
+      { key: 'ui_payment_page_title', label: 'หัวข้อหน้าชำระเงิน', hideInRegister: true },
       { key: 'ui_line_chat_url', label: 'ลิงก์ LINE (เปิดแชท — หน้าชำระเงิน)' },
       { key: 'ui_bank_name', label: 'ชื่อธนาคาร' },
       { key: 'ui_bank_account_name', label: 'ชื่อบัญชี' },
       { key: 'ui_bank_account_no', label: 'เลขบัญชี' },
-      { key: 'ui_promptpay_id', label: 'PromptPay / เบอร์โทร', hideWhen: 'ui_kshop_qr_url' },
+      {
+        key: 'ui_promptpay_id',
+        label: 'PromptPay / เบอร์โทร',
+        hideWhen: 'ui_kshop_qr_url',
+        optional: true,
+      },
       {
         key: 'ui_kshop_qr_url',
         label: 'รูป QR KShop',
-        placeholder: 'อัปโหลดหรือวาง URL',
+        placeholder: 'อัปโหลดหรือวาง URL (ไม่บังคับ)',
         uploadKind: 'kshop_qr',
         hideWhen: 'ui_promptpay_id',
+        optional: true,
       },
-      { key: 'ui_thai_qr_label', label: 'ข้อความใต้ QR' },
-      { key: 'ui_payment_notice_off', label: 'แจ้งเตือนชำระ (ปิดตัวจับเวลา)', multiline: true, rows: 2 },
+      { key: 'ui_thai_qr_label', label: 'ข้อความใต้ QR', hideInRegister: true },
+      { key: 'ui_payment_notice_off', label: 'แจ้งเตือนชำระ (ปิดตัวจับเวลา)', multiline: true, rows: 2, hideInRegister: true },
       {
         key: 'ui_payment_notice_timer',
         label: 'แจ้งเตือนชำระ (มีตัวจับเวลา — ใช้ {hours})',
         multiline: true,
         rows: 2,
+        hideInRegister: true,
       },
-      { key: 'ui_payment_hint', label: 'คำแนะนำหลังส่งสลิป', multiline: true, rows: 2 },
-      { key: 'ui_payment_expired', label: 'คิวหมดเวลาชำระ' },
-      { key: 'ui_payment_not_awaiting', label: 'คิวไม่รอชำระแล้ว' },
-      { key: 'ui_qr_not_configured', label: 'ยังไม่ตั้ง PromptPay' },
-      { key: 'ui_qr_generate_failed', label: 'สร้าง QR ไม่สำเร็จ' },
-      { key: 'ui_copy_account_hint', label: 'คำใบ้คัดลอกเลขบัญชี' },
-      { key: 'ui_copy_success', label: 'คัดลอกสำเร็จ' },
+      { key: 'ui_payment_hint', label: 'คำแนะนำหลังส่งสลิป', multiline: true, rows: 2, hideInRegister: true },
+      { key: 'ui_payment_expired', label: 'คิวหมดเวลาชำระ', hideInRegister: true },
+      { key: 'ui_payment_not_awaiting', label: 'คิวไม่รอชำระแล้ว', hideInRegister: true },
+      { key: 'ui_qr_not_configured', label: 'ยังไม่ตั้ง PromptPay', hideInRegister: true },
+      { key: 'ui_qr_generate_failed', label: 'สร้าง QR ไม่สำเร็จ', hideInRegister: true },
+      { key: 'ui_copy_account_hint', label: 'คำใบ้คัดลอกเลขบัญชี', hideInRegister: true },
+      { key: 'ui_copy_success', label: 'คัดลอกสำเร็จ', hideInRegister: true },
     ],
   },
   {
     title: 'LINE',
     requiresLinePush: true,
+    skipInRegister: true,
     hint: 'ข้อความปุ่มและ template ส่งสลิปทาง LINE · ใช้ {bookingId} {date} {start} {end} {amount}',
     fields: [
       { key: 'ui_line_button_label', label: 'ปุ่มส่งสลิป LINE' },
@@ -163,6 +179,7 @@ export const UI_FIELD_GROUPS = [
   },
   {
     title: 'ข้อความจองคิว',
+    skipInRegister: true,
     fields: [
       { key: 'ui_booking_success_title', label: 'จองสำเร็จ — หัวข้อ' },
       { key: 'ui_booking_success_text', label: 'จองสำเร็จ — ข้อความ', multiline: true, rows: 2 },
@@ -194,6 +211,7 @@ export const UI_FIELD_GROUPS = [
   },
   {
     title: 'หน้าอื่นๆ',
+    skipInRegister: true,
     fields: [
       { key: 'ui_profile_title', label: 'หัวข้อหน้าบัญชี' },
       { key: 'ui_profile_subtitle', label: 'คำบรรยายหน้าบัญชี' },
@@ -207,12 +225,14 @@ export const UI_FIELD_GROUPS = [
   },
   {
     title: 'แอดมิน',
+    skipInRegister: true,
     fields: [
       { key: 'ui_admin_add_staff_btn', label: 'ปุ่มเพิ่มช่าง (หน้าแอดมิน > ผู้ใช้)', placeholder: 'เพิ่มช่าง' },
     ],
   },
   {
     title: 'สีธีม',
+    skipInRegister: true,
     hint: 'สีหลักของแอป (hex เช่น #C4847A)',
     fields: [
       { key: 'ui_color_primary', label: 'สีหลัก', type: 'color' },
@@ -221,3 +241,5 @@ export const UI_FIELD_GROUPS = [
     ],
   },
 ]
+
+export const REGISTER_UI_FIELD_GROUPS = UI_FIELD_GROUPS.filter((group) => !group.skipInRegister)

@@ -4,10 +4,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import api from '../api/axios'
-import { UI_FIELD_GROUPS, UI_FORM_DEFAULTS } from '../constants/uiSettingsFields'
+import { REGISTER_UI_FIELD_GROUPS, UI_FORM_DEFAULTS } from '../constants/uiSettingsFields'
 import { compressImage } from '../utils/compressChatImage'
 import { imageUrlHint } from '../utils/imageUrl'
-import defaultShopImage from '../assets/S__22888451.jpg'
+import {
+  formatHmLabel,
+  formatLastBookingOptionLabel,
+  MAX_SLOT_HOURS,
+  MIN_SLOT_HOURS,
+  normalizeBookingSlotHours,
+  normalizeShopLastBookingHour,
+  normalizeShopOpenHour,
+} from '../utils/bookingSlots'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,16 +38,34 @@ const pendingUiUploadKind = ref('')
 const uiImageFileInput = ref(null)
 const pendingLogoFile = ref(null)
 const pendingHeroFile = ref(null)
+const pendingKshopFile = ref(null)
+const registerServices = ref([])
+const serviceDraft = ref({
+  option_name: '',
+  description: '',
+  price: 0,
+  duration_min: 60,
+})
+const shopOpenHour = ref(9)
+const shopLastBookingHour = ref(18)
+const bookingSlotHours = ref(2)
+const advanceDays = ref(30)
 
-const uiFieldGroups = UI_FIELD_GROUPS
-const totalSteps = 3 + uiFieldGroups.length
+const uiFieldGroups = REGISTER_UI_FIELD_GROUPS
+const scheduleStep = 3 + uiFieldGroups.length + 1
+const serviceStep = scheduleStep + 1
+const totalSteps = serviceStep
+const openHourOptions = Array.from({ length: 20 }, (_, i) => i + 1)
+const slotHourOptions = Array.from(
+  { length: MAX_SLOT_HOURS - MIN_SLOT_HOURS + 1 },
+  (_, i) => i + MIN_SLOT_HOURS,
+)
 const loginSlug = computed(() => route.params.shopSlug || 'default')
 
 const groupIcons = {
   'แบรนด์ & รูปภาพ': 'ti-palette',
+  'ชำระเงิน': 'ti-credit-card',
   'ชำระเงิน & LINE': 'ti-credit-card',
-  'ข้อความจองคิว': 'ti-calendar-event',
-  'หน้าอื่นๆ': 'ti-layout-grid',
   'สีธีม': 'ti-color-swatch',
 }
 
@@ -50,12 +76,22 @@ const currentUiGroup = computed(() => {
   return uiFieldGroups[idx]
 })
 
-const isLastStep = computed(() => step.value === totalSteps)
+const isScheduleStep = computed(() => step.value === scheduleStep)
+const isServiceStep = computed(() => step.value === serviceStep)
+const isLastStep = computed(() => isServiceStep.value)
+
+const lastBookingHourOptions = computed(() => {
+  const open = normalizeShopOpenHour(shopOpenHour.value)
+  const slot = normalizeBookingSlotHours(bookingSlotHours.value)
+  return Array.from({ length: 23 }, (_, i) => i).filter((h) => h >= open + slot && h <= 22)
+})
 
 const stepTitle = computed(() => {
   if (step.value === 1) return 'รหัสสร้างร้าน'
   if (step.value === 2) return 'บัญชีเจ้าของ'
   if (step.value === 3) return 'ข้อมูลร้าน'
+  if (isServiceStep.value) return 'เพิ่มบริการ'
+  if (isScheduleStep.value) return 'เวลา & การจอง'
   return currentUiGroup.value?.title || 'ตั้งค่า UI'
 })
 
@@ -121,13 +157,116 @@ function validateStepShop() {
   return true
 }
 
+function uiFieldHasValue(key) {
+  const val = String(uiForm.value[key] ?? '').trim()
+  if (val === 'pending-upload') return true
+  return val !== ''
+}
+
+function shouldShowRegisterField(field) {
+  if (field.hideInRegister) return false
+  if (!field.hideWhen) return true
+  return !uiFieldHasValue(field.hideWhen)
+}
+
+function registerGroupFields(group) {
+  if (!group) return []
+  return group.fields.filter((field) => shouldShowRegisterField(field))
+}
+
+function validateServiceStep() {
+  if (registerServices.value.length >= 1) return true
+  errorMessage.value = 'กรุณาเพิ่มบริการอย่างน้อย 1 รายการ'
+  return false
+}
+
+function resetServiceDraft() {
+  serviceDraft.value = {
+    option_name: '',
+    description: '',
+    price: 0,
+    duration_min: 60,
+  }
+}
+
+function addRegisterService() {
+  const name = String(serviceDraft.value.option_name || '').trim()
+  if (!name) {
+    errorMessage.value = 'กรุณากรอกชื่อบริการ'
+    return
+  }
+
+  const price = Number(serviceDraft.value.price)
+  const durationMin = Number(serviceDraft.value.duration_min)
+  if (!Number.isFinite(price) || price < 0) {
+    errorMessage.value = 'ราคาไม่ถูกต้อง'
+    return
+  }
+  if (!Number.isFinite(durationMin) || durationMin < 0) {
+    errorMessage.value = 'ระยะเวลา (นาที) ต้องไม่ติดลบ'
+    return
+  }
+
+  registerServices.value.push({
+    option_name: name,
+    description: String(serviceDraft.value.description || '').trim() || null,
+    price,
+    duration_min: durationMin,
+    is_active: true,
+    is_required: false,
+  })
+  resetServiceDraft()
+  errorMessage.value = ''
+}
+
+function removeRegisterService(index) {
+  registerServices.value.splice(index, 1)
+}
+
+function formatServicePrice(value) {
+  return Number(value || 0).toLocaleString('th-TH')
+}
+
+async function createRegisterServices() {
+  for (const service of registerServices.value) {
+    await api.post('/api/admin/nailoptions', service)
+  }
+}
+
+function validateScheduleStep() {
+  shopOpenHour.value = normalizeShopOpenHour(shopOpenHour.value)
+  bookingSlotHours.value = normalizeBookingSlotHours(bookingSlotHours.value)
+  shopLastBookingHour.value = normalizeShopLastBookingHour(
+    shopLastBookingHour.value,
+    shopOpenHour.value,
+    bookingSlotHours.value,
+  )
+
+  if (!Number.isInteger(advanceDays.value) || advanceDays.value < 1 || advanceDays.value > 365) {
+    errorMessage.value = 'จำนวนวันจองล่วงหน้าต้องอยู่ระหว่าง 1-365'
+    return false
+  }
+  return true
+}
+
+async function saveRegisterScheduleSettings() {
+  await api.patch('/api/admin/settings/booking-slot-hours', { slot_hours: bookingSlotHours.value })
+  await api.patch('/api/admin/settings/shop-hours', {
+    open_hour: shopOpenHour.value,
+    last_booking_hour: shopLastBookingHour.value,
+  })
+  await api.patch('/api/admin/settings/advance-days', { advance_days: advanceDays.value })
+}
+
 function validateUiGroup(group) {
   if (!group) return true
-  for (const field of group.fields) {
+  for (const field of registerGroupFields(group)) {
+    if (field.optional) continue
     const val = String(uiForm.value[field.key] ?? '').trim()
     const hasPendingUpload =
       (field.uploadKind === 'logo' && pendingLogoFile.value)
       || (field.uploadKind === 'hero' && pendingHeroFile.value)
+      || (field.uploadKind === 'kshop_qr' && pendingKshopFile.value)
     if (!val && !hasPendingUpload) {
       errorMessage.value = `กรุณากรอก "${field.label}" ให้ครบ`
       return false
@@ -208,18 +347,30 @@ async function goNext() {
 
   if (step.value === 3) {
     if (!validateStepShop()) return
+    if (!uiForm.value.ui_page_title?.trim()) {
+      uiForm.value.ui_page_title = shopName.value.trim()
+    }
     step.value = 4
     return
   }
 
-  if (!validateUiGroup(currentUiGroup.value)) return
-
-  if (isLastStep.value) {
+  if (isServiceStep.value) {
+    if (!validateServiceStep()) return
     await submitRegister()
     return
   }
 
-  step.value += 1
+  if (isScheduleStep.value) {
+    if (!validateScheduleStep()) return
+    step.value += 1
+    return
+  }
+
+  if (currentUiGroup.value) {
+    if (!validateUiGroup(currentUiGroup.value)) return
+    step.value += 1
+    return
+  }
 }
 
 function triggerUiImageUpload(kind) {
@@ -239,11 +390,14 @@ async function onUiImageSelected(event) {
   uiImageUploading.value = kind
   errorMessage.value = ''
   try {
-    const maxWidth = kind === 'logo' ? 800 : 1920
+    const maxWidth = kind === 'logo' ? 800 : kind === 'kshop_qr' ? 1200 : 1920
     const { base64, mime } = await compressImage(file, { maxWidth, quality: 0.85 })
     if (kind === 'logo') {
       pendingLogoFile.value = { base64, mime }
       uiForm.value.ui_logo_url = 'pending-upload'
+    } else if (kind === 'kshop_qr') {
+      pendingKshopFile.value = { base64, mime }
+      uiForm.value.ui_kshop_qr_url = 'pending-upload'
     } else {
       pendingHeroFile.value = { base64, mime }
       uiForm.value.ui_hero_image_url = 'pending-upload'
@@ -259,8 +413,12 @@ async function uploadPendingImages(targetSlug) {
   const prevSlug = localStorage.getItem('shopSlug')
   localStorage.setItem('shopSlug', targetSlug)
   try {
-    for (const kind of ['logo', 'hero']) {
-      const pending = kind === 'logo' ? pendingLogoFile.value : pendingHeroFile.value
+    for (const kind of ['logo', 'hero', 'kshop_qr']) {
+      const pending = kind === 'logo'
+        ? pendingLogoFile.value
+        : kind === 'hero'
+          ? pendingHeroFile.value
+          : pendingKshopFile.value
       if (!pending) continue
       const { data } = await api.post('/api/admin/settings/ui/upload', {
         kind,
@@ -278,7 +436,7 @@ async function uploadPendingImages(targetSlug) {
 }
 
 async function submitRegister() {
-  if (!validateStepShop() || !validateAllUi()) return
+  if (!validateStepShop() || !validateAllUi() || !validateScheduleStep()) return
   if (!pinVerified.value || !/^\d{4}$/.test(registerPin.value)) {
     errorMessage.value = 'กรุณายืนยันรหัสสร้างร้านใหม่'
     step.value = 1
@@ -290,11 +448,10 @@ async function submitRegister() {
     const payloadUi = { ...uiForm.value }
     if (payloadUi.ui_logo_url === 'pending-upload') payloadUi.ui_logo_url = ''
     if (payloadUi.ui_hero_image_url === 'pending-upload') payloadUi.ui_hero_image_url = ''
+    if (payloadUi.ui_kshop_qr_url === 'pending-upload') payloadUi.ui_kshop_qr_url = ''
 
     if (!payloadUi.ui_page_title?.trim()) {
-      const main = payloadUi.ui_brand_main?.trim() || shopName.value.trim()
-      const accent = payloadUi.ui_brand_accent?.trim()
-      payloadUi.ui_page_title = accent ? `${main}${accent}` : main
+      payloadUi.ui_page_title = shopName.value.trim() || payloadUi.ui_brand_main?.trim() || 'Nail Thuean'
     }
 
     const { data } = await api.post('/api/auth/register-shop', {
@@ -310,8 +467,14 @@ async function submitRegister() {
     localStorage.setItem('shopSlug', data.shop.slug)
     await shopStore.loadShop(data.shop.slug).catch(() => null)
 
-    if (pendingLogoFile.value || pendingHeroFile.value) {
+    if (pendingLogoFile.value || pendingHeroFile.value || pendingKshopFile.value) {
       await uploadPendingImages(data.shop.slug)
+    }
+
+    await saveRegisterScheduleSettings()
+
+    if (registerServices.value.length) {
+      await createRegisterServices()
     }
 
     router.replace(`/${data.shop.slug}/admin`)
@@ -335,6 +498,17 @@ function goBack() {
   }
   router.push(loginPath())
 }
+
+watch([shopOpenHour, bookingSlotHours], () => {
+  const open = normalizeShopOpenHour(shopOpenHour.value)
+  const slot = normalizeBookingSlotHours(bookingSlotHours.value)
+  const minLast = open + slot
+  if (shopLastBookingHour.value < minLast) {
+    shopLastBookingHour.value = minLast
+  } else if (shopLastBookingHour.value > 22) {
+    shopLastBookingHour.value = 22
+  }
+})
 
 watch(pageTitle, (title) => {
   document.title = title
@@ -498,7 +672,7 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Steps 4–8: UI groups -->
+        <!-- Steps 4–5: UI groups -->
         <div v-else-if="currentUiGroup" class="register-panel">
           <div class="register-panel-head register-panel-head--group">
             <span class="register-group-icon">
@@ -511,7 +685,7 @@ onUnmounted(() => {
           </div>
 
           <div class="register-ui-fields">
-            <label v-for="field in currentUiGroup.fields" :key="field.key" class="register-ui-field">
+            <label v-for="field in registerGroupFields(currentUiGroup)" :key="field.key" class="register-ui-field">
               <span class="register-ui-label">{{ field.label }}</span>
 
               <div v-if="field.uploadKind" class="register-upload-row">
@@ -561,7 +735,7 @@ onUnmounted(() => {
                 เลือกรูปแล้ว — จะอัปโหลดเมื่อสมัครร้าน
               </p>
               <p
-                v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url') && imageUrlHint(uiForm[field.key])"
+                v-if="(field.key === 'ui_logo_url' || field.key === 'ui_hero_image_url' || field.key === 'ui_kshop_qr_url') && imageUrlHint(uiForm[field.key])"
                 class="register-url-warn"
               >
                 {{ imageUrlHint(uiForm[field.key]) }}
@@ -578,14 +752,169 @@ onUnmounted(() => {
           />
 
           <button type="button" class="btn primary register-cta" :disabled="submitting" @click="goNext">
-            <template v-if="isLastStep">
-              {{ submitting ? 'กำลังสร้างร้าน...' : 'สมัครร้านและเข้าแอดมิน' }}
-              <i v-if="!submitting" class="ti ti-sparkles" aria-hidden="true"></i>
-            </template>
-            <template v-else>
-              ถัดไป
-              <i class="ti ti-arrow-right" aria-hidden="true"></i>
-            </template>
+            ถัดไป
+            <i class="ti ti-arrow-right" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Step 6: Schedule -->
+        <div v-else-if="isScheduleStep" class="register-panel">
+          <div class="register-panel-head register-panel-head--group">
+            <span class="register-group-icon">
+              <i class="ti ti-clock" aria-hidden="true"></i>
+            </span>
+            <div>
+              <h2>เวลา & การจอง</h2>
+              <p class="muted">ตั้งเวลาเปิด-ปิดร้าน ความยาวคิว และระยะเวลาที่ลูกค้าจองล่วงหน้าได้</p>
+            </div>
+          </div>
+
+          <div class="register-meta-card register-schedule-form">
+            <label class="register-meta-field">
+              <span>เวลาเปิดร้าน</span>
+              <select v-model.number="shopOpenHour" class="input">
+                <option v-for="h in openHourOptions" :key="`open-${h}`" :value="h">
+                  {{ formatHmLabel(h, 0) }}
+                </option>
+              </select>
+            </label>
+            <label class="register-meta-field">
+              <span>จองสุดท้ายได้ถึง</span>
+              <select v-model.number="shopLastBookingHour" class="input">
+                <option v-for="h in lastBookingHourOptions" :key="`last-${h}`" :value="h">
+                  {{ formatLastBookingOptionLabel(h, bookingSlotHours) }}
+                </option>
+              </select>
+            </label>
+            <label class="register-meta-field">
+              <span>ความยาวคิว (ชม.)</span>
+              <select v-model.number="bookingSlotHours" class="input">
+                <option v-for="h in slotHourOptions" :key="`slot-${h}`" :value="h">
+                  {{ h }} ชั่วโมง
+                </option>
+              </select>
+            </label>
+            <label class="register-meta-field">
+              <span>จองล่วงหน้าได้ (วัน)</span>
+              <input
+                v-model.number="advanceDays"
+                type="number"
+                min="1"
+                max="365"
+                step="1"
+                class="input"
+              />
+            </label>
+          </div>
+
+          <div class="register-schedule-preview">
+            <i class="ti ti-clock" aria-hidden="true"></i>
+            <span>
+              ลูกค้าจองได้
+              <strong>{{ formatHmLabel(shopOpenHour, 0) }} – {{ formatHmLabel(shopLastBookingHour, 0) }}</strong>
+              (ปิดรับ {{ formatHmLabel(shopLastBookingHour + bookingSlotHours, 0) }})
+              · คิวละ {{ bookingSlotHours }} ชม.
+              · ล่วงหน้า {{ advanceDays }} วัน
+            </span>
+          </div>
+
+          <button type="button" class="btn primary register-cta" :disabled="submitting" @click="goNext">
+            ถัดไป
+            <i class="ti ti-arrow-right" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Step 7: Services -->
+        <div v-else-if="isServiceStep" class="register-panel">
+          <div class="register-panel-head register-panel-head--group">
+            <span class="register-group-icon">
+              <i class="ti ti-list-check" aria-hidden="true"></i>
+            </span>
+            <div>
+              <h2>เพิ่มบริการ</h2>
+              <p class="muted">เพิ่มอย่างน้อย 1 บริการที่ลูกค้าจะเลือกจองได้</p>
+            </div>
+          </div>
+
+          <div v-if="registerServices.length" class="register-service-list">
+            <div
+              v-for="(item, index) in registerServices"
+              :key="`${item.option_name}-${index}`"
+              class="register-service-item"
+            >
+              <div>
+                <strong>{{ item.option_name }}</strong>
+                <p class="register-service-meta muted">
+                  {{ formatServicePrice(item.price) }} บาท
+                  <template v-if="Number(item.duration_min) > 0"> · {{ item.duration_min }} นาที</template>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="register-service-remove"
+                aria-label="ลบบริการ"
+                @click="removeRegisterService(index)"
+              >
+                <i class="ti ti-trash" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="register-meta-card register-service-form">
+            <label class="register-meta-field">
+              <span>ชื่อบริการ *</span>
+              <input
+                v-model="serviceDraft.option_name"
+                type="text"
+                class="input"
+                placeholder="เช่น ทาสีเจลมือ"
+              />
+            </label>
+            <label class="register-meta-field">
+              <span>รายละเอียด</span>
+              <input
+                v-model="serviceDraft.description"
+                type="text"
+                class="input"
+                placeholder="คำอธิบายสั้นๆ (ไม่บังคับ)"
+              />
+            </label>
+            <div class="register-service-row">
+              <label class="register-meta-field">
+                <span>ราคา (บาท)</span>
+                <input
+                  v-model.number="serviceDraft.price"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="input"
+                />
+              </label>
+              <label class="register-meta-field">
+                <span>ระยะเวลา (นาที)</span>
+                <input
+                  v-model.number="serviceDraft.duration_min"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="input"
+                />
+              </label>
+            </div>
+            <button type="button" class="btn register-add-service-btn" @click="addRegisterService">
+              <i class="ti ti-plus" aria-hidden="true"></i>
+              เพิ่มบริการ
+            </button>
+          </div>
+
+          <p class="register-note">
+            <i class="ti ti-info-circle" aria-hidden="true"></i>
+            บริการจะแสดงให้ลูกค้าเลือกจองทุกวัน · แก้ไขเพิ่มเติมได้ในแอดมินภายหลัง
+          </p>
+
+          <button type="button" class="btn primary register-cta" :disabled="submitting" @click="goNext">
+            {{ submitting ? 'กำลังสร้างร้าน...' : 'สมัครร้านและเข้าแอดมิน' }}
+            <i v-if="!submitting" class="ti ti-sparkles" aria-hidden="true"></i>
           </button>
         </div>
       </div>
@@ -1021,6 +1350,91 @@ onUnmounted(() => {
 
 .ui-image-file-input {
   display: none;
+}
+
+.register-service-list {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.register-service-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+}
+
+.register-service-item strong {
+  display: block;
+  font-size: 14px;
+}
+
+.register-service-meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.register-service-remove {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-danger, #c0392b) 10%, transparent);
+  color: var(--color-danger, #c0392b);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.register-service-form {
+  margin-bottom: var(--space-3);
+}
+
+.register-service-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.register-add-service-btn {
+  width: 100%;
+  justify-content: center;
+  gap: 6px;
+}
+
+.register-schedule-form {
+  margin-bottom: var(--space-3);
+}
+
+.register-schedule-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-primary-light) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 16%, var(--color-border));
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.register-schedule-preview i {
+  color: var(--color-primary);
+  font-size: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.register-schedule-preview strong {
+  color: var(--color-text-primary);
 }
 
 @media (min-width: 480px) {
