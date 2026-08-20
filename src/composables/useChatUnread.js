@@ -6,13 +6,14 @@ import {
   FCM_PUSH_RECEIVED_EVENT,
   PUSH_DEVICE_STATUS_EVENT,
   getStoredFcmToken,
+  isPushOptInSaved,
 } from '../utils/pushNotifications'
 
 const POLL_MS = 30000
 const POLL_MS_PUSH = 90000
 
 function getPollIntervalMs() {
-  return getStoredFcmToken() ? POLL_MS_PUSH : POLL_MS
+  return isPushOptInSaved() && getStoredFcmToken() ? POLL_MS_PUSH : POLL_MS
 }
 
 export function useChatUnread() {

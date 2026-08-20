@@ -3,6 +3,7 @@ import { getFirebaseVapidKey, getFirebaseWebConfig, isFirebaseConfigured } from 
 
 const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'fcmToken'
+const PUSH_OPT_IN_KEY = 'fcmOptIn'
 export const PUSH_DEVICE_STATUS_EVENT = 'push-device-status-changed'
 export const FCM_PUSH_RECEIVED_EVENT = 'fcm-push-received'
 
@@ -87,6 +88,7 @@ export async function detectPushSupport() {
 }
 
 export async function fetchPushStatus() {
+  migrateLegacyPushOptIn()
   const support = await detectPushSupport()
   if (!support.supported) {
     return { configured: isFirebaseConfigured(), enabled: false, ...support }
@@ -102,7 +104,14 @@ export async function fetchPushStatus() {
     const { data } = await api.get('/api/push/status', {
       params: localToken ? { token: localToken } : {},
     })
-    const deviceEnabled = Boolean(localToken) && Boolean(data?.enabled)
+    const optedIn = isPushOptInSaved()
+    const deviceEnabled = optedIn
+      && Notification.permission === 'granted'
+      && Boolean(localToken)
+      && Boolean(data?.enabled)
+    if (optedIn && Notification.permission === 'granted' && localToken && !data?.enabled) {
+      void repairPushRegistration({ force: true })
+    }
     return {
       configured: Boolean(data?.configured),
       enabled: deviceEnabled,
@@ -134,8 +143,26 @@ export function getStoredFcmToken() {
   return localStorage.getItem(TOKEN_STORAGE_KEY) || ''
 }
 
+export function isPushOptInSaved() {
+  return localStorage.getItem(PUSH_OPT_IN_KEY) === '1'
+}
+
+function setPushOptIn(enabled) {
+  if (enabled) {
+    localStorage.setItem(PUSH_OPT_IN_KEY, '1')
+  } else {
+    localStorage.removeItem(PUSH_OPT_IN_KEY)
+  }
+}
+
+function migrateLegacyPushOptIn() {
+  if (!localStorage.getItem(PUSH_OPT_IN_KEY) && getStoredFcmToken()) {
+    setPushOptIn(true)
+  }
+}
+
 export function isPushEnabledOnDevice() {
-  return Boolean(getStoredFcmToken())
+  return isPushOptInSaved() && Notification.permission === 'granted'
 }
 
 function buildNotificationTag(payload) {
@@ -150,48 +177,79 @@ async function syncTokenWithBackend(token, enabled) {
   await api.post('/api/push/token', { token, enabled })
 }
 
+async function verifyTokenOnBackend(token) {
+  if (!token) return false
+  try {
+    const { data } = await api.get('/api/push/status', { params: { token } })
+    return Boolean(data?.enabled)
+  } catch {
+    return false
+  }
+}
+
+async function obtainFreshFcmToken() {
+  await waitForServiceWorkerRegistration()
+  const messaging = await getMessagingInstance()
+  if (!messaging) return null
+
+  const { getToken } = await loadFirebaseMessagingModule()
+  return getToken(messaging, { vapidKey: getFirebaseVapidKey() })
+}
+
 // FCM rotates tokens (SW update, long idle, browser upgrade) and the backend
 // hard-deletes tokens FCM reports as unregistered. Without a re-sync the device
 // stays silent until the user toggles push off/on, so re-register on every
 // app start and whenever the app comes back to the foreground.
 const RESYNC_THROTTLE_MS = 15 * 60 * 1000
+const PWA_RESYNC_THROTTLE_MS = 60 * 1000
 let lastResyncAt = 0
 let resyncInFlight = null
 let autoSyncAttached = false
 
-export async function resyncPushToken({ force = false } = {}) {
-  if (!canUseBrowserPush()) return null
+function shouldForceResync() {
+  return isStandalonePwa()
+}
 
-  const stored = getStoredFcmToken()
-  if (!stored) return null
+function getResyncThrottleMs() {
+  return shouldForceResync() ? PWA_RESYNC_THROTTLE_MS : RESYNC_THROTTLE_MS
+}
+
+export async function repairPushRegistration({ force = false } = {}) {
+  migrateLegacyPushOptIn()
+  if (!canUseBrowserPush() || !isPushOptInSaved()) return null
 
   if (Notification.permission !== 'granted') {
     localStorage.removeItem(TOKEN_STORAGE_KEY)
-    stopPushNotificationListener()
     notifyPushDeviceStatusChanged()
     return null
   }
 
   const now = Date.now()
-  if (!force && now - lastResyncAt < RESYNC_THROTTLE_MS) return stored
+  if (!force && now - lastResyncAt < getResyncThrottleMs()) {
+    return getStoredFcmToken() || null
+  }
   if (resyncInFlight) return resyncInFlight
 
   resyncInFlight = (async () => {
     try {
-      await waitForServiceWorkerRegistration()
-      const messaging = await getMessagingInstance()
-      if (!messaging) return null
-
-      const { getToken } = await loadFirebaseMessagingModule()
-      const token = await getToken(messaging, { vapidKey: getFirebaseVapidKey() })
+      const token = await obtainFreshFcmToken()
       if (!token) return null
 
       if (token !== getStoredFcmToken()) {
         localStorage.setItem(TOKEN_STORAGE_KEY, token)
         notifyPushDeviceStatusChanged()
       }
+
       await syncTokenWithBackend(token, true)
+
+      const ok = await verifyTokenOnBackend(token)
+      if (!ok) {
+        await syncTokenWithBackend(token, true)
+      }
+
       lastResyncAt = Date.now()
+      await startPushNotificationListener()
+      attachPushTokenAutoSync()
       return token
     } catch {
       return null
@@ -203,16 +261,35 @@ export async function resyncPushToken({ force = false } = {}) {
   return resyncInFlight
 }
 
+export async function resyncPushToken({ force = false } = {}) {
+  if (!isPushOptInSaved()) return null
+  return repairPushRegistration({ force: force || shouldForceResync() })
+}
+
 function attachPushTokenAutoSync() {
   if (autoSyncAttached || typeof window === 'undefined') return
   autoSyncAttached = true
 
   const onResume = () => {
     if (document.visibilityState !== 'visible') return
-    void resyncPushToken()
+    void repairPushRegistration({ force: shouldForceResync() })
   }
+
+  const onPageShow = (event) => {
+    if (event.persisted || shouldForceResync()) {
+      void repairPushRegistration({ force: true })
+    }
+  }
+
   document.addEventListener('visibilitychange', onResume)
   window.addEventListener('focus', onResume)
+  window.addEventListener('pageshow', onPageShow)
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      void repairPushRegistration({ force: true })
+    })
+  }
 }
 
 export async function enableBrowserPush() {
@@ -239,6 +316,7 @@ export async function enableBrowserPush() {
   }
 
   localStorage.setItem(TOKEN_STORAGE_KEY, token)
+  setPushOptIn(true)
   await syncTokenWithBackend(token, true)
   lastResyncAt = Date.now()
   notifyPushDeviceStatusChanged()
@@ -252,6 +330,7 @@ export async function disableBrowserPush() {
   stopPushNotificationListener()
   lastResyncAt = 0
   localStorage.removeItem(TOKEN_STORAGE_KEY)
+  setPushOptIn(false)
   notifyPushDeviceStatusChanged()
   try {
     await api.post('/api/push/disable', token ? { token } : {})
@@ -343,23 +422,18 @@ export async function startPushNotificationListener() {
 
 export async function ensurePushTokenRegistered() {
   if (!canUseBrowserPush()) return null
+  if (!isPushOptInSaved()) return null
   if (Notification.permission !== 'granted') {
-    if (getStoredFcmToken()) {
-      localStorage.removeItem(TOKEN_STORAGE_KEY)
-      notifyPushDeviceStatusChanged()
-    }
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    notifyPushDeviceStatusChanged()
     return null
   }
-  if (!getStoredFcmToken()) return null
 
-  await resyncPushToken({ force: true })
-  await startPushNotificationListener()
-  attachPushTokenAutoSync()
-  return getStoredFcmToken()
+  return repairPushRegistration({ force: true })
 }
 
 export function initPushNotificationsWhenReady() {
-  if (!canUseBrowserPush() || !getStoredFcmToken()) {
+  if (!canUseBrowserPush() || !isPushOptInSaved()) {
     return Promise.resolve(null)
   }
 
