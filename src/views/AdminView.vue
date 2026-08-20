@@ -8,6 +8,7 @@ import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
+import AdminManualPanel from '../components/AdminManualPanel.vue'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
 import { isFirebaseConfigured } from '../utils/firebaseConfig'
@@ -499,6 +500,7 @@ const adminTabs = [
   { key: 'ui', label: 'UI', icon: 'ti-palette' },
   { key: 'blocks', label: 'เวลา', icon: 'ti-calendar-off' },
   { key: 'reviews', label: 'รีวิว', icon: 'ti-star' },
+  { key: 'manual', label: 'คู่มือ', icon: 'ti-book-2' },
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
 ]
 
@@ -6475,6 +6477,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
       </div>
     </section>
+
+    <AdminManualPanel v-show="activeTab === 'manual'" />
 
     <!-- ── ผู้ใช้ ── -->
     <section v-show="activeTab === 'users'" class="card admin-section">
