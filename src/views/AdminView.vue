@@ -545,7 +545,7 @@ const blocksSectionById = {
 }
 const activeBlocksSection = ref('shop-hours')
 const blocksNavOpen = ref(false)
-const bookingMenuId = ref(null)
+const bookingActionItem = ref(null)
 const setupWizardDismissed = ref(false)
 const isMobile = ref(false)
 let adminMobileMq = null
@@ -603,12 +603,13 @@ function toggleBlocksNav() {
   blocksNavOpen.value = !blocksNavOpen.value
 }
 
-function toggleBookingMenu(id) {
-  bookingMenuId.value = bookingMenuId.value === id ? null : id
+function openBookingActions(item) {
+  if (!isMobile.value) return
+  bookingActionItem.value = item
 }
 
-function closeBookingMenu() {
-  bookingMenuId.value = null
+function closeBookingActions() {
+  bookingActionItem.value = null
 }
 
 function loadSetupWizardDismissed() {
@@ -1878,6 +1879,7 @@ function openBookingDay(iso) {
 }
 
 function closeBookingDay() {
+  closeBookingActions()
   selectedBookingDate.value = ''
   bookings.value = []
 }
@@ -4406,8 +4408,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <p v-if="loading" class="muted">กำลังโหลด...</p>
 
         <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
-        <div v-for="item in filtered" :key="item.id" class="admin-item">
-          <div>
+        <div
+          v-for="item in filtered"
+          :key="item.id"
+          class="admin-item"
+          :class="{ 'admin-item--actionable': isMobile }"
+          @click="openBookingActions(item)"
+        >
+          <div class="admin-item-body">
             <strong>{{ bookingTimeRange(item) }}</strong>
             <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
             <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
@@ -4423,8 +4431,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <p v-if="item.total != null && item.total !== ''" class="muted">
               ยอด {{ formatBookingTotal(item.total) }}
             </p>
+            <p v-if="isMobile" class="admin-item-tap-hint">
+              <i class="ti ti-chevron-right" aria-hidden="true"></i>
+              กดเพื่อจัดการคิว
+            </p>
           </div>
-          <div class="row admin-booking-actions-desktop">
+          <div class="row admin-booking-actions-desktop" @click.stop>
             <button
               type="button"
               class="btn"
@@ -4493,95 +4505,6 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             >
               ลบ
             </button>
-          </div>
-          <div class="admin-booking-actions-mobile">
-            <div class="row admin-booking-actions-primary">
-              <button
-                v-if="item.status === 'awaiting_payment'"
-                class="btn primary"
-                @click="confirmPayment(item.id)"
-              >
-                ยืนยันชำระเงิน
-              </button>
-              <button
-                v-if="item.status === 'pending'"
-                class="btn primary"
-                @click="markDone(item)"
-              >
-                ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
-              </button>
-              <button
-                v-if="item.status === 'cancelled'"
-                type="button"
-                class="btn primary"
-                @click="restoreBooking(item)"
-              >
-                คืนสถานะจอง
-              </button>
-              <button
-                v-if="item.status !== 'cancelled'"
-                type="button"
-                class="btn"
-                @click="editBooking(item); closeBookingMenu()"
-              >
-                แก้ไข
-              </button>
-              <div class="admin-action-overflow">
-                <button
-                  type="button"
-                  class="btn admin-overflow-trigger"
-                  :aria-expanded="bookingMenuId === item.id"
-                  aria-label="เมนูเพิ่มเติม"
-                  @click="toggleBookingMenu(item.id)"
-                >
-                  <i class="ti ti-dots-vertical" aria-hidden="true"></i>
-                </button>
-                <div v-if="bookingMenuId === item.id" class="admin-overflow-menu" @click.stop>
-                  <button
-                    type="button"
-                    class="admin-overflow-item"
-                    @click="openSendMessageModal({ id: item.user_id, name: item.user_name, email: item.user_email }); closeBookingMenu()"
-                  >
-                    ส่งข้อความ
-                  </button>
-                  <button type="button" class="admin-overflow-item" @click="openAdminChat(item.user_id); closeBookingMenu()">
-                    ไปแชท
-                  </button>
-                  <button
-                    v-if="item.status === 'awaiting_payment'"
-                    type="button"
-                    class="admin-overflow-item danger"
-                    @click="cancelUnpaid(item.id); closeBookingMenu()"
-                  >
-                    ยกเลิกคิวไม่ชำระ
-                  </button>
-                  <button
-                    v-if="item.status === 'pending'"
-                    type="button"
-                    class="admin-overflow-item"
-                    @click="revertPayment(item.id); closeBookingMenu()"
-                  >
-                    เปลี่ยนเป็นรอชำระ
-                  </button>
-                  <button
-                    v-if="item.status === 'pending'"
-                    type="button"
-                    class="admin-overflow-item danger"
-                    @click="cancelPaid(item.id); closeBookingMenu()"
-                  >
-                    ยกเลิกคิว (เลื่อนวัน)
-                  </button>
-                  <button
-                    v-if="item.status === 'cancelled'"
-                    type="button"
-                    class="admin-overflow-item danger"
-                    @click="deleteBooking(item.id); closeBookingMenu()"
-                  >
-                    ลบ
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </template>
@@ -6606,6 +6529,110 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         เลื่อนลงล่างสุดเพื่อโหลดเพิ่มอีก {{ USER_PAGE_SIZE }} คน
       </p>
     </section>
+
+    <Teleport to="body">
+      <Transition name="admin-sheet-fade">
+        <div
+          v-if="bookingActionItem"
+          class="admin-action-sheet-backdrop"
+          @click.self="closeBookingActions"
+        >
+          <div class="admin-action-sheet" role="dialog" aria-labelledby="booking-action-sheet-title">
+            <div class="admin-action-sheet-handle" aria-hidden="true"></div>
+            <h3 id="booking-action-sheet-title">{{ bookingTimeRange(bookingActionItem) }}</h3>
+            <p class="muted admin-action-sheet-meta">
+              {{ bookingActionItem.user_name }} · {{ statusLabel(bookingActionItem.status) }}
+            </p>
+            <p class="muted admin-action-sheet-meta">
+              {{
+                bookingActionItem.nail_options?.length
+                  ? bookingActionItem.nail_options.map((opt) => opt.option_name).join(', ')
+                  : '-'
+              }}
+            </p>
+            <div class="admin-action-sheet-actions">
+              <button
+                type="button"
+                class="btn"
+                @click="openSendMessageModal({ id: bookingActionItem.user_id, name: bookingActionItem.user_name, email: bookingActionItem.user_email }); closeBookingActions()"
+              >
+                ส่งข้อความ
+              </button>
+              <button type="button" class="btn primary" @click="openAdminChat(bookingActionItem.user_id); closeBookingActions()">
+                ไปแชท
+              </button>
+              <button
+                v-if="bookingActionItem.status !== 'cancelled'"
+                type="button"
+                class="btn"
+                @click="editBooking(bookingActionItem); closeBookingActions()"
+              >
+                แก้ไขข้อมูล
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'awaiting_payment'"
+                type="button"
+                class="btn primary"
+                @click="confirmPayment(bookingActionItem.id); closeBookingActions()"
+              >
+                ยืนยันชำระเงิน
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'awaiting_payment'"
+                type="button"
+                class="btn danger"
+                @click="cancelUnpaid(bookingActionItem.id); closeBookingActions()"
+              >
+                ยกเลิกคิวไม่ชำระ
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'pending'"
+                type="button"
+                class="btn"
+                @click="revertPayment(bookingActionItem.id); closeBookingActions()"
+              >
+                เปลี่ยนเป็นรอชำระ
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'pending'"
+                type="button"
+                class="btn primary"
+                @click="markDone(bookingActionItem); closeBookingActions()"
+              >
+                ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'pending'"
+                type="button"
+                class="btn danger"
+                @click="cancelPaid(bookingActionItem.id); closeBookingActions()"
+              >
+                ยกเลิกคิว (เลื่อนวัน)
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'cancelled'"
+                type="button"
+                class="btn primary"
+                @click="restoreBooking(bookingActionItem); closeBookingActions()"
+              >
+                คืนสถานะจอง
+              </button>
+              <button
+                v-if="bookingActionItem.status === 'cancelled'"
+                type="button"
+                class="btn danger"
+                @click="deleteBooking(bookingActionItem.id); closeBookingActions()"
+              >
+                ลบ
+              </button>
+              <button type="button" class="btn admin-action-sheet-close" @click="closeBookingActions">
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -8931,7 +8958,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 12px;
 }
 
-.admin-item > div:first-child {
+.admin-item > div:first-child,
+.admin-item-body {
   min-width: 0;
 }
 
@@ -10175,70 +10203,118 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: none;
 }
 
-.admin-booking-actions-mobile {
-  display: block;
+@media (max-width: 820px) {
+  .admin-item--actionable {
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    background: var(--color-surface-elevated);
+    transition: background var(--transition, 0.15s ease);
+  }
+
+  .admin-item--actionable:active {
+    background: var(--color-surface-muted, #f8fafc);
+  }
+
+  .admin-item-tap-hint {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .admin-item-tap-hint i {
+    font-size: 14px;
+  }
+}
+
+.admin-action-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-admin-modal, 2000) + 1);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  overscroll-behavior: contain;
+}
+
+.admin-action-sheet {
   width: 100%;
+  max-width: 430px;
+  max-height: min(88dvh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 auto;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--radius-sheet, 16px) var(--radius-sheet, 16px) 0 0;
+  background: var(--color-surface-elevated);
+  box-shadow: var(--shadow-sheet, 0 -8px 32px rgba(15, 23, 42, 0.12));
 }
 
-.admin-booking-actions-primary {
+.admin-action-sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 99px;
+  background: var(--color-border);
+}
+
+.admin-action-sheet h3 {
+  margin: 0 0 6px;
+  font-size: var(--text-h3, 18px);
+}
+
+.admin-action-sheet-meta {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.admin-action-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.admin-action-sheet-actions .btn {
   width: 100%;
+  justify-content: center;
+  min-height: var(--btn-secondary-height, 44px);
 }
 
-.admin-booking-actions-primary .btn {
-  flex: 1 1 calc(50% - 4px);
-  min-width: 0;
+.admin-action-sheet-close {
+  margin-top: 4px;
 }
 
-.admin-action-overflow {
-  position: relative;
-  flex: 0 0 auto;
+.admin-sheet-fade-enter-active,
+.admin-sheet-fade-leave-active {
+  transition: opacity 0.2s ease;
 }
 
-.admin-overflow-trigger {
-  min-width: var(--touch-min);
-  padding: 8px 12px;
+.admin-sheet-fade-enter-active .admin-action-sheet,
+.admin-sheet-fade-leave-active .admin-action-sheet {
+  transition: transform 0.25s ease;
 }
 
-.admin-overflow-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 20;
-  min-width: 200px;
-  padding: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+.admin-sheet-fade-enter-from,
+.admin-sheet-fade-leave-to {
+  opacity: 0;
 }
 
-.admin-overflow-item {
-  display: block;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-
-.admin-overflow-item:hover {
-  background: var(--color-surface-muted);
-}
-
-.admin-overflow-item.danger {
-  color: var(--color-error, #dc2626);
+.admin-sheet-fade-enter-from .admin-action-sheet,
+.admin-sheet-fade-leave-to .admin-action-sheet {
+  transform: translateY(100%);
 }
 
 @media (min-width: 821px) {
   .admin-booking-actions-desktop {
     display: flex;
-  }
-
-  .admin-booking-actions-mobile {
-    display: none;
   }
 }
 </style>
