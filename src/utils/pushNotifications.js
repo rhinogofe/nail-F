@@ -360,9 +360,10 @@ function isAlreadyViewing(url, payload) {
 
 export async function showOsNotificationFromPayload(payload) {
   if (typeof window === 'undefined' || Notification.permission !== 'granted') return
+  if (payload?.notification?.title) return
 
-  const title = payload?.notification?.title || payload?.data?.title || 'แจ้งเตือน'
-  const body = payload?.notification?.body || payload?.data?.body || ''
+  const title = payload?.data?.title || 'แจ้งเตือน'
+  const body = payload?.data?.body || ''
   const url = payload?.data?.url || payload?.fcmOptions?.link || '/'
 
   if (isAlreadyViewing(url, payload)) return

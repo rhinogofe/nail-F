@@ -50,6 +50,8 @@ function buildNotificationOptions(payload) {
 }
 
 messaging.onBackgroundMessage((payload) => {
+  // Avoid double notifications when the browser already surfaced one.
+  if (payload.notification?.title) return;
   const built = buildNotificationOptions(payload);
   return self.registration.showNotification(built.title, built.options);
 });
