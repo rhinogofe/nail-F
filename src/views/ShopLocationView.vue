@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import api from '../api/axios'
 import BottomNav from '../components/BottomNav.vue'
 import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
@@ -17,11 +18,8 @@ const pageTitle = computed(() => ui.get('ui_shop_location_page_title', 'ที�
 const openMapsLabel = computed(() => ui.get('ui_shop_open_maps_btn', 'เปิดใน Google Maps'))
 const mapUrl = computed(() => String(ui.get('ui_shop_map_url', '')).trim())
 const addressDetail = computed(() => String(ui.get('ui_shop_address_detail', '')).trim())
-const embedUrl = computed(() => {
-  const stored = String(ui.get('ui_shop_map_embed_url', '')).trim()
-  if (stored) return stored
-  return resolveShopMapEmbedUrl(mapUrl.value, '')
-})
+const embedUrl = ref('')
+
 const hasMap = computed(() => hasShopMapUrl(mapUrl.value))
 
 onMounted(async () => {
@@ -30,6 +28,22 @@ onMounted(async () => {
     router.replace(shopPath('/bookings'))
     return
   }
+
+  const stored = String(ui.get('ui_shop_map_embed_url', '')).trim()
+  embedUrl.value = stored || resolveShopMapEmbedUrl(mapUrl.value, '')
+
+  if (!embedUrl.value) {
+    try {
+      const { data } = await api.get('/api/bookings/map-embed')
+      embedUrl.value = String(data?.embed_url || '').trim()
+      if (embedUrl.value) {
+        ui.applyLocal({ ui_shop_map_embed_url: embedUrl.value })
+      }
+    } catch {
+      // ไม่มี embed — ซ่อนการ์ดผัง แสดงแค่ปุ่มเปิด Maps
+    }
+  }
+
   ready.value = true
 })
 
