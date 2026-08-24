@@ -118,18 +118,22 @@ function buildEmbedFromLocation(location) {
 }
 
 export function resolveShopMapEmbedUrl(mapUrl, embedUrl) {
+  const map = String(mapUrl ?? '').trim()
+  if (hasShopMapUrl(map)) {
+    if (isGoogleMapsEmbedUrl(map)) return map
+
+    const mapPb = extractPbParam(map)
+    if (mapPb) return buildEmbedFromPb(mapPb)
+
+    const fromMap = buildEmbedFromLocation(parseGoogleMapsLocation(map))
+    if (fromMap) return fromMap
+  }
+
   const embed = String(embedUrl ?? '').trim()
   if (isGoogleMapsEmbedUrl(embed)) return embed
 
   const embedPb = extractPbParam(embed)
   if (embedPb) return buildEmbedFromPb(embedPb)
 
-  const map = String(mapUrl ?? '').trim()
-  if (!hasShopMapUrl(map)) return ''
-  if (isGoogleMapsEmbedUrl(map)) return map
-
-  const mapPb = extractPbParam(map)
-  if (mapPb) return buildEmbedFromPb(mapPb)
-
-  return buildEmbedFromLocation(parseGoogleMapsLocation(map))
+  return ''
 }
