@@ -36,11 +36,18 @@ onMounted(async () => {
     try {
       const { data } = await api.get('/api/bookings/map-embed')
       embedUrl.value = String(data?.embed_url || '').trim()
+      if (import.meta.env.DEV || !embedUrl.value) {
+        console.warn('[map-embed] location page', {
+          map_url: mapUrl.value,
+          embed_url: embedUrl.value,
+          debug: data?.debug || null,
+        })
+      }
       if (embedUrl.value) {
         ui.applyLocal({ ui_shop_map_embed_url: embedUrl.value })
       }
-    } catch {
-      // ไม่มี embed — ซ่อนการ์ดผัง แสดงแค่ปุ่มเปิด Maps
+    } catch (err) {
+      console.warn('[map-embed] location page fetch failed', err?.response?.data || err?.message)
     }
   }
 
