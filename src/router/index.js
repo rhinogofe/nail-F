@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { useShopFeaturesStore } from '../stores/shopFeatures'
 
 import ShopPickerView from '../views/ShopPickerView.vue'
 import LoginView from '../views/LoginView.vue'
@@ -66,6 +67,7 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const shopStore = useShopStore()
   const uiStore = useUiSettingsStore()
+  const shopFeatures = useShopFeaturesStore()
   const shopSlug = to.params.shopSlug
 
   if (shopSlug) {
@@ -78,6 +80,17 @@ router.beforeEach(async (to) => {
     }
     if (!uiStore.loadedForSlug || uiStore.loadedForSlug !== shopSlug || to.path.endsWith('/location')) {
       await uiStore.fetch(shopStore.shopName).catch(() => null)
+    }
+
+    const pathSuffix = to.path.replace(`/${shopSlug}`, '') || '/'
+    if (pathSuffix.endsWith('/reviews') && !shopFeatures.navReviews) {
+      return shopPath(shopSlug, '/bookings')
+    }
+    if (pathSuffix.endsWith('/location') && (!shopFeatures.navLocation || !uiStore.showShopLocationNav)) {
+      return shopPath(shopSlug, '/bookings')
+    }
+    if (pathSuffix.endsWith('/chat') && !shopFeatures.navChat) {
+      return shopPath(shopSlug, '/bookings')
     }
 
     if (shopStore.shop?.usage_expired) {

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChatUnread } from '../composables/useChatUnread'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { useShopFeaturesStore } from '../stores/shopFeatures'
 
 defineProps({
   active: {
@@ -16,11 +17,14 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const ui = useUiSettingsStore()
+const shopFeatures = useShopFeaturesStore()
 const { unreadCount } = useChatUnread()
 
 const shopSlug = computed(() => route.params.shopSlug || localStorage.getItem('shopSlug') || 'default')
 const showAdminNav = computed(() => auth.canAccessShopAdmin(shopSlug.value))
-const showLocationNav = computed(() => ui.showShopLocationNav)
+const showReviewsNav = computed(() => shopFeatures.navReviews)
+const showLocationNav = computed(() => shopFeatures.navLocation && ui.showShopLocationNav)
+const showChatNav = computed(() => shopFeatures.navChat)
 const locationNavLabel = computed(() => ui.shopLocationNavLabel)
 
 function go(path) {
@@ -41,6 +45,7 @@ function go(path) {
       <span>จอง</span>
     </button>
     <button
+      v-if="showReviewsNav"
       type="button"
       class="nav-item"
       :class="{ active: active === 'reviews' }"
@@ -62,6 +67,7 @@ function go(path) {
       <span>{{ locationNavLabel }}</span>
     </button>
     <button
+      v-if="showChatNav"
       type="button"
       class="nav-item"
       :class="{ active: active === 'chat' }"

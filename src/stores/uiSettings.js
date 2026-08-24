@@ -3,6 +3,7 @@ import api from '../api/axios'
 import { formatUiText } from '../utils/formatUiText'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { applyPageMeta } from '../utils/pageMeta'
+import { useShopFeaturesStore } from './shopFeatures'
 
 const FALLBACK = {
   ui_brand_main: 'Nail',
@@ -62,6 +63,11 @@ export const useUiSettingsStore = defineStore('uiSettings', {
         const { data } = await api.get('/api/bookings/ui-settings')
         this.settings = { ...FALLBACK, ...(data || {}) }
         this.loadedForSlug = localStorage.getItem('shopSlug') || ''
+        try {
+          useShopFeaturesStore().applyFromUiSettings(data)
+        } catch {
+          /* pinia may not be ready in tests */
+        }
         applyTheme(this.settings, this.loadedForSlug, shopName)
         return this.settings
       } catch {

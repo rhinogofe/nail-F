@@ -10,6 +10,7 @@ import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optio
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import AdminManualPanel from '../components/AdminManualPanel.vue'
 import AdminRenewalPanel from '../components/AdminRenewalPanel.vue'
+import AdminShopFeaturesPanel from '../components/AdminShopFeaturesPanel.vue'
 import AdminBookingPaymentSlips from '../components/AdminBookingPaymentSlips.vue'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
@@ -28,6 +29,7 @@ import { imageUrlHint } from '../utils/imageUrl'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { compressImage } from '../utils/compressChatImage'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { useShopFeaturesStore } from '../stores/shopFeatures'
 import {
   normalizeBookingOptionsResponse,
   buildBookableCategories,
@@ -41,6 +43,7 @@ const { shopPath, shopSlug } = useShopRoute()
 const auth = useAuthStore()
 const shopStore = useShopStore()
 const uiSettingsStore = useUiSettingsStore()
+const shopFeaturesStore = useShopFeaturesStore()
 const accountMenuRef = ref(null)
 const {
   enabled: pushEnabled,
@@ -542,6 +545,7 @@ const adminTabs = [
   { key: 'renewal', label: 'ต่ออายุ', icon: 'ti-refresh' },
   { key: 'manual', label: 'คู่มือ', icon: 'ti-book-2' },
   { key: 'users', label: 'ผู้ใช้', icon: 'ti-users' },
+  { key: 'features', label: 'ฟังก์ชัน', icon: 'ti-toggle-left', superAdminOnly: true },
 ]
 
 const showRenewalTab = computed(
@@ -549,7 +553,14 @@ const showRenewalTab = computed(
 )
 
 const visibleAdminTabs = computed(() =>
-  adminTabs.filter((tab) => tab.key !== 'renewal' || showRenewalTab.value)
+  adminTabs.filter((tab) => {
+    if (tab.superAdminOnly && !(isSuperAdmin.value && shopSlug.value === 'default')) {
+      return false
+    }
+    if (tab.key === 'renewal' && !showRenewalTab.value) return false
+    if (tab.key === 'features') return isSuperAdmin.value && shopSlug.value === 'default'
+    return shopFeaturesStore.tabEnabled(tab.key)
+  })
 )
 
 const settingsSections = [
@@ -573,6 +584,7 @@ const visibleSettingsSections = computed(() =>
     if (section.superAdminOnly && !(isSuperAdmin.value && shopSlug.value === 'default')) {
       return false
     }
+    if (!shopFeaturesStore.settingsSectionEnabled(section.key)) return false
     if (section.key === 'line') {
       if (isSuperAdmin.value && shopSlug.value === 'default') return true
       return linePushEnabled.value
@@ -593,6 +605,9 @@ const blocksSections = [
   { key: 'bulk', label: 'ปิดหลายวัน', icon: 'ti-calendar-stats' },
   { key: 'calendar', label: 'ปิดทีละวัน', icon: 'ti-calendar' },
 ]
+const visibleBlocksSections = computed(() =>
+  blocksSections.filter((section) => shopFeaturesStore.blocksSectionEnabled(section.key))
+)
 const blocksSectionById = {
   'blocks-day-hours': 'day-hours',
   'blocks-slot-display': 'slot-display',
@@ -621,7 +636,9 @@ const activeUiSectionMeta = computed(
 )
 
 const activeBlocksSectionMeta = computed(
-  () => blocksSections.find((s) => s.key === activeBlocksSection.value) || blocksSections[0]
+  () => visibleBlocksSections.value.find((s) => s.key === activeBlocksSection.value)
+    || visibleBlocksSections.value[0]
+    || blocksSections[0]
 )
 
 const blocksToolbarSubtitle = computed(() => {
@@ -837,6 +854,11 @@ const showBranchUsageWarningBanner = computed(() => {
   if (!usage.usage_limit_days || usage.usage_days_remaining == null) return false
   return usage.usage_days_remaining <= renewalBannerDaysBefore.value
 })
+
+function openRenewalTab() {
+  if (!showRenewalTab.value) return
+  switchTab('renewal')
+}
 
 function formatShopUsageBadge(shop) {
   if (!shop?.usage_limit_days) return null
@@ -4351,6 +4373,25 @@ async function shareShopLink() {
   }
 }
 
+watch(visibleAdminTabs, (tabs) => {
+  if (!tabs.some((t) => t.key === activeTab.value)) {
+    activeTab.value = tabs[0]?.key || 'bookings'
+  }
+})
+
+watch(visibleSettingsSections, (sections) => {
+  if (!sections.some((s) => s.key === activeSettingsSection.value)) {
+    activeSettingsSection.value = sections[0]?.key || 'deposit'
+  }
+})
+
+watch(visibleBlocksSections, (sections) => {
+  if (!sections.some((s) => s.key === activeBlocksSection.value)) {
+    activeBlocksSection.value = sections[0]?.key || 'shop-hours'
+  }
+})
+
+onMounted(() => void shopFeaturesStore.fetchForAdmin())
 onMounted(loadUiSettingsAdmin)
 onMounted(loadAllShops)
 onMounted(loadRenewalBannerSetting)
@@ -4390,6 +4431,7 @@ onUnmounted(() => {
 
 watch(shopSlug, () => {
   loadUiSettingsAdmin()
+  void shopFeaturesStore.fetchForAdmin()
   loadCouponSetting()
   loadLinePushSetting()
   loadChatNotifySetting()
@@ -4478,19 +4520,27 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
     <p v-if="message" class="alert success">{{ message }}</p>
     <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
-    <p
-      v-if="showBranchUsageExpiredBanner"
-      class="alert error"
+    <button
+      v-if="showBranchUsageExpiredBanner && activeTab !== 'renewal'"
+      type="button"
+      class="admin-renewal-reminder alert-banner error"
+      @click="openRenewalTab"
     >
-      สาขานี้หมดระยะเวลาใช้งานแล้ว ({{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }}) — ลูกค้าไม่สามารถจองได้ กรุณาติดต่อแอดมินหลักเพื่อต่ออายุ
-    </p>
-    <p
-      v-else-if="showBranchUsageWarningBanner"
-      class="alert"
-      :class="currentBranchUsage.usage_days_remaining <= 3 ? 'error' : 'success'"
+      <i class="ti ti-alert-circle" aria-hidden="true"></i>
+      สาขานี้หมดระยะเวลาใช้งานแล้ว ({{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }}) — ลูกค้าไม่สามารถจองได้ ·
+      <span class="admin-renewal-reminder-link">กดที่นี่เพื่อต่ออายุ</span>
+    </button>
+    <button
+      v-else-if="showBranchUsageWarningBanner && activeTab !== 'renewal'"
+      type="button"
+      class="admin-renewal-reminder alert-banner"
+      :class="currentBranchUsage.usage_days_remaining <= 3 ? 'error' : 'warning'"
+      @click="openRenewalTab"
     >
-      ระยะเวลาใช้งานเหลือ {{ currentBranchUsage.usage_days_remaining }} วัน (หมดอายุ {{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }})
-    </p>
+      <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+      ระยะเวลาใช้งานเหลือ {{ currentBranchUsage.usage_days_remaining }} วัน (หมดอายุ {{ formatUsageExpiryDate(currentBranchUsage.usage_expires_at) }}) ·
+      <span class="admin-renewal-reminder-link">กดที่นี่เพื่อต่ออายุ</span>
+    </button>
 
     <div v-if="showSetupWizard" class="admin-setup-wizard card-inner">
       <div class="admin-setup-wizard-head">
@@ -6107,7 +6157,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </div>
           <nav class="admin-drawer-nav-list" aria-label="หัวข้อเวลา">
             <button
-              v-for="section in blocksSections"
+              v-for="section in visibleBlocksSections"
               :key="section.key"
               type="button"
               class="admin-drawer-nav-item"
@@ -6735,6 +6785,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       :branch-shops="branchShopsForRenewal"
       :format-usage-expiry-date="formatUsageExpiryDate"
       @shops-changed="onRenewalShopsChanged"
+    />
+
+    <AdminShopFeaturesPanel
+      v-if="isSuperAdmin && shopSlug === 'default'"
+      :is-super-admin="isSuperAdmin"
+      :shop-slug="shopSlug"
+      :active="activeTab === 'features'"
     />
 
     <!-- ── ผู้ใช้ ── -->
@@ -8023,6 +8080,39 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .admin-push-reminder:active {
+  transform: scale(0.99);
+}
+
+.admin-renewal-reminder {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  margin: 0 0 var(--space-3);
+  padding: 8px 12px;
+  border: none;
+  font-size: var(--text-caption);
+  line-height: 1.45;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: filter var(--transition), transform var(--transition);
+}
+
+.admin-renewal-reminder i {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.admin-renewal-reminder-link {
+  flex-shrink: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 700;
+}
+
+.admin-renewal-reminder:active {
   transform: scale(0.99);
 }
 

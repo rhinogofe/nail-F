@@ -10,8 +10,18 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`
   }
   const shopSlug = localStorage.getItem('shopSlug')
-  if (shopSlug) {
-    config.headers['X-Shop-Slug'] = shopSlug
+  const headers = config.headers || {}
+  const existingShopSlug =
+    headers['X-Shop-Slug']
+    ?? (typeof headers.get === 'function' ? headers.get('X-Shop-Slug') : undefined)
+  // Per-request slug (e.g. super admin editing another branch) must win over localStorage.
+  if (shopSlug && (existingShopSlug == null || existingShopSlug === '')) {
+    if (typeof headers.set === 'function') {
+      headers.set('X-Shop-Slug', shopSlug)
+    } else {
+      headers['X-Shop-Slug'] = shopSlug
+    }
+    config.headers = headers
   }
   return config
 })
