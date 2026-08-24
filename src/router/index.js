@@ -76,7 +76,7 @@ router.beforeEach(async (to) => {
         return '/'
       }
     }
-    if (!uiStore.loadedForSlug || uiStore.loadedForSlug !== shopSlug) {
+    if (!uiStore.loadedForSlug || uiStore.loadedForSlug !== shopSlug || to.path.endsWith('/location')) {
       await uiStore.fetch(shopStore.shopName).catch(() => null)
     }
 

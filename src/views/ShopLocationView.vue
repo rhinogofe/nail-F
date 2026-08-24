@@ -17,12 +17,15 @@ const pageTitle = computed(() => ui.get('ui_shop_location_page_title', 'ที�
 const openMapsLabel = computed(() => ui.get('ui_shop_open_maps_btn', 'เปิดใน Google Maps'))
 const mapUrl = computed(() => String(ui.get('ui_shop_map_url', '')).trim())
 const addressDetail = computed(() => String(ui.get('ui_shop_address_detail', '')).trim())
-const embedUrl = computed(() =>
-  resolveShopMapEmbedUrl(mapUrl.value, ui.get('ui_shop_map_embed_url', ''))
-)
+const embedUrl = computed(() => {
+  const stored = String(ui.get('ui_shop_map_embed_url', '')).trim()
+  if (stored) return stored
+  return resolveShopMapEmbedUrl(mapUrl.value, '')
+})
 const hasMap = computed(() => hasShopMapUrl(mapUrl.value))
 
-onMounted(() => {
+onMounted(async () => {
+  await ui.fetch().catch(() => null)
   if (!hasMap.value) {
     router.replace(shopPath('/bookings'))
     return
