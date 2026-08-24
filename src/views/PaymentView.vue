@@ -33,6 +33,10 @@ const bankAccountName = computed(() => ui.get('ui_bank_account_name', 'Nail Stud
 const bankAccountNo = computed(() => ui.get('ui_bank_account_no', ''))
 const depositAmount = ref(300)
 const promptpayId = computed(() => ui.get('ui_promptpay_id', ''))
+const validPromptpayId = computed(() => {
+  const digits = String(promptpayId.value || '').replace(/\D/g, '')
+  return digits || ''
+})
 const kshopQrUrl = computed(() => {
   const raw = ui.get('ui_kshop_qr_url', '')
   return raw ? resolveUiImageUrl(raw, shopSlug.value) : ''
@@ -44,7 +48,6 @@ const lineButtonLabel = computed(() => ui.get('ui_line_button_label', 'ส่ง
 const paymentHint = computed(() => ui.get('ui_payment_hint', ''))
 const copyAccountHint = computed(() => ui.get('ui_copy_account_hint', 'แตะเพื่อคัดลอก'))
 const qrCodeImage = ref('')
-const qrError = ref('')
 const copyHint = ref('')
 const paymentLoading = ref(true)
 const paymentError = ref('')
@@ -284,7 +287,6 @@ async function copyAccountNo() {
 }
 
 async function generateThaiQr() {
-  qrError.value = ''
   qrCodeImage.value = ''
 
   if (useKshopQr.value) {
@@ -292,20 +294,17 @@ async function generateThaiQr() {
     return
   }
 
-  if (!promptpayId.value) {
-    qrError.value = ui.get('ui_qr_not_configured', 'ยังไม่ได้ตั้งค่า PromptPay ID')
-    return
-  }
+  if (!validPromptpayId.value) return
 
   try {
-    const payload = generatePayload(promptpayId.value, { amount: Number(depositAmount.value) })
+    const payload = generatePayload(validPromptpayId.value, { amount: Number(depositAmount.value) })
     qrCodeImage.value = await QRCode.toDataURL(payload, {
       width: 320,
       margin: 2,
       color: { dark: '#2D2424', light: '#FFFFFF' },
     })
   } catch {
-    qrError.value = ui.get('ui_qr_generate_failed', 'สร้าง QR ไม่สำเร็จ กรุณาตรวจสอบ PromptPay ID')
+    // ไม่แสดง QR เมื่อสร้างไม่สำเร็จ
   }
 }
 
@@ -434,11 +433,10 @@ onUnmounted(() => {
         </p>
       </section>
 
-      <section class="qr-panel">
+      <section v-if="qrCodeImage" class="qr-panel">
         <p class="qr-label">{{ thaiQrLabel }}</p>
         <div class="qr-card">
-          <img v-if="qrCodeImage" :src="qrCodeImage" alt="QR ชำระมัดจำ" class="qr-image" />
-          <p v-else class="qr-error">{{ qrError || 'กำลังสร้าง QR...' }}</p>
+          <img :src="qrCodeImage" alt="QR ชำระมัดจำ" class="qr-image" />
         </div>
       </section>
 
@@ -711,12 +709,6 @@ onUnmounted(() => {
   background: var(--color-on-primary);
   padding: var(--space-2);
   box-shadow: var(--shadow-sm);
-}
-
-.qr-error {
-  color: var(--color-error);
-  font-size: var(--text-caption);
-  margin: 0;
 }
 
 .bank-card {

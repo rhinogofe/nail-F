@@ -1171,6 +1171,7 @@ function uiFieldHasValue(key) {
 }
 
 function shouldShowUiField(field) {
+  if (field?.hideInAdmin) return false
   if (!field?.hideWhen) return true
   return !uiFieldHasValue(field.hideWhen)
 }
@@ -6015,6 +6016,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   class="admin-input"
                   :placeholder="field.placeholder || ''"
                 />
+                <p v-if="field.hint && field.type !== 'toggle'" class="muted ui-field-toggle-hint">{{ field.hint }}</p>
                 <div v-if="field.uploadKind" class="ui-image-upload-row">
                   <button
                     type="button"

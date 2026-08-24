@@ -77,7 +77,7 @@ export const UI_FORM_DEFAULTS = {
 export const UI_FIELD_GROUPS = [
   {
     title: 'แบรนด์ & รูปภาพ',
-    hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง · ชื่อแท็บเบราว์เซอร์ใช้ชื่อร้านจากขั้นต่อก่อน · ลิงก์แผนที่ไม่บังคับ (เพิ่มภายหลังในแอดมินได้)',
+    hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง · ชื่อแท็บเบราว์เซอร์ใช้ชื่อร้านจากขั้นต่อก่อน · ลิงก์ Google Maps วางลิงก์แชร์จากแอปได้เลย ระบบแสดงแผนที่ให้อัตโนมัติ',
     fields: [
       { key: 'ui_brand_main', label: 'ชื่อแบรนด์ (ส่วนหลัก)', placeholder: 'Nail' },
       { key: 'ui_brand_accent', label: 'ชื่อแบรนด์ (ส่วนเน้น)', placeholder: 'Thuean' },
@@ -87,8 +87,9 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_hero_image_url', label: 'ภาพปก Login', placeholder: 'อัปโหลดหรือวาง URL', uploadKind: 'hero' },
       {
         key: 'ui_shop_map_url',
-        label: 'ลิงก์แผนที่ร้าน (เปิด Maps)',
-        placeholder: 'https://maps.google.com/... (ไม่บังคับ)',
+        label: 'ลิงก์ Google Maps',
+        placeholder: 'แชร์จากแอป Google Maps แล้ววางลิงก์',
+        hint: 'เปิด Google Maps → แชร์ → คัดลอกลิงก์ วางได้เลย',
         optional: true,
       },
       {
@@ -96,6 +97,8 @@ export const UI_FIELD_GROUPS = [
         label: 'ลิงก์ / ฝังแผนที่ (แสดงในแอป)',
         placeholder: 'จาก Google Maps → แชร์ → ฝังแผนที่ (ไม่บังคับ)',
         optional: true,
+        hideInRegister: true,
+        hideInAdmin: true,
       },
       {
         key: 'ui_shop_address_detail',

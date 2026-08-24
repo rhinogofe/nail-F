@@ -49,8 +49,8 @@ function openMaps() {
     </header>
 
     <main class="content app-content">
-      <section class="map-panel" aria-label="แผนที่ร้าน">
-        <div v-if="embedUrl" class="map-embed-wrap">
+      <section v-if="embedUrl" class="map-panel" aria-label="แผนที่ร้าน">
+        <div class="map-embed-wrap">
           <iframe
             :src="embedUrl"
             class="map-embed"
@@ -59,14 +59,6 @@ function openMaps() {
             referrerpolicy="no-referrer-when-downgrade"
             allowfullscreen
           />
-        </div>
-        <div v-else class="map-fallback">
-          <i class="ti ti-map-pin map-fallback-icon" aria-hidden="true"></i>
-          <p class="map-fallback-title">ฝังแผนที่ไม่ได้จากลิงก์แชร์</p>
-          <p class="muted map-fallback-hint">
-            แอดมิน → UI → แบรนด์ &amp; รูปภาพ → ช่อง <strong>ลิงก์ / ฝังแผนที่</strong>
-            (Google Maps → แชร์ → ฝังแผนที่) หรือกดปุ่มด้านล่างเพื่อเปิด Maps
-          </p>
         </div>
       </section>
 
@@ -147,36 +139,6 @@ function openMaps() {
   width: 100%;
   height: 100%;
   border: 0;
-}
-
-.map-fallback {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 180px;
-  padding: var(--space-4);
-  text-align: center;
-}
-
-.map-fallback-icon {
-  font-size: 48px;
-  color: var(--color-primary);
-}
-
-.map-fallback-title {
-  margin: 0;
-  font-size: var(--text-body);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.map-fallback-hint {
-  margin: 0;
-  max-width: 28rem;
-  line-height: 1.5;
-  text-align: center;
 }
 
 .address-card {

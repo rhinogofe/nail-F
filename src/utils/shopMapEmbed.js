@@ -47,6 +47,72 @@ function buildEmbedFromPb(pb) {
   return `https://www.google.com/maps/embed?pb=${encodeURIComponent(value)}`
 }
 
+function parseCoordinatePair(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  const match = raw.match(/^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)$/)
+  if (!match) return null
+  return { lat: match[1], lng: match[2] }
+}
+
+function parseGoogleMapsLocation(url) {
+  const raw = String(url ?? '').trim()
+  if (!raw) return null
+
+  const pinMatch = raw.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
+  if (pinMatch) {
+    return { lat: pinMatch[1], lng: pinMatch[2] }
+  }
+
+  const atMatch = raw.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/)
+  if (atMatch) {
+    return { lat: atMatch[1], lng: atMatch[2] }
+  }
+
+  try {
+    const u = new URL(raw)
+    const q = u.searchParams.get('q') || u.searchParams.get('query')
+    if (q) {
+      const coords = parseCoordinatePair(q)
+      if (coords) return coords
+      return { query: q }
+    }
+
+    const ll = u.searchParams.get('ll')
+    if (ll) {
+      const coords = parseCoordinatePair(ll)
+      if (coords) return coords
+    }
+
+    const placeId = u.searchParams.get('place_id')
+    if (placeId) return { placeId }
+  } catch {
+    // fall through
+  }
+
+  const placeMatch = raw.match(/(ChIJ[\w-]+)/)
+  if (placeMatch) return { placeId: placeMatch[1] }
+
+  return null
+}
+
+function buildEmbedFromLocation(location) {
+  if (!location) return ''
+
+  if (location.lat && location.lng) {
+    const q = `${location.lat},${location.lng}`
+    return `https://www.google.com/maps?q=${encodeURIComponent(q)}&hl=th&z=16&output=embed`
+  }
+  if (location.query) {
+    return `https://www.google.com/maps?q=${encodeURIComponent(location.query)}&hl=th&z=16&output=embed`
+  }
+  if (location.placeId) {
+    return `https://www.google.com/maps?q=${encodeURIComponent(`place_id:${location.placeId}`)}&hl=th&z=16&output=embed`
+  }
+
+  return ''
+}
+
 export function resolveShopMapEmbedUrl(mapUrl, embedUrl) {
   const embed = String(embedUrl ?? '').trim()
   if (isGoogleMapsEmbedUrl(embed)) return embed
@@ -61,6 +127,5 @@ export function resolveShopMapEmbedUrl(mapUrl, embedUrl) {
   const mapPb = extractPbParam(map)
   if (mapPb) return buildEmbedFromPb(mapPb)
 
-  // ลิงก์แชร์ทั่วไป (maps/place, goo.gl, output=embed) มักถูก Google บล็อกใน iframe
-  return ''
+  return buildEmbedFromLocation(parseGoogleMapsLocation(map))
 }
