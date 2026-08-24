@@ -41,6 +41,38 @@ function extractPbParam(url) {
   return match?.[1] ? decodeURIComponent(match[1]) : ''
 }
 
+function isGoogleMapsOutputEmbedUrl(value) {
+  const url = String(value ?? '').trim()
+  if (!hasShopMapUrl(url)) return false
+  try {
+    const u = new URL(url)
+    const host = u.hostname.replace(/^www\./, '')
+    const isGoogleHost = host === 'google.com' || host.endsWith('.google.com') || host === 'maps.google.com'
+    if (!isGoogleHost) return false
+    if (u.pathname.startsWith('/maps/embed')) return true
+    return u.searchParams.get('output') === 'embed' && !!u.searchParams.get('q')
+  } catch {
+    return false
+  }
+}
+
+export function normalizeMapIframeUrl(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  if (!hasShopMapUrl(raw)) return raw
+  try {
+    const u = new URL(raw)
+    if (u.hostname === 'www.google.com' && u.pathname === '/maps') {
+      u.hostname = 'maps.google.com'
+      u.pathname = '/maps'
+      return u.toString()
+    }
+  } catch {
+    return raw
+  }
+  return raw
+}
+
 function buildEmbedFromPb(pb) {
   const value = String(pb ?? '').trim()
   if (!value) return ''
@@ -105,22 +137,29 @@ function buildEmbedFromLocation(location) {
 
   if (location.lat && location.lng) {
     const q = `${location.lat},${location.lng}`
-    return `https://www.google.com/maps?q=${encodeURIComponent(q)}&hl=th&z=16&output=embed`
+    return normalizeMapIframeUrl(`https://maps.google.com/maps?q=${encodeURIComponent(q)}&hl=th&z=16&output=embed`)
   }
   if (location.query) {
-    return `https://www.google.com/maps?q=${encodeURIComponent(location.query)}&hl=th&z=16&output=embed`
+    return normalizeMapIframeUrl(`https://maps.google.com/maps?q=${encodeURIComponent(location.query)}&hl=th&z=16&output=embed`)
   }
   if (location.placeId) {
-    return `https://www.google.com/maps?q=${encodeURIComponent(`place_id:${location.placeId}`)}&hl=th&z=16&output=embed`
+    return normalizeMapIframeUrl(`https://maps.google.com/maps?q=${encodeURIComponent(`place_id:${location.placeId}`)}&hl=th&z=16&output=embed`)
   }
 
   return ''
 }
 
 export function resolveShopMapEmbedUrl(mapUrl, embedUrl) {
+  const stored = normalizeMapIframeUrl(String(embedUrl ?? '').trim())
+  if (isGoogleMapsEmbedUrl(stored)) return stored
+  if (isGoogleMapsOutputEmbedUrl(stored)) return stored
+
+  const embedPb = extractPbParam(stored)
+  if (embedPb) return buildEmbedFromPb(embedPb)
+
   const map = String(mapUrl ?? '').trim()
   if (hasShopMapUrl(map)) {
-    if (isGoogleMapsEmbedUrl(map)) return map
+    if (isGoogleMapsEmbedUrl(map)) return normalizeMapIframeUrl(map)
 
     const mapPb = extractPbParam(map)
     if (mapPb) return buildEmbedFromPb(mapPb)
@@ -128,12 +167,6 @@ export function resolveShopMapEmbedUrl(mapUrl, embedUrl) {
     const fromMap = buildEmbedFromLocation(parseGoogleMapsLocation(map))
     if (fromMap) return fromMap
   }
-
-  const embed = String(embedUrl ?? '').trim()
-  if (isGoogleMapsEmbedUrl(embed)) return embed
-
-  const embedPb = extractPbParam(embed)
-  if (embedPb) return buildEmbedFromPb(embedPb)
 
   return ''
 }

@@ -7,7 +7,7 @@ import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { useShopRoute } from '../composables/useShopRoute'
-import { hasShopMapUrl, resolveShopMapEmbedUrl } from '../utils/shopMapEmbed'
+import { hasShopMapUrl, normalizeMapIframeUrl, resolveShopMapEmbedUrl } from '../utils/shopMapEmbed'
 
 const ui = useUiSettingsStore()
 const router = useRouter()
@@ -29,7 +29,7 @@ onMounted(async () => {
     return
   }
 
-  const stored = String(ui.get('ui_shop_map_embed_url', '')).trim()
+  const stored = normalizeMapIframeUrl(String(ui.get('ui_shop_map_embed_url', '')).trim())
   embedUrl.value = stored || resolveShopMapEmbedUrl(mapUrl.value, '')
 
   if (!embedUrl.value) {
@@ -79,8 +79,9 @@ function openMaps() {
             :src="embedUrl"
             class="map-embed"
             :title="pageTitle"
-            loading="lazy"
+            loading="eager"
             referrerpolicy="no-referrer-when-downgrade"
+            allow="fullscreen; geolocation"
             allowfullscreen
           />
         </div>
