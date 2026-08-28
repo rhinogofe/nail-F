@@ -1,7 +1,7 @@
 {
   "name": "Nail Thuean",
   "short_name": "Nail Thuean",
-  "description": "จองคิวออนไลน์ ง่าย สะดวก",
+  "description": "เลือกสาขาเพื่อจองคิวออนไลน์",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

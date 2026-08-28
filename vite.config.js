@@ -2,6 +2,12 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import {
+  DEFAULT_APP_NAME,
+  buildShopManifest,
+  manifestResponseHeaders,
+  parseManifestSlug,
+} from './shared/shopManifestBuilder.js'
 
 function buildFirebaseServiceWorkerSource(env) {
   const config = {
@@ -136,6 +142,42 @@ function firebaseMessagingSwPlugin() {
   }
 }
 
+function shopManifestDevPlugin() {
+  let apiBase = 'http://localhost:3000'
+
+  return {
+    name: 'shop-manifest-dev',
+    config(_, { mode }) {
+      const env = loadEnv(mode, process.cwd(), '')
+      apiBase = env.VITE_API_BASE_URL || apiBase
+    },
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const slug = parseManifestSlug(req.url?.split('?')[0] || '')
+        if (!slug) return next()
+
+        let shopName = DEFAULT_APP_NAME
+        try {
+          const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/shops/${encodeURIComponent(slug)}`)
+          if (response.ok) {
+            const shop = await response.json()
+            const name = String(shop?.name || '').trim()
+            if (name) shopName = name
+          }
+        } catch {
+          /* use fallback shop name */
+        }
+
+        const headers = manifestResponseHeaders()
+        for (const [key, value] of Object.entries(headers)) {
+          res.setHeader(key, value)
+        }
+        res.end(`${JSON.stringify(buildShopManifest(slug, shopName), null, 2)}\n`)
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [vue(), appVersionPlugin(), firebaseMessagingSwPlugin()],
+  plugins: [vue(), appVersionPlugin(), firebaseMessagingSwPlugin(), shopManifestDevPlugin()],
 })

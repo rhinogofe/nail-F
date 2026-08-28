@@ -2,14 +2,17 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import { useShopStore } from './stores/shop'
 import AppUpdateBanner from './components/AppUpdateBanner.vue'
 import { useAppUpdate } from './composables/useAppUpdate'
 import {
   initPushNotificationsWhenReady,
 } from './utils/pushNotifications'
+import { syncShopManifestLink } from './utils/shopManifest'
 
 const route = useRoute()
 const auth = useAuthStore()
+const shopStore = useShopStore()
 const isAdminRoute = computed(() => /\/admin$/.test(route.path))
 const isNavRoute = computed(() =>
   /\/(bookings|reviews|location|chat|profile)(\/|$)/.test(route.path),
@@ -17,6 +20,13 @@ const isNavRoute = computed(() =>
 const { updateAvailable, reload } = useAppUpdate()
 
 let stopPushListener = null
+
+function syncManifestFromRoute() {
+  syncShopManifestLink({
+    shopSlug: route.params.shopSlug,
+    shopName: route.params.shopSlug ? shopStore.shopName : undefined,
+  })
+}
 
 function syncPushListener() {
   stopPushListener?.()
@@ -30,12 +40,21 @@ function syncPushListener() {
 }
 
 onMounted(() => {
+  syncManifestFromRoute()
   syncPushListener()
 })
 
 onUnmounted(() => {
   stopPushListener?.()
 })
+
+watch(
+  () => [route.params.shopSlug, shopStore.shop?.name],
+  () => {
+    syncManifestFromRoute()
+  },
+  { immediate: true },
+)
 
 watch(() => auth.isLoggedIn, () => {
   syncPushListener()

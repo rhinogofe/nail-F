@@ -5,6 +5,25 @@
 [build.environment]
   VITE_API_BASE_URL = "https://nail-b.onrender.com"
 
+[[edge_functions]]
+  path = "/manifest/*"
+  function = "shop-manifest"
+
+[[edge_functions]]
+  path = "/*"
+  function = "share-preview"
+
+[[headers]]
+  for = "/manifest/*"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, max-age=0"
+    Pragma = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+
 [[headers]]
   for = "/firebase-messaging-sw.js"
   [headers.values]
@@ -15,10 +34,6 @@
   for = "/version.json"
   [headers.values]
     Cache-Control = "no-store, no-cache, must-revalidate"
-
-[[edge_functions]]
-  path = "/*"
-  function = "share-preview"
 
 [[redirects]]
   from = "/*"
