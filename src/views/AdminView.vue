@@ -1064,6 +1064,80 @@ function switchShopAdmin(slug) {
   router.push(`/${slug}/admin`)
 }
 
+function resetAdminShopLocalState() {
+  closeBookingDay()
+  closeServiceDay()
+  closeBlockDay()
+  closeDayHoursDate()
+  bookingEditOpen.value = false
+  bookingEditItem.value = null
+  bookingAddOpen.value = false
+
+  nailOptionsLoaded.value = false
+  nailOptions.value = []
+  serviceCategories.value = []
+  serviceLocations.value = []
+  showcaseClips.value = []
+  blocks.value = []
+  extraHours.value = []
+  bookingDaySummary.value = {}
+  bookingMonthPaidTotal.value = 0
+  bookingMonthUnpaidTotal.value = 0
+  bookingMonthCancelledTotal.value = 0
+  revenueDaySummary.value = {}
+  revenueMonthTotal.value = 0
+  revenueMonthDepositTotal.value = 0
+  revenueMonthDoneCount.value = 0
+  users.value = []
+  usersTotal.value = 0
+  usersHasMore.value = false
+  usersLoaded.value = false
+}
+
+async function reloadAdminShopContext() {
+  resetAdminShopLocalState()
+  message.value = ''
+  errorMessage.value = ''
+
+  const slug = shopSlug.value
+  await shopStore.loadShop(slug).catch(() => null)
+  await uiSettingsStore.fetch(shopStore.shopName).catch(() => null)
+
+  const tasks = [
+    loadUiSettingsAdmin(),
+    shopFeaturesStore.fetchForAdmin(),
+    loadDepositSetting(),
+    loadCouponSetting(),
+    loadLinePushSetting(),
+    loadChatNotifySetting(),
+    loadUnpaidAutoCancelSetting(),
+    loadAdvanceDays(),
+    loadBookingDisplay(),
+    loadShopHours(),
+    loadDayHoursMonth(),
+    loadBlocks(),
+    loadNailOptions(),
+    loadServiceCategories(),
+    loadServiceLocations(),
+    loadShowcaseClips(),
+    loadBookingCalendarSummary(),
+    loadRegisterShopPinSetting(),
+  ]
+
+  if (slug !== 'default') {
+    tasks.push(loadRenewalBannerSetting(), refreshBranchUsage({ silent: true }))
+    startBranchUsagePolling()
+  } else {
+    stopBranchUsagePolling()
+  }
+
+  if (activeTab.value === 'revenue') tasks.push(loadRevenueSummary())
+  if (activeTab.value === 'users') tasks.push(loadUsers({ reset: true }))
+
+  await Promise.all(tasks)
+  loadSetupWizardDismissed()
+}
+
 function openShopEdit(shop) {
   shopEditItem.value = shop
   shopEditName.value = shop.name || ''
@@ -4560,29 +4634,9 @@ onUnmounted(() => {
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
 })
 
-watch(shopSlug, () => {
-  loadUiSettingsAdmin()
-  void shopFeaturesStore.fetchForAdmin()
-  loadCouponSetting()
-  loadLinePushSetting()
-  loadChatNotifySetting()
-  loadRegisterShopPinSetting()
-  loadSetupWizardDismissed()
-  nailOptionsLoaded.value = false
-  nailOptions.value = []
-  void loadNailOptions()
-  users.value = []
-  usersTotal.value = 0
-  usersHasMore.value = false
-  usersLoaded.value = false
-  if (activeTab.value === 'users') loadUsers({ reset: true })
-  if (shopSlug.value !== 'default') {
-    void loadRenewalBannerSetting()
-    void refreshBranchUsage({ silent: true })
-    startBranchUsagePolling()
-  } else {
-    stopBranchUsagePolling()
-  }
+watch(shopSlug, (next, prev) => {
+  if (!prev || next === prev) return
+  void reloadAdminShopContext()
 })
 
 watch(userSearch, () => {
