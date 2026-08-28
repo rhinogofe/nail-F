@@ -505,6 +505,35 @@ const bookingEditServiceDurationLabel = computed(() =>
   formatDurationMinutes(bookingEditSelectedTotalMinutes.value)
 )
 
+const bookingAddSelectedSlot = computed(() => {
+  const key = bookingAddSlotKey.value
+  return key ? parseSlotKey(key) : null
+})
+
+const bookingAddSelectedTotalMinutes = computed(() =>
+  sumOptionDurationMinutes(bookingAddOptions.value, bookingAddSelectedIds.value)
+)
+
+const bookingAddPredictedSlot = computed(() => {
+  const base = bookingAddSelectedSlot.value
+  if (!base) return null
+  if (!extendBookingByServices.value) return base
+  return applyServiceDurationToSlot(
+    base,
+    bookingAddSelectedTotalMinutes.value,
+    bookingSlotHours.value
+  ) || base
+})
+
+const bookingAddPredictedEndLabel = computed(() => {
+  const slot = bookingAddPredictedSlot.value
+  return slot ? slotLabel(slot) : ''
+})
+
+const bookingAddServiceDurationLabel = computed(() =>
+  formatDurationMinutes(bookingAddSelectedTotalMinutes.value)
+)
+
 function formatBookingOptionDuration(opt) {
   const mins = Number(opt?.duration_min)
   if (!Number.isFinite(mins) || mins <= 0) return ''
@@ -7367,6 +7396,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   />
                   <span class="booking-edit-option-name">
                     {{ opt.option_name }}
+                    <span v-if="formatBookingOptionDuration(opt)" class="booking-edit-option-duration">
+                      {{ formatBookingOptionDuration(opt) }}
+                    </span>
                     <span class="booking-edit-required">บังคับ</span>
                   </span>
                   <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
@@ -7404,13 +7436,31 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     :value="String(opt.id)"
                     @change="bookingAddError = ''"
                   />
-                  <span class="booking-edit-option-name">{{ opt.option_name }}</span>
+                  <span class="booking-edit-option-name">
+                    {{ opt.option_name }}
+                    <span v-if="formatBookingOptionDuration(opt)" class="booking-edit-option-duration">
+                      {{ formatBookingOptionDuration(opt) }}
+                    </span>
+                  </span>
                   <span v-if="opt.description" class="booking-edit-option-desc">{{ opt.description }}</span>
                 </label>
               </div>
               <p v-else-if="!bookingAddRequiredOptions.length" class="muted">ไม่มีบริการให้เลือก</p>
             </template>
           </div>
+
+          <p
+            v-if="bookingAddSelectedIds.length && (bookingAddSelectedTotalMinutes > 0 || extendBookingByServices)"
+            class="booking-edit-duration-summary"
+          >
+            <span v-if="bookingAddSelectedTotalMinutes > 0">
+              รวมเวลาบริการ {{ bookingAddServiceDurationLabel }}
+            </span>
+            <span v-if="extendBookingByServices && bookingAddPredictedEndLabel">
+              <template v-if="bookingAddSelectedTotalMinutes > 0"> · </template>
+              คาดว่าจบ {{ bookingAddPredictedEndLabel }}
+            </span>
+          </p>
 
           <p v-if="bookingAddError" class="alert error">{{ bookingAddError }}</p>
 
