@@ -133,9 +133,30 @@ function validateStepPin() {
   return true
 }
 
+function normalizeRegisterPhoneInput(raw) {
+  let digits = String(raw || '').replace(/\D/g, '')
+  if (digits.startsWith('66') && digits.length === 11) {
+    digits = `0${digits.slice(2)}`
+  }
+  if (digits.length > 10) {
+    digits = digits.slice(-10)
+  }
+  return digits
+}
+
+function onPhoneInput(event) {
+  phone.value = normalizeRegisterPhoneInput(event.target.value)
+}
+
 function validateStepOwner() {
-  if (!name.value.trim() || !phone.value.trim()) {
-    errorMessage.value = 'กรุณากรอกชื่อและเบอร์โทรให้ครบ'
+  if (!name.value.trim()) {
+    errorMessage.value = 'กรุณากรอกชื่อ'
+    return false
+  }
+  const ownerPhone = normalizeRegisterPhoneInput(phone.value)
+  phone.value = ownerPhone
+  if (!/^0\d{9}$/.test(ownerPhone)) {
+    errorMessage.value = 'กรุณากรอกเบอร์โทร 10 หลัก (เช่น 0812345678)'
     return false
   }
   return true
@@ -304,7 +325,7 @@ async function goStepOwner() {
 
   submitting.value = true
   try {
-    const { data } = await api.post('/api/auth/phone-login', {
+    const { data } = await api.post('/api/auth/register-shop-owner', {
       name: name.value.trim(),
       phone: phone.value.trim(),
     })
@@ -326,7 +347,7 @@ async function goStepOwner() {
     shopSlug.value = slugFromName(name.value)
     step.value = 3
   } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'สร้างบัญชีไม่สำเร็จ'
+    errorMessage.value = error?.response?.data?.error || 'ไม่สามารถใช้เบอร์นี้สมัครร้านได้'
   } finally {
     submitting.value = false
   }
@@ -629,13 +650,22 @@ onUnmounted(() => {
             </label>
             <label class="field">
               <i class="ti ti-phone field-icon" aria-hidden="true"></i>
-              <input v-model="phone" type="tel" placeholder="08xxxxxxxx" />
+              <input
+                :value="phone"
+                type="tel"
+                inputmode="numeric"
+                maxlength="10"
+                pattern="0[0-9]{9}"
+                placeholder="0812345678"
+                autocomplete="tel"
+                @input="onPhoneInput"
+              />
             </label>
           </div>
 
           <p class="register-note">
-            <i class="ti ti-info-circle" aria-hidden="true"></i>
-            ชื่อและเบอร์ตรงกับที่เคยใช้ = เข้าบัญชีเดิม
+            <i class="ti ti-shield-lock" aria-hidden="true"></i>
+            เบอร์ต้องครบ 10 หลัก 
           </p>
 
           <button type="button" class="btn primary register-cta" :disabled="submitting" @click="goNext">
