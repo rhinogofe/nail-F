@@ -76,9 +76,24 @@ export function injectShopManifest(html, shopSlug, shopName) {
   return next
 }
 
+function ensureHttpsAssetUrl(url) {
+  const value = String(url || '').trim()
+  if (!value) return value
+  try {
+    const parsed = new URL(value)
+    const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+    if (!isLocal && parsed.protocol === 'http:') {
+      parsed.protocol = 'https:'
+    }
+    return parsed.toString()
+  } catch {
+    return value
+  }
+}
+
 export function injectShopIcons(html, icons = {}) {
-  const favicon = String(icons.favicon || '').trim()
-  const apple = String(icons.apple || favicon).trim()
+  const favicon = ensureHttpsAssetUrl(icons.favicon)
+  const apple = ensureHttpsAssetUrl(icons.apple || favicon)
   if (!favicon && !apple) return html
 
   let next = html

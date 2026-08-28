@@ -37,8 +37,23 @@ export function logoIconVersion(logoUrl) {
   return (hash >>> 0).toString(36)
 }
 
+export function normalizeApiBase(apiBase) {
+  const raw = String(apiBase || '').trim().replace(/\/$/, '')
+  if (!raw) return raw
+  try {
+    const url = new URL(raw)
+    const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    if (!isLocal && url.protocol === 'http:') {
+      url.protocol = 'https:'
+    }
+    return url.origin
+  } catch {
+    return raw
+  }
+}
+
 export function shopIconUrl(apiBase, slug, size, version) {
-  const base = String(apiBase || '').replace(/\/$/, '')
+  const base = normalizeApiBase(apiBase)
   const v = version != null && version !== '' ? `?v=${encodeURIComponent(String(version))}` : ''
   return `${base}/api/shops/${encodeURIComponent(slug)}/icon/${size}.png${v}`
 }
