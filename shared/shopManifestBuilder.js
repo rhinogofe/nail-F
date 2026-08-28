@@ -23,6 +23,49 @@ export const MANIFEST_ICONS = [
   },
 ]
 
+export function logoIconVersion(logoUrl) {
+  const logo = String(logoUrl || '').trim()
+  if (!logo) return '0'
+  const match = logo.match(/\/api\/bookings\/ui-images\/(?:logo|hero|kshop_qr)\/([^/?#]+)/i)
+  if (match?.[1]) {
+    return match[1].replace(/\.[^.]+$/, '').slice(0, 12)
+  }
+  let hash = 5381
+  for (let i = 0; i < logo.length; i += 1) {
+    hash = (hash * 33) ^ logo.charCodeAt(i)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+export function shopIconUrl(apiBase, slug, size, version) {
+  const base = String(apiBase || '').replace(/\/$/, '')
+  const v = version != null && version !== '' ? `?v=${encodeURIComponent(String(version))}` : ''
+  return `${base}/api/shops/${encodeURIComponent(slug)}/icon/${size}.png${v}`
+}
+
+export function buildShopManifestIcons(apiBase, slug, version) {
+  return [
+    {
+      src: shopIconUrl(apiBase, slug, 192, version),
+      sizes: '192x192',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: shopIconUrl(apiBase, slug, 512, version),
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: shopIconUrl(apiBase, slug, 512, version),
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
+    },
+  ]
+}
+
 export function parseManifestSlug(pathname) {
   const match = String(pathname || '').match(/^\/manifest\/([a-z0-9]+(?:-[a-z0-9]+)*)\.webmanifest$/i)
   if (!match) return null
@@ -36,9 +79,12 @@ export function shopManifestPath(shopSlug) {
   return `/manifest/${slug}.webmanifest`
 }
 
-export function buildShopManifest(shopSlug, shopName) {
+export function buildShopManifest(shopSlug, shopName, { apiBase, iconVersion } = {}) {
   const slug = String(shopSlug || '').trim().toLowerCase()
   const name = String(shopName || '').trim() || DEFAULT_APP_NAME
+  const icons = apiBase
+    ? buildShopManifestIcons(apiBase, slug, iconVersion ?? '0')
+    : MANIFEST_ICONS
   return {
     name,
     short_name: name,
@@ -49,7 +95,7 @@ export function buildShopManifest(shopSlug, shopName) {
     background_color: MANIFEST_THEME,
     theme_color: MANIFEST_THEME,
     lang: 'th',
-    icons: MANIFEST_ICONS,
+    icons,
   }
 }
 

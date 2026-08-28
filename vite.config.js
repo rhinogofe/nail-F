@@ -157,12 +157,16 @@ function shopManifestDevPlugin() {
         if (!slug) return next()
 
         let shopName = DEFAULT_APP_NAME
+        let iconVersion = '0'
         try {
-          const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/shops/${encodeURIComponent(slug)}`)
-          if (response.ok) {
-            const shop = await response.json()
-            const name = String(shop?.name || '').trim()
+          const brandingRes = await fetch(
+            `${apiBase.replace(/\/$/, '')}/api/shops/${encodeURIComponent(slug)}/branding`,
+          )
+          if (brandingRes.ok) {
+            const branding = await brandingRes.json()
+            const name = String(branding?.name || '').trim()
             if (name) shopName = name
+            iconVersion = branding?.icon_version ?? '0'
           }
         } catch {
           /* use fallback shop name */
@@ -172,7 +176,16 @@ function shopManifestDevPlugin() {
         for (const [key, value] of Object.entries(headers)) {
           res.setHeader(key, value)
         }
-        res.end(`${JSON.stringify(buildShopManifest(slug, shopName), null, 2)}\n`)
+        res.end(
+          `${JSON.stringify(
+            buildShopManifest(slug, shopName, {
+              apiBase: apiBase.replace(/\/$/, ''),
+              iconVersion,
+            }),
+            null,
+            2,
+          )}\n`,
+        )
       })
     },
   }

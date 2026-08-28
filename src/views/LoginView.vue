@@ -16,6 +16,7 @@ const name = ref('')
 const phone = ref('')
 const submitting = ref(false)
 const errorMessage = ref('')
+const registerShopEnabled = ref(false)
 
 const shopSlug = computed(() => route.params.shopSlug || shopStore.slug || 'default')
 const logoSrc = computed(() => ui.logoUrl || defaultShopImage)
@@ -39,6 +40,13 @@ function loginPath() {
 }
 
 onMounted(async () => {
+  try {
+    const { data } = await api.get('/api/auth/register-shop/config')
+    registerShopEnabled.value = Boolean(data?.enabled)
+  } catch {
+    registerShopEnabled.value = false
+  }
+
   const token = route.query.token
   if (typeof token === 'string' && token) {
     auth.setToken(token)
@@ -132,20 +140,22 @@ async function loginWithPhone() {
             {{ submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบด้วยชื่อและเบอร์' }}
           </button>
 
-          <div class="login-divider" aria-hidden="true">
-            <span>หรือ</span>
-          </div>
+          <template v-if="registerShopEnabled">
+            <div class="login-divider" aria-hidden="true">
+              <span>หรือ</span>
+            </div>
 
-          <RouterLink :to="`/${shopSlug}/register-shop`" class="login-register-btn">
-            <span class="login-register-icon">
-              <i class="ti ti-building-store" aria-hidden="true"></i>
-            </span>
-            <span class="login-register-text">
-              <strong>สมัครร้านค้า</strong>
-              <small>เปิดร้านใหม่ · ตั้งค่า UI · เริ่มรับจอง</small>
-            </span>
-            <i class="ti ti-chevron-right login-register-arrow" aria-hidden="true"></i>
-          </RouterLink>
+            <RouterLink :to="`/${shopSlug}/register-shop`" class="login-register-btn">
+              <span class="login-register-icon">
+                <i class="ti ti-building-store" aria-hidden="true"></i>
+              </span>
+              <span class="login-register-text">
+                <strong>สมัครร้านค้า</strong>
+                <small>เปิดร้านใหม่ · ตั้งค่า UI · เริ่มรับจอง</small>
+              </span>
+              <i class="ti ti-chevron-right login-register-arrow" aria-hidden="true"></i>
+            </RouterLink>
+          </template>
 
           <p class="login-privacy">ข้อมูลของคุณใช้เพื่อยืนยันตัวตนและติดต่อการจองเท่านั้น</p>
         </form>

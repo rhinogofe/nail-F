@@ -1,3 +1,9 @@
+const FAVICON_LINK_RE =
+  /<link\s+rel="icon"[^>]*>/i
+
+const APPLE_TOUCH_ICON_RE =
+  /<link\s+rel="apple-touch-icon"[^>]*>/i
+
 const BOT_UA =
   /bot|crawler|spider|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|TelegramBot|Line\/|line-poker|Applebot/i
 
@@ -70,6 +76,27 @@ export function injectShopManifest(html, shopSlug, shopName) {
   return next
 }
 
+export function injectShopIcons(html, icons = {}) {
+  const favicon = String(icons.favicon || '').trim()
+  const apple = String(icons.apple || favicon).trim()
+  if (!favicon && !apple) return html
+
+  let next = html
+  if (favicon) {
+    next = next.replace(
+      FAVICON_LINK_RE,
+      `<link rel="icon" type="image/png" sizes="32x32" href="${escapeHtml(favicon)}" />`,
+    )
+  }
+  if (apple) {
+    next = next.replace(
+      APPLE_TOUCH_ICON_RE,
+      `<link rel="apple-touch-icon" sizes="180x180" href="${escapeHtml(apple)}" />`,
+    )
+  }
+  return next
+}
+
 export function injectShareMeta(html, meta, pageUrl) {
   const title = escapeHtml(meta.title)
   const description = escapeHtml(meta.description)
@@ -103,15 +130,13 @@ export function apiBaseUrl() {
   ).replace(/\/$/, '')
 }
 
-async function fetchShopName(slug, base) {
+async function fetchShopBranding(slug, base) {
   try {
-    const res = await fetch(`${base}/api/shops/${encodeURIComponent(slug)}`)
-    if (!res.ok) return slug
-    const shop = await res.json()
-    const name = String(shop?.name || '').trim()
-    return name || slug
+    const res = await fetch(`${base}/api/shops/${encodeURIComponent(slug)}/branding`)
+    if (!res.ok) return null
+    return await res.json()
   } catch {
-    return slug
+    return null
   }
 }
 
@@ -121,20 +146,24 @@ export async function buildShopAppShellHtml(request, { isBot = false } = {}) {
 
   const base = apiBaseUrl()
   const htmlPromise = fetch(new URL('/index.html', request.url))
-  const shopNamePromise = fetchShopName(slug, base)
+  const brandingPromise = fetchShopBranding(slug, base)
   const previewPromise = isBot
     ? fetch(`${base}/api/shops/${encodeURIComponent(slug)}/share-preview`)
     : Promise.resolve(null)
 
-  const [htmlRes, shopName, previewRes] = await Promise.all([
+  const [htmlRes, branding, previewRes] = await Promise.all([
     htmlPromise,
-    shopNamePromise,
+    brandingPromise,
     previewPromise,
   ])
 
   if (!htmlRes.ok) return null
 
+  const shopName = branding?.name || slug
   let html = injectShopManifest(await htmlRes.text(), slug, shopName)
+  if (branding?.icons) {
+    html = injectShopIcons(html, branding.icons)
+  }
 
   if (isBot && previewRes?.ok) {
     html = injectShareMeta(html, await previewRes.json(), request.url)

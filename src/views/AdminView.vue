@@ -1132,21 +1132,41 @@ async function saveShopEdit() {
 
 async function deleteShopBranch(shop) {
   if (shop.slug === 'default') return
-  const ok = await adminSwal.fire({
-    title: 'ลบสาขา',
-    html: `ลบสาขา <strong>${shop.name}</strong> (/${shop.slug})<br><span style="color:#9A8E89">ถ้ามีข้อมูลจองจะปิดใช้งานแทนการลบถาวร</span>`,
+  const intro = await adminSwal.fire({
+    title: 'ลบสาขาถาวร',
+    html: `ลบสาขา <strong>${shop.name}</strong> (/${shop.slug}) ออกจากระบบ<br><span style="color:#9A8E89">คิวจอง แชท บริการ ตั้งค่า และสลิปของสาขานี้จะหายไปทั้งหมด — กู้คืนไม่ได้</span>`,
     icon: 'warning',
     showCancelButton: true,
-    confirmButtonText: 'ลบ',
+    confirmButtonText: 'ดำเนินการต่อ',
     cancelButtonText: 'ยกเลิก',
     confirmButtonColor: '#C45C5C',
   })
-  if (!ok.isConfirmed) return
+  if (!intro.isConfirmed) return
+
+  const confirm = await adminSwal.fire({
+    title: 'ยืนยันการลบถาวร',
+    html: `พิมพ์ <strong>${shop.slug}</strong> เพื่อยืนยัน`,
+    input: 'text',
+    inputPlaceholder: shop.slug,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ลบถาวร',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#C45C5C',
+    inputValidator: (value) => {
+      if (String(value || '').trim().toLowerCase() !== shop.slug) {
+        return 'slug ไม่ตรงกับสาขาที่จะลบ'
+      }
+      return undefined
+    },
+  })
+  if (!confirm.isConfirmed) return
+
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.delete(`/api/shops/${shop.slug}`)
-    message.value = data?.message || `ลบสาขา ${shop.name} แล้ว`
+    const { data } = await api.delete(`/api/shops/${shop.slug}`, { params: { force: true } })
+    message.value = data?.message || `ลบสาขา ${shop.name} ถาวรแล้ว`
     if (shop.slug === shopSlug.value) {
       router.push('/default/admin')
     }
@@ -2495,22 +2515,26 @@ async function loadRegisterShopPinSetting() {
 
 async function saveRegisterShopPinSetting() {
   const pin = String(registerShopPin.value || '').replace(/\D/g, '').slice(0, 4)
-  if (!/^\d{4}$/.test(pin)) {
+  if (pin && !/^\d{4}$/.test(pin)) {
     errorMessage.value = 'รหัสต้องเป็นตัวเลข 4 หลัก'
     return
   }
   const ok = await confirmAdminSave(
-    'ยืนยันบันทึกรหัสสร้างร้าน',
-    'บันทึกรหัสนี้สำหรับสมัครร้านค้าใหม่ใช่ไหม'
+    pin ? 'ยืนยันบันทึกรหัสสร้างร้าน' : 'ยืนยันปิดการสมัครร้าน',
+    pin
+      ? 'บันทึกรหัสนี้สำหรับสมัครร้านค้าใหม่ใช่ไหม'
+      : 'ล้างรหัสจะปิดให้สมัครร้านใหม่ และซ่อนปุ่มสมัครร้านในหน้าล็อกอิน ใช่ไหม'
   )
   if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
     const { data } = await api.patch('/api/admin/settings/register-pin', { pin })
-    registerShopPin.value = String(data?.pin || pin)
-    registerShopPinConfigured.value = true
-    message.value = 'บันทึกรหัสสร้างร้านค้าแล้ว'
+    registerShopPin.value = String(data?.pin || '')
+    registerShopPinConfigured.value = Boolean(data?.configured)
+    message.value = data?.configured
+      ? 'บันทึกรหัสสร้างร้านค้าแล้ว — เปิดรับสมัครร้าน'
+      : 'ปิดการสมัครร้านแล้ว'
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกรหัสไม่สำเร็จ'
   }
@@ -5835,7 +5859,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               class="btn danger"
               @click="deleteShopBranch(shop)"
             >
-              ลบ
+              ลบถาวร
             </button>
           </div>
         </li>
@@ -5882,7 +5906,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <div class="admin-section-head">
         <h3>รหัสสร้างร้านค้า</h3>
         <p class="muted">
-          รหัส 4 หลักที่ต้องกรอกก่อนสมัครร้านใหม่ — แสดงเฉพาะแอดมินหลัก (default)
+          รหัส 4 หลักที่ต้องกรอกก่อนสมัครร้านใหม่ — เว้นว่างแล้วบันทึก = ปิดสมัครร้าน (ซ่อนปุ่มในหน้าล็อกอิน)
         </p>
       </div>
       <div class="admin-form-row" style="flex-wrap:wrap">
@@ -5895,13 +5919,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             maxlength="4"
             pattern="\d{4}"
             class="admin-input register-pin-admin-input"
-            placeholder="เช่น 1234"
+            placeholder="เช่น 1234 (ว่าง = ปิด)"
             autocomplete="off"
             @input="onRegisterPinInput"
           />
         </label>
         <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveRegisterShopPinSetting">
-          บันทึกรหัส
+          {{ registerShopPin ? 'บันทึกรหัส' : 'ปิดสมัครร้าน' }}
         </button>
       </div>
       <div class="shop-hours-preview">

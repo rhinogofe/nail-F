@@ -5,15 +5,15 @@ import {
   parseManifestSlug,
 } from '../../shared/shopManifestBuilder.js'
 
-async function fetchShopName(slug, apiBase) {
+async function fetchShopBranding(slug, apiBase) {
   try {
-    const res = await fetch(`${apiBase.replace(/\/$/, '')}/api/shops/${encodeURIComponent(slug)}`)
-    if (!res.ok) return DEFAULT_APP_NAME
-    const shop = await res.json()
-    const name = String(shop?.name || '').trim()
-    return name || DEFAULT_APP_NAME
+    const res = await fetch(
+      `${apiBase.replace(/\/$/, '')}/api/shops/${encodeURIComponent(slug)}/branding`,
+    )
+    if (!res.ok) return null
+    return await res.json()
   } catch {
-    return DEFAULT_APP_NAME
+    return null
   }
 }
 
@@ -28,8 +28,12 @@ export default async (request) => {
     Deno.env.get('VITE_API_BASE_URL') ||
     'https://nail-b.onrender.com'
 
-  const shopName = await fetchShopName(slug, apiBase)
-  const manifest = buildShopManifest(slug, shopName)
+  const branding = await fetchShopBranding(slug, apiBase)
+  const shopName = branding?.name || DEFAULT_APP_NAME
+  const manifest = buildShopManifest(slug, shopName, {
+    apiBase: apiBase.replace(/\/$/, ''),
+    iconVersion: branding?.icon_version ?? '0',
+  })
 
   return new Response(`${JSON.stringify(manifest, null, 2)}\n`, {
     headers: manifestResponseHeaders(),

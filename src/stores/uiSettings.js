@@ -3,6 +3,7 @@ import api from '../api/axios'
 import { formatUiText } from '../utils/formatUiText'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { applyPageMeta } from '../utils/pageMeta'
+import { logoIconVersion, syncShopIcons } from '../utils/shopManifest'
 import { useShopFeaturesStore } from './shopFeatures'
 
 const FALLBACK = {
@@ -37,6 +38,12 @@ function applyTheme(settings, shopSlug = '', shopName = '') {
     image,
     url: typeof window !== 'undefined' ? window.location.href : '',
   })
+  if (slug) {
+    syncShopIcons({
+      shopSlug: slug,
+      iconVersion: logoIconVersion(settings.ui_logo_url),
+    })
+  }
 }
 
 export const useUiSettingsStore = defineStore('uiSettings', {
