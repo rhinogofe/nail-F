@@ -331,8 +331,8 @@ function openMaps() {
 @media (min-width: 900px) {
   .map-embed-wrap,
   .map-empty-state {
-    aspect-ratio: 16 / 9;
-    min-height: 380px;
+    aspect-ratio: 32 / 9;
+    min-height: 190px;
   }
 
   .btn-open-maps {
