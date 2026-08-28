@@ -1376,11 +1376,11 @@ watch(
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  width: 100%;
 }
 
 .chat-bubble-row.mine {
   justify-content: flex-end;
-  flex-direction: row-reverse;
 }
 
 .chat-bubble-row.theirs {
