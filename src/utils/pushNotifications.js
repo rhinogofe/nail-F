@@ -1,5 +1,8 @@
 import api from '../api/axios'
 import { getFirebaseVapidKey, getFirebaseWebConfig, isFirebaseConfigured } from '../utils/firebaseConfig'
+import { isStandalonePwa } from './standalonePwa.js'
+
+export { isStandalonePwa } from './standalonePwa.js'
 
 const SW_PATH = '/firebase-messaging-sw.js'
 const TOKEN_STORAGE_KEY = 'fcmToken'
@@ -473,12 +476,6 @@ export function isIosDevice() {
   if (typeof navigator === 'undefined') return false
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-}
-
-export function isStandalonePwa() {
-  if (typeof window === 'undefined') return false
-  return window.matchMedia('(display-mode: standalone)').matches
-    || window.navigator.standalone === true
 }
 
 export function getPushHelpText(status) {

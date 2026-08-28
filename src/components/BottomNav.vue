@@ -28,7 +28,9 @@ const showChatNav = computed(() => shopFeatures.navChat)
 const locationNavLabel = computed(() => ui.shopLocationNavLabel)
 
 function go(path) {
-  router.push(`/${shopSlug.value}${path}`)
+  const target = `/${shopSlug.value}${path}`
+  if (route.path === target) return
+  router.replace(target)
 }
 </script>
 
