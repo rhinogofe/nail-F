@@ -1181,14 +1181,20 @@ textarea.admin-input {
 @media (min-width: 900px) {
   :root {
     --page-nav-padding-bottom: var(--space-5);
-    --page-padding-x: 24px;
+    --page-padding-x: clamp(20px, 2vw, 32px);
   }
 
   .app-page--nav,
   .chat-page {
-    max-width: min(var(--page-wide-max), 100%);
+    max-width: none;
+    width: 100%;
     padding-left: var(--sidebar-width);
     padding-bottom: var(--space-5);
+  }
+
+  .admin-page {
+    max-width: none;
+    width: 100%;
   }
 
   .sheet-overlay {

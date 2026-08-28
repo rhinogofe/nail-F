@@ -8044,9 +8044,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 <style scoped>
 .admin-page {
   width: 100%;
-  max-width: 1200px;
+  max-width: none;
   min-width: 0;
-  margin: 0 auto;
+  margin: 0;
   padding: var(--page-padding-x);
   padding-bottom: max(var(--space-4), var(--bottom-nav-safe));
   background: var(--color-background);

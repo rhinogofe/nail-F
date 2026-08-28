@@ -172,135 +172,131 @@ onMounted(async () => {
     </header>
 
     <main class="content app-content">
-      <section class="card profile-hero">
-        <div class="profile-hero-avatar app-avatar">{{ initials }}</div>
-        <div class="profile-hero-text">
-          <h2 class="profile-hero-name">{{ auth.user?.name || 'สมาชิก' }}</h2>
-          <p class="profile-hero-meta muted">{{ isPhoneAccount ? profilePhone || loginLabel : loginLabel }}</p>
+      <div class="profile-layout">
+        <div class="profile-main">
+          <section class="card profile-hero">
+            <div class="profile-hero-avatar app-avatar">{{ initials }}</div>
+            <div class="profile-hero-text">
+              <h2 class="profile-hero-name">{{ auth.user?.name || 'สมาชิก' }}</h2>
+              <p class="profile-hero-meta muted">{{ isPhoneAccount ? profilePhone || loginLabel : loginLabel }}</p>
+            </div>
+          </section>
+
+          <section class="card profile-card">
+            <div class="profile-stats">
+              <div class="stat-box">
+                <strong>{{ totalPoints.toLocaleString('th-TH') }}</strong>
+                <span>แต้มสะสม</span>
+              </div>
+              <div class="stat-box">
+                <strong>{{ auth.user?.completed_bookings ?? 0 }}</strong>
+                <span>ทำเสร็จ</span>
+              </div>
+              <div class="stat-box">
+                <strong>{{ auth.user?.cancelled_bookings ?? 0 }}</strong>
+                <span>ยกเลิก</span>
+              </div>
+            </div>
+
+            <h2 class="section-title">ข้อมูลส่วนตัว</h2>
+
+            <label class="field">
+              <span class="field-label">ชื่อ</span>
+              <div class="field-input-wrap">
+                <i class="ti ti-user field-input-icon" aria-hidden="true"></i>
+                <input
+                  v-model="profileName"
+                  type="text"
+                  class="input"
+                  placeholder="ชื่อผู้จอง"
+                  @input="errorMessage = ''"
+                />
+              </div>
+            </label>
+
+            <label v-if="isPhoneAccount" class="field">
+              <span class="field-label">เบอร์โทร (รหัสล็อกอิน)</span>
+              <div class="field-input-wrap">
+                <i class="ti ti-phone field-input-icon" aria-hidden="true"></i>
+                <input
+                  v-model="profilePhone"
+                  type="tel"
+                  class="input"
+                  placeholder="เบอร์โทร"
+                  @input="errorMessage = ''"
+                />
+              </div>
+            </label>
+
+            <label v-else class="field">
+              <span class="field-label">วิธีล็อกอิน</span>
+              <div class="field-input-wrap">
+                <i class="ti ti-lock field-input-icon" aria-hidden="true"></i>
+                <input :value="loginLabel" type="text" class="input readonly" readonly />
+              </div>
+            </label>
+
+            <p v-if="message" class="alert-banner success">{{ message }}</p>
+            <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
+
+            <button type="button" class="btn primary btn-save" :disabled="saving" @click="saveProfile">
+              {{ saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล' }}
+            </button>
+          </section>
+
+          <section class="card coupon-card">
+            <h2 class="section-title">คูปอง</h2>
+            <p class="coupon-hint">
+              แลกคูปองลด {{ couponSettings.discountPercent }}% ใช้ {{ couponSettings.requiredPoints.toLocaleString('th-TH') }} แต้ม · คุณมี {{ totalPoints.toLocaleString('th-TH') }} แต้ม
+            </p>
+            <div class="coupon-actions">
+              <button type="button" class="btn-coupon" @click="showMyCoupons">
+                <i class="ti ti-ticket" aria-hidden="true"></i>
+                <span>คูปองของฉัน</span>
+                <span v-if="myCoupons.length" class="coupon-badge">{{ myCoupons.length }}</span>
+              </button>
+              <button
+                v-if="canRedeemCoupon"
+                type="button"
+                class="btn-redeem"
+                @click="redeemCoupon"
+              >
+                <i class="ti ti-gift" aria-hidden="true"></i>
+                <span>แลกคูปอง</span>
+              </button>
+            </div>
+          </section>
         </div>
-      </section>
 
-      <section class="card profile-card">
-        <div class="profile-stats">
-          <div class="stat-box">
-            <strong>{{ totalPoints.toLocaleString('th-TH') }}</strong>
-            <span>แต้มสะสม</span>
-          </div>
-          <div class="stat-box">
-            <strong>{{ auth.user?.completed_bookings ?? 0 }}</strong>
-            <span>ทำเสร็จ</span>
-          </div>
-          <div class="stat-box">
-            <strong>{{ auth.user?.cancelled_bookings ?? 0 }}</strong>
-            <span>ยกเลิก</span>
-          </div>
-        </div>
+        <section class="card history-card">
+          <h2 class="section-title">ประวัติการจอง</h2>
+          <p v-if="loadingHistory" class="muted">กำลังโหลด...</p>
+          <p v-else-if="history.length === 0" class="muted">ยังไม่มีประวัติการจอง</p>
 
-        <h2 class="section-title">ข้อมูลส่วนตัว</h2>
-
-        <label class="field">
-          <span class="field-label">ชื่อ</span>
-          <div class="field-input-wrap">
-            <i class="ti ti-user field-input-icon" aria-hidden="true"></i>
-            <input
-              v-model="profileName"
-              type="text"
-              class="input"
-              placeholder="ชื่อผู้จอง"
-              @input="errorMessage = ''"
-            />
-          </div>
-        </label>
-
-        <label v-if="isPhoneAccount" class="field">
-          <span class="field-label">เบอร์โทร (รหัสล็อกอิน)</span>
-          <div class="field-input-wrap">
-            <i class="ti ti-phone field-input-icon" aria-hidden="true"></i>
-            <input
-              v-model="profilePhone"
-              type="tel"
-              class="input"
-              placeholder="เบอร์โทร"
-              @input="errorMessage = ''"
-            />
-          </div>
-        </label>
-
-        <label v-else class="field">
-          <span class="field-label">วิธีล็อกอิน</span>
-          <div class="field-input-wrap">
-            <i class="ti ti-lock field-input-icon" aria-hidden="true"></i>
-            <input :value="loginLabel" type="text" class="input readonly" readonly />
-          </div>
-        </label>
-
-        <!-- <label class="field">
-          <span class="field-label">อีเมล</span>
-          <div class="field-input-wrap">
-            <i class="ti ti-mail field-input-icon" aria-hidden="true"></i>
-            <input :value="auth.user?.email || '-'" type="text" class="input readonly" readonly />
-          </div>
-        </label> -->
-
-        <p v-if="message" class="alert-banner success">{{ message }}</p>
-        <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
-
-        <button type="button" class="btn primary btn-save" :disabled="saving" @click="saveProfile">
-          {{ saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล' }}
-        </button>
-      </section>
-
-      <section class="card coupon-card">
-        <h2 class="section-title">คูปอง</h2>
-        <p class="coupon-hint">
-          แลกคูปองลด {{ couponSettings.discountPercent }}% ใช้ {{ couponSettings.requiredPoints.toLocaleString('th-TH') }} แต้ม · คุณมี {{ totalPoints.toLocaleString('th-TH') }} แต้ม
-        </p>
-        <div class="coupon-actions">
-          <button type="button" class="btn-coupon" @click="showMyCoupons">
-            <i class="ti ti-ticket" aria-hidden="true"></i>
-            <span>คูปองของฉัน</span>
-            <span v-if="myCoupons.length" class="coupon-badge">{{ myCoupons.length }}</span>
-          </button>
-          <button
-            v-if="canRedeemCoupon"
-            type="button"
-            class="btn-redeem"
-            @click="redeemCoupon"
-          >
-            <i class="ti ti-gift" aria-hidden="true"></i>
-            <span>แลกคูปอง</span>
-          </button>
-        </div>
-      </section>
-
-      <section class="card history-card">
-        <h2 class="section-title">ประวัติการจอง</h2>
-        <p v-if="loadingHistory" class="muted">กำลังโหลด...</p>
-        <p v-else-if="history.length === 0" class="muted">ยังไม่มีประวัติการจอง</p>
-
-        <div v-for="item in history" :key="item.id" class="history-item">
-          <div class="history-head">
-            <strong>{{ formatDateLabel(item.booking_date) }}</strong>
-            <span class="history-time">
-              {{ item.start_hour }}:00 - {{ item.end_hour ?? bookingEndHour(Number(item.start_hour), bookingStore.bookingSlotHours) }}:00
+          <div v-for="item in history" :key="item.id" class="history-item">
+            <div class="history-head">
+              <strong>{{ formatDateLabel(item.booking_date) }}</strong>
+              <span class="history-time">
+                {{ item.start_hour }}:00 - {{ item.end_hour ?? bookingEndHour(Number(item.start_hour), bookingStore.bookingSlotHours) }}:00
+              </span>
+            </div>
+            <span class="status-pill" :class="statusClass(item.status)">
+              {{ statusLabel(item.status) }}
             </span>
+            <p class="history-services">
+              {{
+                item.nail_options?.length
+                  ? item.nail_options.map((opt) => opt.option_name).join(', ')
+                  : 'ไม่ระบุบริการ'
+              }}
+            </p>
+            <p v-if="item.total != null && item.total !== ''" class="history-total">
+              ยอด {{ formatTotal(item.total) }}
+            </p>
+            <p class="history-meta">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
           </div>
-          <span class="status-pill" :class="statusClass(item.status)">
-            {{ statusLabel(item.status) }}
-          </span>
-          <p class="history-services">
-            {{
-              item.nail_options?.length
-                ? item.nail_options.map((opt) => opt.option_name).join(', ')
-                : 'ไม่ระบุบริการ'
-            }}
-          </p>
-          <p v-if="item.total != null && item.total !== ''" class="history-total">
-            ยอด {{ formatTotal(item.total) }}
-          </p>
-          <p class="history-meta">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
 
     <BottomNav active="profile" />
@@ -344,16 +340,24 @@ onMounted(async () => {
 }
 
 @media (min-width: 900px) {
-  .profile-page .content {
+  .profile-layout {
     display: grid;
-    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.15fr);
+    grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
     gap: var(--space-4);
     align-items: start;
   }
 
+  .profile-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
   .history-card {
-    grid-column: 2;
-    grid-row: 1 / span 3;
+    min-width: 0;
+    max-height: calc(100dvh - 220px);
+    overflow-y: auto;
   }
 }
 

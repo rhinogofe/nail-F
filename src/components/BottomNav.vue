@@ -205,7 +205,7 @@ function go(path) {
   .bottom-nav {
     top: 0;
     bottom: 0;
-    left: max(0px, calc((100vw - min(var(--page-wide-max), 100vw)) / 2));
+    left: 0;
     transform: none;
     width: var(--sidebar-width);
     max-width: none;

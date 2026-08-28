@@ -64,12 +64,4 @@ const emit = defineEmits(['reload'])
 .app-update-banner__btn:active {
   background: rgba(255, 255, 255, 0.24);
 }
-
-@media (min-width: 900px) {
-  .app-update-banner {
-    left: max(0px, calc((100vw - min(var(--page-wide-max), 100vw)) / 2));
-    transform: none;
-    width: min(100%, var(--page-wide-max));
-  }
-}
 </style>

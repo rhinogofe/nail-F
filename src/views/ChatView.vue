@@ -894,7 +894,8 @@ watch(
 @media (min-width: 900px) {
   .chat-page,
   .chat-page--admin {
-    max-width: min(var(--page-wide-max), 100%);
+    max-width: none;
+    width: 100%;
     padding-left: var(--sidebar-width);
     padding-bottom: 0;
   }

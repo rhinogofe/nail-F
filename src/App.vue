@@ -87,7 +87,7 @@ watch(() => auth.isLoggedIn, () => {
 }
 
 .app-shell--admin {
-  max-width: min(1200px, 100%);
+  max-width: none;
   width: 100%;
   overflow: hidden;
   box-sizing: border-box;
@@ -102,20 +102,26 @@ watch(() => auth.isLoggedIn, () => {
 
 @media (min-width: 768px) {
   .app-shell--admin {
-    padding: 0 var(--space-5);
+    padding: 0 clamp(16px, 2vw, 32px);
   }
 }
 
 @media (min-width: 900px) {
   .app-shell--nav {
-    max-width: min(var(--page-wide-max), 100%);
+    max-width: none;
     width: 100%;
   }
 
   .app-shell--nav .app-update-banner {
-    left: max(0px, calc((100vw - min(var(--page-wide-max), 100vw)) / 2));
+    left: var(--sidebar-width);
     transform: none;
-    width: min(100%, var(--page-wide-max));
+    width: calc(100% - var(--sidebar-width));
+  }
+
+  .app-shell--admin .app-update-banner {
+    left: 0;
+    transform: none;
+    width: 100%;
   }
 }
 </style>
