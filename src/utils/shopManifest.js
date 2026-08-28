@@ -6,6 +6,8 @@ import {
 export { shopManifestPath } from '../../shared/shopManifestBuilder.js'
 
 export function syncShopManifestLink({ shopSlug, shopName } = {}) {
+  // Client-side fallback — iOS Add to Home Screen reads the server-injected
+  // manifest link from the initial HTML (Netlify app-shell edge function).
   if (typeof document === 'undefined') return
 
   const slug = String(shopSlug || '').trim().toLowerCase()
