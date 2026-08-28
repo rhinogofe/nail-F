@@ -6,6 +6,7 @@ import Swal from 'sweetalert2'
 import api from '../api/axios'
 import { compressImage } from '../utils/compressChatImage'
 import AdminSwitch from './AdminSwitch.vue'
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock'
 
 const props = defineProps({
   isSuperAdmin: { type: Boolean, default: false },
@@ -313,7 +314,7 @@ function selectSpecialPackage(packageId) {
 function closeQrModal() {
   showQrModal.value = false
   qrModalLoading.value = false
-  document.body.style.overflow = ''
+  unlockBodyScroll()
 }
 
 function onQrModalBackdropClick(event) {
@@ -714,10 +715,10 @@ watch([selectedTier, selectedMonths, selectedSpecialId], () => {
 
 watch(showQrModal, async (open) => {
   if (!open) {
-    document.body.style.overflow = ''
+    unlockBodyScroll()
     return
   }
-  document.body.style.overflow = 'hidden'
+  lockBodyScroll()
   await nextTick()
   qrModalRef.value?.focus()
 })
@@ -1645,6 +1646,8 @@ onUnmounted(() => {
   width: min(100%, 420px);
   max-height: min(92vh, 720px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 22px 20px 18px;
   margin: 0;
   text-align: center;

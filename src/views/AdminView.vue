@@ -7972,8 +7972,6 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   padding: var(--page-padding-x);
   padding-bottom: max(var(--space-4), var(--bottom-nav-safe));
   background: var(--color-background);
-  min-height: 100svh;
-  overflow-x: clip;
   box-sizing: border-box;
 }
 
@@ -9582,6 +9580,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 10px;
   max-height: min(60vh, 480px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   margin-top: 4px;
 }
 
@@ -9904,6 +9904,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   width: min(100%, 480px);
   max-height: min(90vh, 720px);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 20px;
   margin: 0;
   position: relative;
@@ -10290,6 +10292,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   min-width: 0;
   padding: var(--space-4);
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 

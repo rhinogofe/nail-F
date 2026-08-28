@@ -156,7 +156,6 @@ async function loginWithPhone() {
 
 <style scoped>
 .login-page {
-  min-height: 100svh;
   display: grid;
   place-content: center;
   padding: var(--page-padding-x);

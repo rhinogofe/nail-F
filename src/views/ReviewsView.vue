@@ -6,6 +6,7 @@ import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { useShopRoute } from '../composables/useShopRoute'
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock'
 import { useShopRealtime } from '../composables/useShopRealtime'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
@@ -94,15 +95,11 @@ useShopRealtime({
   },
 })
 
-function lockBodyScroll(lock) {
-  document.body.style.overflow = lock ? 'hidden' : ''
-}
-
 async function openViewer(index) {
   viewerIndex.value = index
   playKey.value += 1
   viewerOpen.value = true
-  lockBodyScroll(true)
+  lockBodyScroll()
   await nextTick()
   const el = viewerScrollRef.value
   if (el) {
@@ -112,7 +109,7 @@ async function openViewer(index) {
 
 function closeViewer() {
   viewerOpen.value = false
-  lockBodyScroll(false)
+  unlockBodyScroll()
 }
 
 function onViewerScroll() {
@@ -126,7 +123,7 @@ function onViewerScroll() {
 }
 
 onMounted(loadClips)
-onUnmounted(() => lockBodyScroll(false))
+onUnmounted(() => unlockBodyScroll())
 </script>
 
 <template>

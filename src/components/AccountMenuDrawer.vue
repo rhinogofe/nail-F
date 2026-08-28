@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import PushNotificationToggle from './PushNotificationToggle.vue'
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -59,7 +60,8 @@ function onMenuKeydown(event) {
 }
 
 watch(menuOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : ''
+  if (open) lockBodyScroll()
+  else unlockBodyScroll()
 })
 
 watch(
@@ -75,7 +77,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onMenuKeydown)
-  if (menuOpen.value) document.body.style.overflow = ''
+  if (menuOpen.value) unlockBodyScroll()
 })
 
 defineExpose({

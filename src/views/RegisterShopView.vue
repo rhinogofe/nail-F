@@ -924,7 +924,6 @@ onUnmounted(() => {
 
 <style scoped>
 .register-page {
-  min-height: 100svh;
   display: grid;
   place-content: start center;
   padding: var(--page-padding-x);

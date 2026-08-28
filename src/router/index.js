@@ -15,6 +15,7 @@ import ChatView from '../views/ChatView.vue'
 import ShopLocationView from '../views/ShopLocationView.vue'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
 import { releaseAllBodyScrollLocks } from '../utils/bodyScrollLock'
+import { resetPageScroll } from '../utils/pageScroll'
 
 const shopChildren = [
   { path: 'login', component: LoginView, meta: { guest: true } },
@@ -137,7 +138,7 @@ router.afterEach(() => {
   releaseAllBodyScrollLocks()
   dismissBlockingOverlays()
   scheduleOverlayCleanup()
-  window.scrollTo(0, 0)
+  resetPageScroll()
 })
 
 export default router

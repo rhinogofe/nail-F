@@ -3,6 +3,7 @@ import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } f
 import { useRoute, useRouter } from 'vue-router'
 import Swal from 'sweetalert2'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
+import { resetPageScroll, getPageScrollTop } from '../utils/pageScroll'
 import { lockBodyScroll, releaseAllBodyScrollLocks, unlockBodyScroll } from '../utils/bodyScrollLock'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
@@ -133,6 +134,7 @@ const maxBookDate = computed(() => {
   return addDays(todayDate, Math.max(0, bookingStore.advanceDays - 1))
 })
 const dayStripRef = ref(null)
+const categoryStripRef = ref(null)
 const stripScroll = ref({ left: 0, width: 0, scrollWidth: 0 })
 const stripDragState = ref({
   active: false,
@@ -140,6 +142,14 @@ const stripDragState = ref({
   startX: 0,
   startScrollLeft: 0,
   targetIso: null,
+  pointerId: null,
+})
+const categoryStripDragState = ref({
+  active: false,
+  moved: false,
+  startX: 0,
+  startScrollLeft: 0,
+  targetCategoryId: null,
   pointerId: null,
 })
 const POLL_INTERVAL_MS = 45_000
@@ -228,6 +238,73 @@ function onStripPointerUp(e) {
   }
   updateStripScroll()
   if (!moved && targetIso) selectDate(targetIso)
+}
+
+function resetCategoryStripDragState() {
+  const el = categoryStripRef.value
+  const pointerId = categoryStripDragState.value.pointerId
+  categoryStripDragState.value = {
+    active: false,
+    moved: false,
+    startX: 0,
+    startScrollLeft: 0,
+    targetCategoryId: null,
+    pointerId: null,
+  }
+  if (el && pointerId != null) {
+    try {
+      if (el.hasPointerCapture?.(pointerId)) {
+        el.releasePointerCapture(pointerId)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function onCategoryStripPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  const el = categoryStripRef.value
+  if (!el) return
+  const pill = e.target.closest?.('.category-pill')
+  categoryStripDragState.value = {
+    active: true,
+    moved: false,
+    startX: e.clientX,
+    startScrollLeft: el.scrollLeft,
+    targetCategoryId: pill?.dataset?.categoryId ?? null,
+    pointerId: e.pointerId,
+  }
+}
+
+function onCategoryStripPointerMove(e) {
+  if (!categoryStripDragState.value.active || e.pointerId !== categoryStripDragState.value.pointerId) return
+  const el = categoryStripRef.value
+  if (!el) return
+  const dx = e.clientX - categoryStripDragState.value.startX
+  if (!categoryStripDragState.value.moved && Math.abs(dx) > 10) {
+    categoryStripDragState.value.moved = true
+    categoryStripDragState.value.targetCategoryId = null
+    el.setPointerCapture(e.pointerId)
+  }
+  if (!categoryStripDragState.value.moved) return
+  e.preventDefault()
+  el.scrollLeft = categoryStripDragState.value.startScrollLeft - dx
+}
+
+function onCategoryStripPointerUp(e) {
+  if (!categoryStripDragState.value.active || e.pointerId !== categoryStripDragState.value.pointerId) return
+  const { moved, targetCategoryId } = categoryStripDragState.value
+  resetCategoryStripDragState()
+  if (!moved && targetCategoryId != null) selectBookingCategory(targetCategoryId)
+}
+
+function onCategoryStripWheel(e) {
+  const el = categoryStripRef.value
+  if (!el || el.scrollWidth <= el.clientWidth + 1) return
+  if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+  e.preventDefault()
+  el.scrollLeft += e.deltaY
 }
 
 function startOfDay(date) {
@@ -689,6 +766,7 @@ function resetInteractionBlockers() {
   cancelInFlight.value = null
   submitInFlight = false
   resetStripDragState()
+  resetCategoryStripDragState()
   dismissBlockingOverlays()
   scheduleOverlayCleanup()
 }
@@ -696,10 +774,7 @@ function resetInteractionBlockers() {
 // iOS PWA misplaces fixed-position sheets while the page is mid-scroll, so the
 // scroll has to finish before the sheet mounts.
 function scrollPageToTop() {
-  if (typeof window === 'undefined') return
-  window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-  document.documentElement.scrollTop = 0
-  document.body.scrollTop = 0
+  resetPageScroll()
 }
 
 function afterScrollSettled(callback) {
@@ -707,7 +782,7 @@ function afterScrollSettled(callback) {
   let attempts = 0
   const tick = () => {
     attempts += 1
-    const offset = window.scrollY || document.documentElement.scrollTop || 0
+    const offset = getPageScrollTop()
     if (offset > 1 && attempts < 10) {
       scrollPageToTop()
       requestAnimationFrame(tick)
@@ -1299,17 +1374,26 @@ onUnmounted(() => {
 
               <div class="sheet-body">
                 <div v-if="hasCategoryStep" class="category-strip-wrap">
-                  <div class="category-strip">
+                  <div
+                    ref="categoryStripRef"
+                    class="category-strip"
+                    :class="{ 'is-dragging': categoryStripDragState.active && categoryStripDragState.moved }"
+                    @pointerdown="onCategoryStripPointerDown"
+                    @pointermove="onCategoryStripPointerMove"
+                    @pointerup="onCategoryStripPointerUp"
+                    @pointercancel="onCategoryStripPointerUp"
+                    @wheel="onCategoryStripWheel"
+                  >
                     <button
                       v-for="cat in bookableCategories"
                       :key="cat.id"
                       type="button"
                       class="category-pill"
+                      :data-category-id="cat.id"
                       :class="{
                         active: selectedCategoryId === cat.id,
                         picked: categorySelectionCount(cat.id) > 0,
                       }"
-                      @click="selectBookingCategory(cat.id)"
                     >
                       {{ cat.name }}
                       <span v-if="categorySelectionCount(cat.id)" class="category-pill-count">
@@ -2033,14 +2117,26 @@ onUnmounted(() => {
 }
 .category-strip-wrap {
   margin-bottom: 12px;
+  min-width: 0;
 }
 .category-strip {
   display: flex;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 2px 2px 6px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  cursor: grab;
+}
+.category-strip.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+.category-strip.is-dragging .category-pill {
+  pointer-events: none;
 }
 .category-strip::-webkit-scrollbar { display: none; }
 .category-pill {

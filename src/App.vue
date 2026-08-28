@@ -57,18 +57,20 @@ watch(() => auth.isLoggedIn, () => {
 
 <style>
 .app-shell {
-  min-height: 100svh;
+  height: 100%;
+  width: 100%;
   max-width: var(--page-max-width);
   margin: 0 auto;
   background: var(--color-background);
   position: relative;
   isolation: isolate;
+  overflow: hidden;
 }
 
 .app-shell--admin {
   max-width: min(1200px, 100%);
   width: 100%;
-  overflow-x: clip;
+  overflow: hidden;
   box-sizing: border-box;
   background: var(--color-background);
 }

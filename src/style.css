@@ -114,22 +114,33 @@
 }
 
 html {
+  position: fixed;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  overscroll-behavior-y: none;
 }
 
 body {
+  position: fixed;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
   margin: 0;
   font-size: var(--text-body);
   line-height: var(--lh-body);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  overscroll-behavior-y: none;
   background: linear-gradient(180deg, var(--color-background) 0%, var(--color-surface-muted) 100%);
-  min-height: 100svh;
 }
 
 /* Sheets/dialogs freeze the page instead of letting iOS scroll behind them,
@@ -161,7 +172,13 @@ textarea {
 }
 
 #app {
-  min-height: 100svh;
+  position: fixed;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
 }
 
 img,
@@ -225,15 +242,28 @@ textarea:focus-visible {
 }
 
 /* ── App shell & page layout ── */
-.app-page {
+.app-page,
+.admin-page {
   display: block;
   width: 100%;
   max-width: var(--page-max-width);
-  min-height: 100svh;
+  height: -webkit-fill-available;
+  height: 100svh;
+  height: 100dvh;
   margin: 0 auto;
   position: relative;
   background: var(--color-background);
   font-family: var(--font-body);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+}
+
+.app-page.page-scroll-locked,
+.admin-page.page-scroll-locked {
+  overflow: hidden !important;
 }
 
 .app-page--nav {
@@ -340,7 +370,7 @@ textarea:focus-visible {
 }
 
 .center {
-  min-height: 100svh;
+  min-height: 100%;
   place-content: center;
 }
 
