@@ -274,6 +274,7 @@ const slotBuildParams = computed(() => ({
   displayMode: bookingStore.bookingDisplayMode,
   slotHours: bookingStore.bookingSlotHours,
   extendByServices: bookingStore.extendBookingByServices,
+  minGapMinutes: bookingStore.effectiveMinGapMinutes,
 }))
 
 function dynamicSlotParams() {
@@ -484,6 +485,9 @@ function bookingSettingsSnapshot() {
     bookingSlotHours: bookingStore.bookingSlotHours,
     extendBookingByServices: bookingStore.extendBookingByServices,
     extendBookingPastClose: bookingStore.extendBookingPastClose,
+    bookingMinGapEnabled: bookingStore.bookingMinGapEnabled,
+    bookingMinGapMinutes: bookingStore.bookingMinGapMinutes,
+    effectiveMinGapMinutes: bookingStore.effectiveMinGapMinutes,
     advanceDays: bookingStore.advanceDays,
     bookUntilDate: bookingStore.bookUntilDate,
     bookingDisplayMode: bookingStore.bookingDisplayMode,
@@ -499,6 +503,9 @@ function hasBookingSettingsChanged(before, after) {
     before.bookingSlotHours !== after.bookingSlotHours ||
     before.extendBookingByServices !== after.extendBookingByServices ||
     before.extendBookingPastClose !== after.extendBookingPastClose ||
+    before.bookingMinGapEnabled !== after.bookingMinGapEnabled ||
+    before.bookingMinGapMinutes !== after.bookingMinGapMinutes ||
+    before.effectiveMinGapMinutes !== after.effectiveMinGapMinutes ||
     before.advanceDays !== after.advanceDays ||
     before.bookUntilDate !== after.bookUntilDate ||
     before.bookingDisplayMode !== after.bookingDisplayMode ||

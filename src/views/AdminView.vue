@@ -24,7 +24,7 @@ const adminSwal = Swal.mixin({
     container: 'swal-over-app-modal',
   },
 })
-import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey, formatDurationMinutes, sumOptionDurationMinutes, applyServiceDurationToSlot } from '../utils/bookingSlots'
+import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, normalizeBookingMinGapMinutes, resolveEffectiveMinGapMinutes, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey, formatDurationMinutes, sumOptionDurationMinutes, applyServiceDurationToSlot } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
 import { imageUrlHint } from '../utils/imageUrl'
@@ -407,6 +407,7 @@ const bookingAddHourOptions = computed(() =>
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
     extendByServices: extendBookingByServices.value,
+    minGapMinutes: effectiveMinGapMinutes.value,
   })
 )
 
@@ -462,6 +463,7 @@ const bookingEditHourOptions = computed(() => {
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
     extendByServices: extendBookingByServices.value,
+    minGapMinutes: effectiveMinGapMinutes.value,
   }, {
     excludeSlotKey: sameDay ? bookingEditOriginalSlotKey.value : null,
   })
@@ -2274,6 +2276,12 @@ const bookingDisplayMode = ref('slots_2h')
 const bookingSlotHours = ref(2)
 const extendBookingByServices = ref(false)
 const extendBookingPastClose = ref(false)
+const bookingMinGapEnabled = ref(false)
+const bookingMinGapMinutes = ref(60)
+
+const effectiveMinGapMinutes = computed(() =>
+  resolveEffectiveMinGapMinutes(bookingMinGapEnabled.value, bookingMinGapMinutes.value)
+)
 
 const displaySlotPreview = computed(() => {
   const slot = normalizeBookingSlotHours(bookingSlotHours.value)
@@ -2287,15 +2295,18 @@ const displaySlotPreview = computed(() => {
 
 async function loadBookingDisplay() {
   try {
-    const [{ data: displayData }, { data: slotData }, { data: extendData }] = await Promise.all([
+    const [{ data: displayData }, { data: slotData }, { data: extendData }, { data: minGapData }] = await Promise.all([
       api.get('/api/admin/settings/booking-display'),
       api.get('/api/admin/settings/booking-slot-hours'),
       api.get('/api/admin/settings/extend-booking-by-services'),
+      api.get('/api/admin/settings/booking-min-gap'),
     ])
     bookingDisplayMode.value = displayData.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
     bookingSlotHours.value = normalizeBookingSlotHours(slotData.slot_hours)
     extendBookingByServices.value = extendData.enabled === true
     extendBookingPastClose.value = extendData.past_close_enabled === true
+    bookingMinGapEnabled.value = minGapData.enabled === true
+    bookingMinGapMinutes.value = normalizeBookingMinGapMinutes(minGapData.minutes)
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรูปแบบแสดงเวลาไม่สำเร็จ'
   }
@@ -2751,6 +2762,39 @@ async function saveExtendBookingToggle(field, nextValue) {
       extendBookingPastClose.value = data.past_close_enabled === true
     },
   })
+}
+
+async function saveBookingMinGapToggle(nextValue) {
+  if (typeof nextValue === 'boolean') bookingMinGapEnabled.value = nextValue
+  await autoSaveSettingToggle({
+    key: 'booking-min-gap:enabled',
+    url: '/api/admin/settings/booking-min-gap',
+    payload: { enabled: nextValue },
+    label: 'เปิดจองช่องว่างระหว่างคิว',
+    nextValue,
+    revert: () => { bookingMinGapEnabled.value = !nextValue },
+    apply: (data) => {
+      bookingMinGapEnabled.value = data.enabled === true
+      bookingMinGapMinutes.value = normalizeBookingMinGapMinutes(data.minutes)
+    },
+  })
+}
+
+async function saveBookingMinGapMinutes() {
+  const minutes = normalizeBookingMinGapMinutes(bookingMinGapMinutes.value)
+  bookingMinGapMinutes.value = minutes
+  settingToggleSaving.value = 'booking-min-gap:minutes'
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    const { data } = await api.patch('/api/admin/settings/booking-min-gap', { minutes })
+    bookingMinGapMinutes.value = normalizeBookingMinGapMinutes(data.minutes)
+    message.value = `บันทึกช่องว่างขั้นต่ำ ${bookingMinGapMinutes.value} นาทีแล้ว`
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกช่องว่างขั้นต่ำไม่สำเร็จ'
+  } finally {
+    settingToggleSaving.value = ''
+  }
 }
 
 async function loadChatNotifySetting() {
@@ -3552,6 +3596,7 @@ async function loadBookingAddDayData({ preserveForm = false } = {}) {
       displayMode: bookingDisplayMode.value,
       slotHours: bookingSlotHours.value,
       extendByServices: extendBookingByServices.value,
+      minGapMinutes: effectiveMinGapMinutes.value,
     })
     if (!preserveForm || !hourOpts.some((opt) => opt.key === bookingAddSlotKey.value)) {
       bookingAddSlotKey.value = hourOpts[0]?.key || ''
@@ -6384,6 +6429,40 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     เปิดอยู่ — ตั้ง <strong>ระยะเวลา (นาที)</strong> ในแต่ละบริการด้วย
                   </template>
                   <template v-else>ปิดอยู่ — คิวใช้ความยาวตามที่ตั้งไว้เท่านั้น</template>
+                </div>
+              </div>
+
+              <div class="service-option-form card-inner" style="margin-bottom:14px">
+                <h4>ช่องว่างระหว่างคิว</h4>
+                <p class="muted">
+                  ไม่เกี่ยวกับความยาวคิวมาตรฐาน — ใช้กำหนดช่วงว่างสั้น ๆ ระหว่างคิว (เช่น 10:15–11:00) ว่าจะเปิดให้จองได้หรือไม่
+                </p>
+                <div class="admin-switch-stack" style="margin-bottom:10px">
+                  <AdminSwitch
+                    v-model="bookingMinGapEnabled"
+                    label="เปิดจองช่องว่างระหว่างคิว"
+                    hint="ปิด = ใช้ค่า 60 นาที (ช่องว่างสั้นกว่า 1 ชม. ไม่เปิดจอง)"
+                    :disabled="settingToggleSaving === 'booking-min-gap:enabled'"
+                    @update:model-value="saveBookingMinGapToggle"
+                  />
+                </div>
+                <div v-if="bookingMinGapEnabled" class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end;gap:10px">
+                  <label class="admin-label-grow">
+                    ช่องว่างขั้นต่ำ (นาที)
+                    <input
+                      v-model.number="bookingMinGapMinutes"
+                      type="number"
+                      min="15"
+                      max="120"
+                      step="15"
+                      class="admin-input"
+                      :disabled="settingToggleSaving === 'booking-min-gap:minutes'"
+                      @change="saveBookingMinGapMinutes"
+                    />
+                  </label>
+                  <p class="muted" style="margin:0;flex:1 1 220px">
+                    ตัวอย่าง 30 น. → gap 45 น. (10:15–11:00) เปิดจองได้ · 45 น. → gap 45 น. พอดี · 60 น. = ค่าเดิม
+                  </p>
                 </div>
               </div>
 

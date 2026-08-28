@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import api from '../api/axios'
 import { normalizeBookingOptionsResponse } from '../utils/bookingOptionsResponse'
-import { normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours } from '../utils/bookingSlots'
+import { normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, resolveEffectiveMinGapMinutes } from '../utils/bookingSlots'
 
 function toLocalYmd(date) {
   const y = date.getFullYear()
@@ -41,12 +41,18 @@ export const useBookingStore = defineStore('booking', {
     bookingSlotHours: 2,
     extendBookingByServices: false,
     extendBookingPastClose: false,
+    bookingMinGapEnabled: false,
+    bookingMinGapMinutes: 60,
     advanceDays: 30,
     bookUntilDate: '',
     bookingDisplayMode: 'slots_2h',
     unpaidAutoCancelEnabled: true,
     unpaidExpireHours: 24,
   }),
+  getters: {
+    effectiveMinGapMinutes: (state) =>
+      resolveEffectiveMinGapMinutes(state.bookingMinGapEnabled, state.bookingMinGapMinutes),
+  },
   actions: {
     async fetchByDate(date) {
       this.loading = true
@@ -184,6 +190,8 @@ export const useBookingStore = defineStore('booking', {
         this.bookingSlotHours = normalizeBookingSlotHours(data.slot_hours)
         this.extendBookingByServices = data.extend_booking_by_services === true
         this.extendBookingPastClose = data.extend_booking_past_close === true
+        this.bookingMinGapEnabled = data.booking_min_gap_enabled === true
+        this.bookingMinGapMinutes = Number(data.booking_min_gap_minutes) || 60
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }

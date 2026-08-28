@@ -117,6 +117,18 @@ export function formatDurationMinutes(minutes) {
 }
 
 export const MIN_GAP_SLOT_MINUTES = 60
+export const DEFAULT_MIN_GAP_MINUTES = MIN_GAP_SLOT_MINUTES
+
+export function normalizeBookingMinGapMinutes(value) {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n)) return DEFAULT_MIN_GAP_MINUTES
+  return Math.min(120, Math.max(15, n))
+}
+
+export function resolveEffectiveMinGapMinutes(enabled, minutes) {
+  if (!enabled) return DEFAULT_MIN_GAP_MINUTES
+  return normalizeBookingMinGapMinutes(minutes)
+}
 
 export function getOfferedSlotMinutes(baseSlot, slotHours = DEFAULT_SLOT_HOURS) {
   const startM = slotStartMinutes(baseSlot)

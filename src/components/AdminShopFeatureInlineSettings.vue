@@ -49,6 +49,8 @@ const slotDisplay = ref({
   display_mode: 'normal',
   enabled: false,
   past_close_enabled: false,
+  min_gap_enabled: false,
+  min_gap_minutes: 60,
 })
 const uiForm = ref({})
 const clips = ref([])
@@ -221,16 +223,19 @@ async function loadEditor() {
       const { data } = await shopAdminApi.get(props.shopSlug, '/api/admin/settings/advance-days')
       advanceDays.value = Number(data?.advance_days) || 30
     } else if (kind === 'slot-display') {
-      const [displayRes, slotRes, extendRes] = await Promise.all([
+      const [displayRes, slotRes, extendRes, minGapRes] = await Promise.all([
         shopAdminApi.get(props.shopSlug, '/api/admin/settings/booking-display'),
         shopAdminApi.get(props.shopSlug, '/api/admin/settings/booking-slot-hours'),
         shopAdminApi.get(props.shopSlug, '/api/admin/settings/extend-booking-by-services'),
+        shopAdminApi.get(props.shopSlug, '/api/admin/settings/booking-min-gap'),
       ])
       slotDisplay.value = {
         display_mode: displayRes.data?.display_mode === 'slots_2h' ? 'slots_2h' : 'normal',
         slot_hours: Number(slotRes.data?.slot_hours) || 2,
         enabled: Boolean(extendRes.data?.enabled),
         past_close_enabled: Boolean(extendRes.data?.past_close_enabled),
+        min_gap_enabled: Boolean(minGapRes.data?.enabled),
+        min_gap_minutes: Number(minGapRes.data?.minutes) || 60,
       }
     } else if (kind === 'ui-fields' || kind === 'ui-section') {
       const { data } = await shopAdminApi.get(props.shopSlug, '/api/admin/settings/ui')
@@ -318,6 +323,10 @@ async function saveEditor() {
         shopAdminApi.patch(props.shopSlug, '/api/admin/settings/extend-booking-by-services', {
           enabled: slotDisplay.value.enabled,
           past_close_enabled: slotDisplay.value.past_close_enabled,
+        }),
+        shopAdminApi.patch(props.shopSlug, '/api/admin/settings/booking-min-gap', {
+          enabled: slotDisplay.value.min_gap_enabled,
+          minutes: Number(slotDisplay.value.min_gap_minutes) || 60,
         }),
       ])
     } else if (kind === 'ui-fields' || kind === 'ui-section') {
@@ -576,6 +585,11 @@ watch(
       </div>
       <AdminSwitch v-model="slotDisplay.enabled" label="ขยายเวลาตามระยะบริการ" />
       <AdminSwitch v-model="slotDisplay.past_close_enabled" label="ขยายเกินเวลาปิดได้" />
+      <AdminSwitch v-model="slotDisplay.min_gap_enabled" label="เปิดจองช่องว่างระหว่างคิว" />
+      <label v-if="slotDisplay.min_gap_enabled">
+        ช่องว่างขั้นต่ำ (นาที)
+        <input v-model.number="slotDisplay.min_gap_minutes" type="number" min="15" max="120" step="15" class="admin-input" />
+      </label>
     </div>
 
     <div v-else-if="editor.kind === 'ui-fields' || editor.kind === 'ui-section'" class="inline-settings-form admin-form-grid">
