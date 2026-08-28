@@ -5,6 +5,7 @@ import generatePayload from 'promptpay-qr'
 import Swal from 'sweetalert2'
 import api from '../api/axios'
 import { compressImage } from '../utils/compressChatImage'
+import AdminSwitch from './AdminSwitch.vue'
 
 const props = defineProps({
   isSuperAdmin: { type: Boolean, default: false },
@@ -775,8 +776,8 @@ onUnmounted(() => {
 
 <template>
   <div class="admin-renewal-root">
-  <section class="card admin-section admin-renewal">
-    <header class="admin-renewal-head">
+  <section class="admin-section admin-renewal">
+    <header class="admin-renewal-head admin-section-head">
       <div>
         <h3>ต่ออายุการใช้งาน</h3>
         <p v-if="isManager" class="muted">
@@ -788,15 +789,20 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <p v-if="loading" class="muted">กำลังโหลด...</p>
+    <div v-if="loading" class="state-card">
+      <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+      <span class="state-card-title">กำลังโหลดการต่ออายุ</span>
+    </div>
 
     <template v-else>
-      <p v-if="message" class="alert success">{{ message }}</p>
-      <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+      <p v-if="message" class="alert-banner success">{{ message }}</p>
+      <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
 
       <!-- แอดมินหลัก: ตั้งค่า -->
-      <div v-if="isManager" class="admin-renewal-settings card-inner">
-        <h4>ตั้งค่าการต่ออายุ</h4>
+      <div v-if="isManager" class="admin-renewal-settings">
+        <div class="admin-section-head">
+          <h4>ตั้งค่าการต่ออายุ</h4>
+        </div>
         <div class="admin-form-row admin-renewal-form-grid">
           <label class="admin-label-grow">
             PromptPay / เบอร์โทร
@@ -889,7 +895,10 @@ onUnmounted(() => {
 
         <div class="admin-renewal-branches-usage card-inner">
           <h4>วันใช้งานแต่ละสาขา</h4>
-          <p v-if="branchShops.length === 0" class="muted">ยังไม่มีสาขา</p>
+          <div v-if="branchShops.length === 0" class="state-card">
+            <i class="ti ti-building-store state-card-icon" aria-hidden="true"></i>
+            <p class="state-card-title">ยังไม่มีสาขา</p>
+          </div>
           <ul v-else class="admin-renewal-branches-list">
             <li
               v-for="shop in branchShops"
@@ -918,9 +927,10 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <p v-if="settingsForm.special_packages.length === 0" class="muted">
-            ยังไม่มีแพ็กเกจพิเศษ
-          </p>
+          <div v-if="settingsForm.special_packages.length === 0" class="state-card">
+            <i class="ti ti-package state-card-icon" aria-hidden="true"></i>
+            <p class="state-card-title">ยังไม่มีแพ็กเกจพิเศษ</p>
+          </div>
 
           <div v-else class="admin-renewal-special-list">
             <div
@@ -965,10 +975,7 @@ onUnmounted(() => {
                   <option :value="true">เปิด LINE</option>
                 </select>
               </label>
-              <label class="admin-renewal-special-active">
-                <input v-model="item.active" type="checkbox" />
-                เปิด
-              </label>
+              <AdminSwitch compact v-model="item.active" label="เปิด" />
               <button
                 type="button"
                 class="btn danger"
@@ -1126,7 +1133,10 @@ onUnmounted(() => {
         <p v-if="isManager" class="muted">
           รูปสลิปเก็บถาวรจนกว่าจะกดลบ · แสดงชื่อสาขาและจำนวนเดือนที่ต่อ
         </p>
-        <p v-if="submissions.length === 0" class="muted">ยังไม่มีรายการ</p>
+        <div v-if="submissions.length === 0" class="state-card">
+          <i class="ti ti-receipt state-card-icon" aria-hidden="true"></i>
+          <p class="state-card-title">ยังไม่มีรายการ</p>
+        </div>
 
         <div v-else class="admin-renewal-list">
           <article
@@ -1473,14 +1483,6 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   min-width: 100px;
-}
-
-.admin-renewal-special-active {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 8px;
-  font-size: 0.9rem;
 }
 
 .admin-renewal-special-branch {

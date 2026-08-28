@@ -31,6 +31,7 @@ import {
 } from '../utils/bookingSlots'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
+import { useShopRealtime } from '../composables/useShopRealtime'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
 import BrandMark from '../components/BrandMark.vue'
@@ -43,7 +44,7 @@ import {
 
 const router = useRouter()
 const route = useRoute()
-const { shopPath } = useShopRoute()
+const { shopPath, shopSlug } = useShopRoute()
 const ui = useUiSettingsStore()
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
@@ -328,16 +329,10 @@ const serviceDurationExtendHint = computed(() => {
 
 function resolveExtendBlockMessage(reason) {
   if (reason === 'next_booking') {
-    return ui.get(
-      'ui_extend_blocked_next_booking',
-      'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากมีคิวต่อถัดไปไม่สามารถขยายเวลาได้'
-    )
+    return 'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากมีคิวต่อถัดไปไม่สามารถขยายเวลาได้'
   }
   if (reason === 'closing_time') {
-    return ui.get(
-      'ui_extend_blocked_closing',
-      'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากชนเวลาปิดร้านไม่สามารถขยายเวลาได้'
-    )
+    return 'เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากชนเวลาปิดร้านไม่สามารถขยายเวลาได้'
   }
   return ''
 }
@@ -517,6 +512,7 @@ async function syncBookingSettings({ refreshLayout = true } = {}) {
   await Promise.all([
     bookingStore.fetchBookingSettings(),
     bookingStore.fetchAllNailOptions(),
+    bookingStore.fetchNailOptions(selectedDate.value).catch(() => []),
     ui.fetch().catch(() => null),
   ])
   const after = bookingSettingsSnapshot()
@@ -546,10 +542,21 @@ async function pollCurrentDate() {
   if (!layoutRefreshed) {
     await Promise.all([
       refreshSlotData(),
+      bookingStore.fetchNailOptions(selectedDate.value).catch(() => null),
       bookingStore.fetchAllNailOptions().catch(() => null),
+      bookingStore.fetchDayHoursForDate(selectedDate.value),
+      refreshBlocksAndEnsureSelection(false),
     ])
   }
 }
+
+useShopRealtime({
+  enabled: true,
+  shopSlug,
+  onChange: () => {
+    void pollCurrentDate()
+  },
+})
 
 async function ensureSlotStillAvailable(slot, optionIds = []) {
   await Promise.all([
@@ -1002,7 +1009,7 @@ onUnmounted(() => {
     <header class="hdr app-header">
       <div class="hdr-top">
         <div class="hdr-brand-wrap">
-          <BrandMark show-sparkle />
+          <BrandMark show-sparkle show-logo />
         </div>
         <AccountMenuDrawer />
       </div>
@@ -1092,19 +1099,20 @@ onUnmounted(() => {
         วันนี้เปิดรับตามเวลาที่ตั้งเฉพาะวัน
       </p>
 
-      <p v-if="errorMessage" class="msg error">
-        <i class="ti ti-alert-circle" style="font-size:15px;vertical-align:-2px" aria-hidden="true"></i>
+      <p v-if="errorMessage" class="msg error" role="alert">
+        <i class="ti ti-alert-circle msg-icon" aria-hidden="true"></i>
         {{ errorMessage }}
       </p>
-      <p v-if="successMessage" class="msg success">
-        <i class="ti ti-check" style="font-size:15px;vertical-align:-2px" aria-hidden="true"></i>
+      <p v-if="successMessage" class="msg success" role="status">
+        <i class="ti ti-check msg-icon" aria-hidden="true"></i>
         {{ successMessage }}
       </p>
 
       <!-- Slots -->
-      <div v-if="visibleSlots.length === 0" class="empty-state">
-        <i class="ti ti-calendar-off empty-icon" aria-hidden="true"></i>
-        <p>วันนี้ไม่มีช่วงเวลาเปิดรับคิว</p>
+      <div v-if="visibleSlots.length === 0" class="state-card empty-state">
+        <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">วันนี้ไม่มีช่วงเวลาเปิดรับคิว</p>
+        <p class="muted">เลือกวันอื่นจากแถบด้านบนได้เลย</p>
       </div>
 
       <template v-else>
@@ -1123,7 +1131,7 @@ onUnmounted(() => {
             </div>
             <div class="slot-right">
               <span class="badge badge-mine">
-                <i class="ti ti-check" style="font-size:11px" aria-hidden="true"></i> จองแล้ว
+                <i class="ti ti-check badge-check" aria-hidden="true"></i> จองแล้ว
               </span>
               <button
                 v-if="bookingForSlot(slot).status === 'awaiting_payment'"
@@ -1164,7 +1172,16 @@ onUnmounted(() => {
           </div>
 
           <!-- ── ว่าง จองได้ ── -->
-          <div v-else class="slot-card free" @click="openBookSheet(slot)">
+          <div
+            v-else
+            class="slot-card free"
+            role="button"
+            tabindex="0"
+            :aria-label="`จองช่วง ${displaySlotLabel(slot)}`"
+            @click="openBookSheet(slot)"
+            @keydown.enter.prevent="openBookSheet(slot)"
+            @keydown.space.prevent="openBookSheet(slot)"
+          >
             <div class="slot-left">
               <span class="slot-range">{{ displaySlotLabel(slot) }}</span>
               <span class="slot-status">ว่าง</span>
@@ -1456,7 +1473,6 @@ onUnmounted(() => {
 <style scoped>
 .booking-page {
   padding-top: 0;
-  padding-left: 0;
   padding-right: 0;
 }
 
@@ -1468,8 +1484,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
   min-width: 0;
 }
 .hdr-brand-wrap {
@@ -1480,8 +1496,8 @@ onUnmounted(() => {
 .hdr-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 /* Chips */
@@ -1489,20 +1505,26 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--space-1);
   padding: 7px 12px;
-  border-radius: 99px;
-  font-size: 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-caption);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
-  border: 0.5px solid transparent;
+  border: 1px solid transparent;
   cursor: pointer;
   font-family: inherit;
-  transition: opacity .15s;
+  min-height: var(--touch-min);
+  transition: opacity var(--transition), transform var(--transition);
 }
 .chip i { font-size: 14px; flex-shrink: 0; }
-.chip:hover { opacity: .8; }
+.chip:hover { opacity: .85; }
+.chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.chip:active { transform: scale(0.98); }
 .chip-star {
   margin-left: auto;
   background: var(--color-secondary);
@@ -1576,7 +1598,7 @@ onUnmounted(() => {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   min-height: 58px; padding: 8px 0; border-radius: 12px;
   border: 1px solid var(--color-border); background: var(--color-surface-elevated);
-  cursor: pointer; transition: all var(--transition); font-family: inherit;
+  cursor: pointer; transition: background var(--transition), border-color var(--transition), transform var(--transition), box-shadow var(--transition); font-family: inherit;
 }
 .day-pill.has-tint .day-name,
 .day-pill.has-tint .day-num {
@@ -1585,10 +1607,14 @@ onUnmounted(() => {
 .day-pill.has-tint.active .day-name,
 .day-pill.has-tint.active .day-num,
 .day-pill.has-tint.active .day-dot {
-  color: #fff;
+  color: var(--color-on-primary);
 }
 .day-pill.has-tint.active .day-dot {
-  background: rgba(255,255,255,.55);
+  background: color-mix(in srgb, var(--color-on-primary) 55%, transparent);
+}
+.day-pill:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 .day-pill:hover { background: var(--color-primary-light); border-color: var(--color-primary-light); }
 .day-pill.has-tint:hover {
@@ -1610,7 +1636,7 @@ onUnmounted(() => {
   width: 4px; height: 4px; border-radius: 50%; background: transparent;
 }
 .day-pill.has-book .day-dot { background: var(--color-primary); }
-.day-pill.active:not(.has-tint) .day-dot { background: rgba(255,255,255,.5); }
+.day-pill.active:not(.has-tint) .day-dot { background: color-mix(in srgb, var(--color-on-primary) 55%, transparent); }
 
 .strip-hint { font-size: 12px; color: var(--color-text-muted); padding: 0 2px 12px; }
 
@@ -1628,7 +1654,7 @@ onUnmounted(() => {
   padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary-light) 40%, white);
+  background: color-mix(in srgb, var(--color-primary-light) 40%, var(--color-surface-elevated));
   color: var(--color-primary);
   font-size: 12px;
   font-weight: 600;
@@ -1652,51 +1678,67 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .custom-hours-note {
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(99, 102, 241, 0.08);
-  color: #4338ca;
-  font-size: 13px;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  font-size: var(--text-caption);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .msg {
   display: flex; align-items: center; gap: 6px;
   padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 10px;
 }
-.msg.error { background: rgba(196, 92, 92, 0.08); color: var(--color-error); border: 1px solid rgba(196, 92, 92, 0.2); }
-.msg.success { background: rgba(34, 120, 80, 0.08); color: #227850; border: 1px solid rgba(34, 120, 80, 0.2); }
+.msg-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.msg.error { background: color-mix(in srgb, var(--color-error) 10%, transparent); color: var(--color-error); border: 1px solid color-mix(in srgb, var(--color-error) 22%, transparent); }
+.msg.success { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success); border: 1px solid color-mix(in srgb, var(--color-success) 22%, transparent); }
 
 .empty-state {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 48px 0; color: var(--color-text-muted); font-size: 14px;
+  margin-top: var(--space-4);
 }
-.empty-icon { font-size: 36px; color: var(--color-text-muted); }
 
 /* ── SLOTS ── */
 .slot-row {
   display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
 }
 .slot-time {
-  font-size: 11px; font-weight: 500; color: var(--color-text-muted);
-  width: 38px; flex-shrink: 0; text-align: right;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  width: 44px;
+  flex-shrink: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .slot-card {
   flex: 1; border-radius: var(--radius-card); border: 1px solid var(--color-border);
   background: var(--color-surface-elevated); padding: 12px 14px;
   display: flex; align-items: center; justify-content: space-between;
-  min-height: 56px; transition: all var(--transition);
-  box-shadow: var(--shadow-card);
+  min-height: 56px;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
+  box-shadow: var(--shadow-sm);
 }
 .slot-card.free {
   cursor: pointer;
   background: var(--slot-free-bg);
   border-color: var(--slot-free-border);
 }
-.slot-card.free:hover { border-color: var(--color-primary); background: var(--color-primary-light); }
+.slot-card.free:hover,
+.slot-card.free:focus-visible {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  outline: none;
+}
+.slot-card.free:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
 .slot-card.free.disabled { cursor: not-allowed; opacity: .5; }
 .slot-card.mine { background: var(--slot-mine-bg); border-color: var(--slot-mine-border); }
 .slot-card.busy { background: var(--slot-busy-bg); border-color: var(--color-border); }
@@ -1727,24 +1769,30 @@ onUnmounted(() => {
   font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 99px;
 }
 .badge-mine { background: var(--color-primary-light); color: var(--color-primary-dark); border: 1px solid var(--color-primary); }
+.badge-check { font-size: 11px; }
 .badge-busy { font-size: 14px; color: var(--color-text-muted); }
 
 .book-btn {
-  padding: 7px 14px; border-radius: var(--radius-md); border: none;
+  padding: 8px 16px; border-radius: var(--radius-md); border: none;
   background: var(--color-primary); color: var(--color-on-primary); font-size: var(--text-caption); font-weight: 600;
   cursor: pointer; flex-shrink: 0; font-family: inherit; transition: background var(--transition), transform var(--transition);
-  min-height: 36px;
+  min-height: var(--touch-min);
 }
 .book-btn:hover:not(:disabled) { background: var(--color-primary-hover); }
+.book-btn:focus-visible {
+  outline: 2px solid var(--color-primary-dark);
+  outline-offset: 2px;
+}
 .book-btn:active:not(:disabled) { transform: scale(0.97); }
 .book-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .btn-cancel-slot {
-  padding: 7px 12px; border-radius: 10px;
+  padding: 8px 12px; border-radius: var(--radius-md);
   border: 1px solid var(--color-border); background: var(--color-surface-elevated);
-  font-size: 10px; font-weight: 600; color: var(--color-text-secondary);
-  cursor: pointer; flex-shrink: 0; font-family: inherit; transition: all var(--transition);
+  font-size: var(--text-caption); font-weight: 600; color: var(--color-text-secondary);
+  cursor: pointer; flex-shrink: 0; font-family: inherit; transition: border-color var(--transition), color var(--transition), background var(--transition);
   position: relative; z-index: 2; touch-action: manipulation;
+  min-height: var(--touch-min);
 }
 .btn-cancel-slot:hover:not(:disabled) {
   border-color: var(--color-primary);
@@ -1755,21 +1803,22 @@ onUnmounted(() => {
 
 /* ── BOTTOM SHEET ── */
 .overlay {
-  position: fixed; inset: 0; background: rgba(45, 36, 36, 0.4);
-  display: flex; align-items: flex-end; z-index: 50;
+  position: fixed; inset: 0; background: var(--color-overlay);
+  display: flex; align-items: flex-end; z-index: var(--z-overlay);
   height: 100dvh;
   overscroll-behavior: contain;
 }
 .cancel-overlay { z-index: 60; }
-.cancel-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+.cancel-sheet { padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px)); }
 .btn-confirm-danger {
-  background: #b45309;
+  background: var(--color-warning);
+  color: var(--color-on-primary);
 }
 .btn-confirm-danger:hover:not(:disabled) { opacity: .9; }
 .sheet {
   background: var(--color-surface-elevated); width: 100%; max-width: 430px; margin: 0 auto;
   border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
-  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-5) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow-sheet);
   max-height: 88dvh;
   overflow-y: auto;
@@ -1802,8 +1851,8 @@ onUnmounted(() => {
 }
 .sheet-footer {
   flex-shrink: 0;
-  margin: 0 -20px;
-  padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  margin: 0 calc(-1 * var(--space-5));
+  padding: var(--space-3) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-elevated);
   display: flex;
@@ -1827,7 +1876,7 @@ onUnmounted(() => {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary-light) 45%, white);
+  background: color-mix(in srgb, var(--color-primary-light) 45%, var(--color-surface-elevated));
   font-family: inherit;
   cursor: pointer;
   text-align: left;
@@ -1902,7 +1951,7 @@ onUnmounted(() => {
   gap: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-primary-light) 50%, white);
+  background: color-mix(in srgb, var(--color-primary-light) 50%, var(--color-surface-elevated));
   border: 1px solid color-mix(in srgb, var(--color-primary) 15%, var(--color-border));
 }
 .selected-service-name {
@@ -1932,13 +1981,13 @@ onUnmounted(() => {
   padding: 0;
   border: none;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
   color: var(--color-text-muted);
   cursor: pointer;
   flex-shrink: 0;
 }
 .selected-service-remove:hover {
-  background: rgba(196, 92, 92, 0.12);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
   color: var(--color-error);
 }
 .selected-services-total {
@@ -1956,7 +2005,7 @@ onUnmounted(() => {
   border-radius: 10px;
   font-size: 13px;
   color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-primary-light) 45%, white);
+  background: color-mix(in srgb, var(--color-primary-light) 45%, var(--color-surface-elevated));
   border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
 }
 .services-duration-summary strong {
@@ -2011,18 +2060,18 @@ onUnmounted(() => {
 .category-pill.active {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
 }
 .category-pill.picked:not(.active) {
   border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary-light) 65%, white);
+  background: color-mix(in srgb, var(--color-primary-light) 65%, var(--color-surface-elevated));
 }
 .category-pill-count {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
+  background: color-mix(in srgb, var(--color-on-primary) 25%, transparent);
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
@@ -2043,8 +2092,8 @@ onUnmounted(() => {
   margin: -6px 0 14px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(196, 92, 92, 0.08);
-  border: 1px solid rgba(196, 92, 92, 0.2);
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 20%, transparent);
   color: var(--color-error);
   font-size: 12px;
   font-weight: 500;
@@ -2056,9 +2105,9 @@ onUnmounted(() => {
   margin: 0 0 14px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(217, 119, 6, 0.08);
-  border: 1px solid rgba(217, 119, 6, 0.22);
-  color: #92400e;
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 22%, transparent);
+  color: var(--color-warning);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
@@ -2112,19 +2161,19 @@ onUnmounted(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 1.5px solid #cbd5e1;
-  background: #fff;
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-surface-elevated);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   color: transparent;
-  transition: all .15s;
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
 }
 .option-card.selected .option-check {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
 }
 .option-check i { font-size: 13px; }
 .option-body {
@@ -2169,7 +2218,7 @@ onUnmounted(() => {
 }
 .btn-confirm {
   flex: 1; padding: 14px; border-radius: 12px;
-  border: none; background: var(--color-primary); color: #fff;
+  border: none; background: var(--color-primary); color: var(--color-on-primary);
   font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
   display: flex; align-items: center; justify-content: center; gap: 6px;
   transition: opacity var(--transition);
@@ -2186,4 +2235,38 @@ onUnmounted(() => {
 .fade-enter-active .sheet, .fade-leave-active .sheet { transition: transform var(--transition-sheet); }
 .fade-enter-from .sheet { transform: translateY(100%); }
 .fade-leave-to .sheet { transform: translateY(100%); }
+
+@media (min-width: 900px) {
+  .body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2) var(--space-4);
+    align-items: start;
+    padding-bottom: var(--space-5);
+  }
+
+  .date-heading,
+  .custom-hours-note,
+  .msg,
+  .empty-state {
+    grid-column: 1 / -1;
+  }
+
+  .overlay {
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-6);
+  }
+
+  .sheet {
+    max-width: min(480px, 100%);
+    border-radius: var(--radius-sheet);
+    margin: 0;
+  }
+
+  .fade-enter-from .sheet,
+  .fade-leave-to .sheet {
+    transform: translateY(12px);
+  }
+}
 </style>

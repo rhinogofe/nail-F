@@ -309,7 +309,8 @@ onMounted(async () => {
 
 <style scoped>
 .profile-page {
-  padding: 0;
+  padding-top: 0;
+  padding-right: 0;
 }
 
 .hdr {
@@ -340,6 +341,20 @@ onMounted(async () => {
 
 .content {
   padding-top: 0;
+}
+
+@media (min-width: 900px) {
+  .profile-page .content {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.15fr);
+    gap: var(--space-4);
+    align-items: start;
+  }
+
+  .history-card {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
 }
 
 .card {

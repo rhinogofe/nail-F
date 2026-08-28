@@ -11,6 +11,9 @@ import {
 const route = useRoute()
 const auth = useAuthStore()
 const isAdminRoute = computed(() => /\/admin$/.test(route.path))
+const isNavRoute = computed(() =>
+  /\/(bookings|reviews|location|chat|profile)(\/|$)/.test(route.path),
+)
 const { updateAvailable, reload } = useAppUpdate()
 
 let stopPushListener = null
@@ -40,7 +43,13 @@ watch(() => auth.isLoggedIn, () => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'app-shell--admin': isAdminRoute }">
+  <div
+    class="app-shell"
+    :class="{
+      'app-shell--admin': isAdminRoute,
+      'app-shell--nav': isNavRoute,
+    }"
+  >
     <AppUpdateBanner :visible="updateAvailable" @reload="reload" />
     <router-view />
   </div>
@@ -73,6 +82,19 @@ watch(() => auth.isLoggedIn, () => {
 @media (min-width: 768px) {
   .app-shell--admin {
     padding: 0 var(--space-5);
+  }
+}
+
+@media (min-width: 900px) {
+  .app-shell--nav {
+    max-width: min(var(--page-wide-max), 100%);
+    width: 100%;
+  }
+
+  .app-shell--nav .app-update-banner {
+    left: max(0px, calc((100vw - min(var(--page-wide-max), 100vw)) / 2));
+    transform: none;
+    width: min(100%, var(--page-wide-max));
   }
 }
 </style>

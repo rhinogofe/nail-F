@@ -18,16 +18,7 @@ export const EDITOR_API_SPEC = {
   'chat-notify': {
     load: ['GET /api/admin/settings/chat-notify'],
     save: ['PATCH /api/admin/settings/chat-notify'],
-    partial: [
-      'new_booking_template',
-      'upcoming_admin_template',
-      'upcoming_customer_template',
-      'cancel_admin_template',
-      'cancel_customer_template',
-      'paid_admin_template',
-      'paid_customer_template',
-      'slip_admin_template',
-    ],
+    partial: ['upcoming_minutes'],
   },
   unpaid: {
     load: ['GET /api/admin/settings/unpaid-auto-cancel'],

@@ -8,10 +8,12 @@ import { useShopStore } from '../stores/shop'
 import Swal from 'sweetalert2'
 import { colorForDate, dayTintStyle, isValidHexColor, optionVisibleOnDate, optionBookableOnDate } from '../utils/nailOptionHelpers'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
+import BrandMark from '../components/BrandMark.vue'
 import AdminManualPanel from '../components/AdminManualPanel.vue'
 import AdminRenewalPanel from '../components/AdminRenewalPanel.vue'
 import AdminShopFeaturesPanel from '../components/AdminShopFeaturesPanel.vue'
 import AdminBookingPaymentSlips from '../components/AdminBookingPaymentSlips.vue'
+import AdminSwitch from '../components/AdminSwitch.vue'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
 import { isFirebaseConfigured } from '../utils/firebaseConfig'
@@ -36,7 +38,7 @@ import {
   optionsForCategory,
   UNCategorized_CATEGORY_ID,
 } from '../utils/bookingOptionsResponse'
-import { useAdminBookingRealtime } from '../composables/useAdminBookingRealtime'
+import { useShopRealtime } from '../composables/useShopRealtime'
 
 const router = useRouter()
 const { shopPath, shopSlug } = useShopRoute()
@@ -217,8 +219,6 @@ const lineCanEditEnabled = ref(false)
 const linePushToId = ref('')
 const lineChannelToken = ref('')
 const lineChannelSecret = ref('')
-const lineNotifyTemplate = ref('')
-const lineBranchToggling = ref('')
 
 const lineBranchShops = computed(() =>
   allShops.value.filter((shop) => shop.slug !== 'default')
@@ -232,23 +232,16 @@ const lineUsesOwnBot = ref(false)
 const lineUseOwnBot = ref(false)
 const lineCanEditUseOwnBot = ref(false)
 const lineWebhookPath = ref('/api/line/webhook')
+const lineBranchToggling = ref('')
 const chatNotifyNewBookingEnabled = ref(true)
 const chatNotifyUpcomingAdminEnabled = ref(true)
 const chatNotifyUpcomingCustomerEnabled = ref(true)
 const chatNotifyUpcomingMinutes = ref(30)
-const chatNotifyNewBookingTemplate = ref('')
-const chatNotifyUpcomingAdminTemplate = ref('')
-const chatNotifyUpcomingCustomerTemplate = ref('')
 const chatNotifyCancelAdminEnabled = ref(true)
 const chatNotifyCancelCustomerEnabled = ref(true)
 const chatNotifyPaidAdminEnabled = ref(false)
 const chatNotifyPaidCustomerEnabled = ref(true)
 const chatNotifySlipAdminEnabled = ref(true)
-const chatNotifyCancelAdminTemplate = ref('')
-const chatNotifyCancelCustomerTemplate = ref('')
-const chatNotifyPaidAdminTemplate = ref('')
-const chatNotifyPaidCustomerTemplate = ref('')
-const chatNotifySlipAdminTemplate = ref('')
 const lineEffectiveUsesOwnBot = computed(() =>
   lineUsesOwnBot.value || (lineCanEditUseOwnBot.value && lineUseOwnBot.value)
 )
@@ -278,9 +271,9 @@ const serviceWeekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 const serviceThMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 const optionColorPresets = [
   { label: 'Rose Gold', value: '#C4847A' },
-  { label: 'เขียว', value: '#22c55e' },
-  { label: 'น้ำเงิน', value: '#3b82f6' },
-  { label: 'ส้ม', value: '#f97316' },
+  { label: 'เขียว', value: '#5B8C6A' },
+  { label: 'ฟ้าตุ่น', value: '#6B8FA3' },
+  { label: 'ทองอ่อน', value: '#D4AF7A' },
 ]
 const serviceLocations = ref([])
 const serviceCategories = ref([])
@@ -303,7 +296,7 @@ const clipForm = ref({
 const locationForm = ref({
   id: null,
   name: '',
-  color: '#3b82f6',
+  color: '#C4847A',
   description: '',
   map_url: '',
   is_active: true,
@@ -342,6 +335,8 @@ const bookingEditOriginalSlotKey = ref('')
 const bookingEditOriginalDate = ref('')
 const bookingEditMoveToSlotKey = ref('')
 const bookingEditDate = ref('')
+const bookingRestoreStatus = ref('')
+const bookingRestoreConflictHint = ref('')
 const bookingEditExtraHours = ref([])
 const bookingEditDayHours = ref([])
 const bookingEditSlotBookings = ref([])
@@ -472,6 +467,8 @@ const bookingEditHourOptions = computed(() => {
   })
 })
 
+const isBookingRestoreMode = computed(() => Boolean(bookingRestoreStatus.value))
+
 const bookingEditCurrentHourLabel = computed(() => {
   if (!bookingEditItem.value) return '-'
   return slotLabel(bookingRowToSlot(bookingEditItem.value, bookingSlotHours.value))
@@ -571,7 +568,7 @@ const settingsSections = [
   { key: 'unpaid', id: 'settings-unpaid', label: 'ยกเลิกอัตโนมัติ', icon: 'ti-clock-pause' },
   { key: 'shops', id: 'settings-shops', label: 'ร้าน / สาขา', icon: 'ti-building-store' },
   { key: 'register-pin', id: 'settings-register-pin', label: 'รหัสสร้างร้านค้า', icon: 'ti-lock', superAdminOnly: true },
-  { key: 'locations', id: 'settings-locations', label: 'สถานที่บริการในแต่ละวัน', icon: 'ti-map-pin' },
+  { key: 'locations', id: 'settings-locations', label: 'สถานที่', icon: 'ti-map-pin' },
   { key: 'use-coupon', id: 'settings-use-coupon', label: 'ใช้คูปอง', icon: 'ti-scan' },
 ]
 
@@ -600,7 +597,7 @@ const uiNavOpen = ref(false)
 const blocksSections = [
   { key: 'shop-hours', label: 'เวลาเปิด-ปิดปกติ', icon: 'ti-clock' },
   { key: 'day-hours', label: 'เวลาเปิด-ปิดเฉพาะวัน', icon: 'ti-calendar-time' },
-  { key: 'slot-display', label: 'ความยาวคิว & แสดงผล', icon: 'ti-layout-list' },
+  { key: 'slot-display', label: 'ความยาวคิว', icon: 'ti-layout-list' },
   { key: 'advance', label: 'จองล่วงหน้า', icon: 'ti-calendar-event' },
   { key: 'bulk', label: 'ปิดหลายวัน', icon: 'ti-calendar-stats' },
   { key: 'calendar', label: 'ปิดทีละวัน', icon: 'ti-calendar' },
@@ -1106,12 +1103,12 @@ async function deleteShopBranch(shop) {
   if (shop.slug === 'default') return
   const ok = await adminSwal.fire({
     title: 'ลบสาขา',
-    html: `ลบสาขา <strong>${shop.name}</strong> (/${shop.slug})<br><span style="color:#64748b">ถ้ามีข้อมูลจองจะปิดใช้งานแทนการลบถาวร</span>`,
+    html: `ลบสาขา <strong>${shop.name}</strong> (/${shop.slug})<br><span style="color:#9A8E89">ถ้ามีข้อมูลจองจะปิดใช้งานแทนการลบถาวร</span>`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'ลบ',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#dc2626',
+    confirmButtonColor: '#C45C5C',
   })
   if (!ok.isConfirmed) return
   message.value = ''
@@ -1844,12 +1841,12 @@ async function toggleAdmin(user) {
 async function deleteUser(user) {
   const ok = await adminSwal.fire({
     title: 'ลบผู้ใช้',
-    html: `ลบ <strong>${user.name}</strong> และข้อมูลการจองทั้งหมดของผู้ใช้นี้<br><span style="color:#b91c1c">การลบไม่สามารถยกเลิกได้</span>`,
+    html: `ลบ <strong>${user.name}</strong> และข้อมูลการจองทั้งหมดของผู้ใช้นี้<br><span style="color:#C45C5C">การลบไม่สามารถยกเลิกได้</span>`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'ลบ',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#dc2626',
+    confirmButtonColor: '#C45C5C',
   })
   if (!ok.isConfirmed) return
   message.value = ''
@@ -2091,34 +2088,77 @@ function closeBookingDay() {
   bookings.value = []
 }
 
-async function reloadBookingViews() {
-  await Promise.all([loadBookings(), loadBookingCalendarSummary()])
+async function reloadBookingViews({ silent = false } = {}) {
+  await Promise.all([loadBookings({ silent }), loadBookingCalendarSummary()])
   if (activeTab.value === 'revenue') await loadRevenueSummary()
 }
 
 async function refreshAdminBookingModalSlots() {
   if (bookingEditOpen.value && bookingEditDate.value) {
-    await loadBookingEditDayData(bookingEditDate.value).catch(() => null)
+    await loadBookingEditDayData(bookingEditDate.value, { preserveForm: true }).catch(() => null)
   }
   if (bookingAddOpen.value && selectedBookingDate.value) {
-    try {
-      const { data } = await api.get('/api/bookings', { params: { date: selectedBookingDate.value } })
-      bookingAddSlotBookings.value = data?.bookings || []
-      bookingAddSlotBlocks.value = data?.blocks || []
-    } catch {
-      // ignore slot refresh errors during live update
-    }
+    await loadBookingAddDayData({ preserveForm: true }).catch(() => null)
   }
 }
 
-async function onAdminBookingRealtimeUpdate() {
-  await reloadBookingViews()
-  await refreshAdminBookingModalSlots()
+async function onAdminShopRealtimeUpdate(event) {
+  const type = event?.type || 'updated'
+  const isBookingEvent = [
+    'updated',
+    'created',
+    'cancelled',
+    'payment_confirmed',
+    'payment_reverted',
+    'completed',
+    'restored',
+    'unpaid_expired',
+    'schedule',
+  ].includes(type)
+
+  const tasks = []
+  if (isBookingEvent || type === 'options') {
+    tasks.push(reloadBookingViews({ silent: true }), refreshAdminBookingModalSlots())
+  }
+  if (type === 'schedule') {
+    tasks.push(
+      loadShopHours(),
+      loadDayHoursMonth(),
+      loadBlocks(),
+      loadAdvanceDays(),
+      loadBookingDisplay(),
+    )
+    if (selectedDayHoursDate.value) {
+      tasks.push(loadDayHoursForDate(selectedDayHoursDate.value))
+    }
+  }
+  if (type === 'options') {
+    tasks.push(loadNailOptions(), loadServiceCategories(), loadServiceLocations())
+  }
+  if (type === 'settings') {
+    tasks.push(
+      loadUiSettingsAdmin(),
+      loadDepositSetting(),
+      loadCouponSetting(),
+      loadUnpaidAutoCancelSetting(),
+      loadAdvanceDays(),
+      loadBookingDisplay(),
+      loadShopHours(),
+      shopFeaturesStore.fetchForAdmin(),
+      refreshAdminBookingModalSlots(),
+    )
+  }
+  if (type === 'reviews') {
+    tasks.push(loadShowcaseClips())
+  }
+  await Promise.all(tasks)
 }
 
-useAdminBookingRealtime({
-  enabled: computed(() => activeTab.value === 'bookings'),
-  onChange: onAdminBookingRealtimeUpdate,
+useShopRealtime({
+  enabled: true,
+  shopSlug,
+  auth: true,
+  onChange: onAdminShopRealtimeUpdate,
 })
 
 const revenueMonthLabel = computed(() => {
@@ -2234,8 +2274,6 @@ const bookingDisplayMode = ref('slots_2h')
 const bookingSlotHours = ref(2)
 const extendBookingByServices = ref(false)
 const extendBookingPastClose = ref(false)
-const extendBlockNextBookingMessage = ref('')
-const extendBlockClosingMessage = ref('')
 
 const displaySlotPreview = computed(() => {
   const slot = normalizeBookingSlotHours(bookingSlotHours.value)
@@ -2258,8 +2296,6 @@ async function loadBookingDisplay() {
     bookingSlotHours.value = normalizeBookingSlotHours(slotData.slot_hours)
     extendBookingByServices.value = extendData.enabled === true
     extendBookingPastClose.value = extendData.past_close_enabled === true
-    extendBlockNextBookingMessage.value = extendData.block_next_booking_message || ''
-    extendBlockClosingMessage.value = extendData.block_closing_message || ''
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรูปแบบแสดงเวลาไม่สำเร็จ'
   }
@@ -2280,51 +2316,35 @@ async function saveBookingSlotHours() {
   }
 }
 
-async function saveExtendBookingByServices() {
-  const ok = await confirmAdminSave('ยืนยันบันทึก', 'บันทึกตั้งค่าขยายเวลาจองตามบริการ ใช่ไหม')
-  if (!ok) return
+async function selectBookingDisplayMode(mode) {
+  const next = mode === 'slots_2h' ? 'slots_2h' : 'normal'
+  if (bookingDisplayMode.value === next) return
+  if (settingToggleSaving.value) return
 
+  const previous = bookingDisplayMode.value
+  bookingDisplayMode.value = next
+  settingToggleSaving.value = 'booking-display'
   message.value = ''
   errorMessage.value = ''
-  try {
-    const { data } = await api.patch('/api/admin/settings/extend-booking-by-services', {
-      enabled: extendBookingByServices.value,
-      past_close_enabled: extendBookingPastClose.value,
-      block_next_booking_message: extendBlockNextBookingMessage.value,
-      block_closing_message: extendBlockClosingMessage.value,
-    })
-    extendBookingByServices.value = data.enabled === true
-    extendBookingPastClose.value = data.past_close_enabled === true
-    extendBlockNextBookingMessage.value = data.block_next_booking_message || ''
-    extendBlockClosingMessage.value = data.block_closing_message || ''
-    message.value = 'บันทึกตั้งค่าขยายเวลาจองแล้ว'
-  } catch (err) {
-    errorMessage.value = err?.response?.data?.error || 'บันทึกตั้งค่าขยายเวลาจองไม่สำเร็จ'
-  }
-}
-
-async function saveBookingDisplay() {
-  message.value = ''
-  errorMessage.value = ''
-  const modeLabel = bookingDisplayMode.value === 'slots_2h'
+  const label = next === 'slots_2h'
     ? `ช่วงบล็อก (กระโดด ${bookingSlotHours.value} ชม.)`
     : 'ปกติ (ทีละชม.)'
-  const ok = await confirmAdminSave('ยืนยันบันทึก', `ตั้งรูปแบบแสดงเวลาเป็น "${modeLabel}" ใช่ไหม`)
-  if (!ok) return
   try {
-    await api.patch('/api/admin/settings/booking-display', {
-      display_mode: bookingDisplayMode.value,
+    const { data } = await api.patch('/api/admin/settings/booking-display', {
+      display_mode: next,
     })
-    message.value = bookingDisplayMode.value === 'slots_2h'
-      ? `บันทึกแล้ว: หน้าจองแสดงช่วง ${bookingSlotHours.value} ชม. (กระโดดทีละ ${bookingSlotHours.value} ชม.)`
-      : `บันทึกแล้ว: หน้าจองแสดงแบบปกติ (ทีละชั่วโมง · คิวละ ${bookingSlotHours.value} ชม.)`
+    bookingDisplayMode.value = data.display_mode === 'slots_2h' ? 'slots_2h' : 'normal'
+    message.value = `บันทึกแล้ว — ${label}`
   } catch (err) {
+    bookingDisplayMode.value = previous
     errorMessage.value = err?.response?.data?.error || 'บันทึกรูปแบบแสดงเวลาไม่สำเร็จ'
+  } finally {
+    settingToggleSaving.value = ''
   }
 }
 
-async function loadBookings() {
-  loading.value = true
+async function loadBookings({ silent = false } = {}) {
+  if (!silent) loading.value = true
   errorMessage.value = ''
   try {
     const params = {}
@@ -2335,7 +2355,7 @@ async function loadBookings() {
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดข้อมูลไม่สำเร็จ'
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -2524,7 +2544,6 @@ async function loadLinePushSetting() {
     lineUseOwnBot.value = Boolean(data.use_own_bot)
     lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
     lineWebhookPath.value = data.webhook_url || '/api/line/webhook'
-    lineNotifyTemplate.value = data.notify_template || data.default_template || ''
     lineChannelToken.value = ''
     lineChannelSecret.value = ''
   } catch (error) {
@@ -2546,7 +2565,6 @@ async function saveLinePushSetting() {
   try {
     const payload = {
       push_to_id: linePushToId.value.trim(),
-      notify_template: lineNotifyTemplate.value,
     }
     if (isSuperAdmin.value) {
       payload.enabled = linePushEnabled.value
@@ -2574,7 +2592,6 @@ async function saveLinePushSetting() {
     lineUseOwnBot.value = Boolean(data.use_own_bot)
     lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
     lineWebhookPath.value = data.webhook_url || lineWebhookPath.value
-    lineNotifyTemplate.value = data.notify_template || lineNotifyTemplate.value
     lineChannelToken.value = ''
     lineChannelSecret.value = ''
     message.value = 'บันทึกการแจ้งเตือน LINE แล้ว'
@@ -2659,10 +2676,10 @@ const chatNotifyToggles = {
   slip_admin_enabled: { model: chatNotifySlipAdminEnabled, label: 'แจ้งแอดมินเมื่อลูกค้าอัปโหลดสลิป' },
 }
 
-async function saveChatNotifyToggle(field) {
+async function saveChatNotifyToggle(field, nextValue) {
   const entry = chatNotifyToggles[field]
   if (!entry) return
-  const nextValue = entry.model.value
+  if (typeof nextValue === 'boolean') entry.model.value = nextValue
   await autoSaveSettingToggle({
     key: `chat-notify:${field}`,
     url: '/api/admin/settings/chat-notify',
@@ -2676,12 +2693,12 @@ async function saveChatNotifyToggle(field) {
   })
 }
 
-async function saveLinePushToggle(field) {
+async function saveLinePushToggle(field, nextValue) {
   const model = field === 'enabled' ? linePushEnabled : lineUseOwnBot
   const label = field === 'enabled'
     ? 'แจ้งเตือน LINE เมื่อลูกค้าจองคิว'
     : 'ใช้ LINE Bot ของร้านเอง (Premium)'
-  const nextValue = model.value
+  if (typeof nextValue === 'boolean') model.value = nextValue
   await autoSaveSettingToggle({
     key: `line-push:${field}`,
     url: '/api/admin/settings/line-push',
@@ -2703,8 +2720,8 @@ async function saveLinePushToggle(field) {
   })
 }
 
-async function saveUnpaidAutoCancelToggle() {
-  const nextValue = unpaidAutoCancelEnabled.value
+async function saveUnpaidAutoCancelToggle(nextValue) {
+  if (typeof nextValue === 'boolean') unpaidAutoCancelEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'unpaid:enabled',
     url: '/api/admin/settings/unpaid-auto-cancel',
@@ -2716,12 +2733,12 @@ async function saveUnpaidAutoCancelToggle() {
   })
 }
 
-async function saveExtendBookingToggle(field) {
+async function saveExtendBookingToggle(field, nextValue) {
   const model = field === 'enabled' ? extendBookingByServices : extendBookingPastClose
   const label = field === 'enabled'
     ? 'ขยายเวลาจองตามบริการ'
     : 'ขยายเวลาเกินเวลาปิดร้าน'
-  const nextValue = model.value
+  if (typeof nextValue === 'boolean') model.value = nextValue
   await autoSaveSettingToggle({
     key: `extend-booking:${field}`,
     url: '/api/admin/settings/extend-booking-by-services',
@@ -2743,35 +2760,11 @@ async function loadChatNotifySetting() {
     chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
     chatNotifyUpcomingCustomerEnabled.value = data.upcoming_customer_enabled !== false
     chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || 30
-    chatNotifyNewBookingTemplate.value = data.new_booking_template
-      || data.default_new_booking_template
-      || ''
-    chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template
-      || data.default_upcoming_admin_template
-      || ''
-    chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template
-      || data.default_upcoming_customer_template
-      || ''
     chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
     chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
     chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
     chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
     chatNotifySlipAdminEnabled.value = data.slip_admin_enabled !== false
-    chatNotifyCancelAdminTemplate.value = data.cancel_admin_template
-      || data.default_cancel_admin_template
-      || ''
-    chatNotifyCancelCustomerTemplate.value = data.cancel_customer_template
-      || data.default_cancel_customer_template
-      || ''
-    chatNotifyPaidAdminTemplate.value = data.paid_admin_template
-      || data.default_paid_admin_template
-      || ''
-    chatNotifyPaidCustomerTemplate.value = data.paid_customer_template
-      || data.default_paid_customer_template
-      || ''
-    chatNotifySlipAdminTemplate.value = data.slip_admin_template
-      || data.default_slip_admin_template
-      || ''
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าแจ้งเตือนในแอปไม่สำเร็จ'
   }
@@ -2784,49 +2777,17 @@ async function saveChatNotifySetting() {
     return
   }
 
-  const ok = await confirmAdminSave('ยืนยันบันทึก', 'บันทึกการตั้งค่าแจ้งเตือนในแอปใช่ไหม')
+  const ok = await confirmAdminSave('ยืนยันบันทึก', `แจ้งก่อนถึงคิว ${minutes} นาที ใช่ไหม`)
   if (!ok) return
 
   message.value = ''
   errorMessage.value = ''
   try {
     const { data } = await api.patch('/api/admin/settings/chat-notify', {
-      new_booking_enabled: chatNotifyNewBookingEnabled.value,
-      upcoming_admin_enabled: chatNotifyUpcomingAdminEnabled.value,
-      upcoming_customer_enabled: chatNotifyUpcomingCustomerEnabled.value,
       upcoming_minutes: minutes,
-      cancel_admin_enabled: chatNotifyCancelAdminEnabled.value,
-      cancel_customer_enabled: chatNotifyCancelCustomerEnabled.value,
-      paid_admin_enabled: chatNotifyPaidAdminEnabled.value,
-      paid_customer_enabled: chatNotifyPaidCustomerEnabled.value,
-      slip_admin_enabled: chatNotifySlipAdminEnabled.value,
-      new_booking_template: chatNotifyNewBookingTemplate.value,
-      upcoming_admin_template: chatNotifyUpcomingAdminTemplate.value,
-      upcoming_customer_template: chatNotifyUpcomingCustomerTemplate.value,
-      cancel_admin_template: chatNotifyCancelAdminTemplate.value,
-      cancel_customer_template: chatNotifyCancelCustomerTemplate.value,
-      paid_admin_template: chatNotifyPaidAdminTemplate.value,
-      paid_customer_template: chatNotifyPaidCustomerTemplate.value,
-      slip_admin_template: chatNotifySlipAdminTemplate.value,
     })
-    chatNotifyNewBookingEnabled.value = data.new_booking_enabled !== false
-    chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
-    chatNotifyUpcomingCustomerEnabled.value = data.upcoming_customer_enabled !== false
     chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || minutes
-    chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
-    chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
-    chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
-    chatNotifyPaidCustomerEnabled.value = data.paid_customer_enabled !== false
-    chatNotifySlipAdminEnabled.value = data.slip_admin_enabled !== false
-    chatNotifyNewBookingTemplate.value = data.new_booking_template || chatNotifyNewBookingTemplate.value
-    chatNotifyUpcomingAdminTemplate.value = data.upcoming_admin_template || chatNotifyUpcomingAdminTemplate.value
-    chatNotifyUpcomingCustomerTemplate.value = data.upcoming_customer_template || chatNotifyUpcomingCustomerTemplate.value
-    chatNotifyCancelAdminTemplate.value = data.cancel_admin_template || chatNotifyCancelAdminTemplate.value
-    chatNotifyCancelCustomerTemplate.value = data.cancel_customer_template || chatNotifyCancelCustomerTemplate.value
-    chatNotifyPaidAdminTemplate.value = data.paid_admin_template || chatNotifyPaidAdminTemplate.value
-    chatNotifyPaidCustomerTemplate.value = data.paid_customer_template || chatNotifyPaidCustomerTemplate.value
-    chatNotifySlipAdminTemplate.value = data.slip_admin_template || chatNotifySlipAdminTemplate.value
-    message.value = 'บันทึกการแจ้งเตือนในแอปแล้ว'
+    message.value = 'บันทึกเวลาแจ้งก่อนถึงคิวแล้ว'
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกแจ้งเตือนในแอปไม่สำเร็จ'
   }
@@ -3150,7 +3111,7 @@ async function markDone(booking) {
   const suggestedTotal = bookingNetAfterDeposit(item)
   const result = await adminSwal.fire({
     title: 'ทำคิวเสร็จ',
-    html: `${buildMarkDoneSummaryHtml(item)}<p style="margin:12px 0 0;font-size:13px;color:#64748b">กรอกยอดเงินแล้วยืนยัน — ${pointsHint}</p>`,
+    html: `${buildMarkDoneSummaryHtml(item)}<p style="margin:12px 0 0;font-size:13px;color:#9A8E89">กรอกยอดเงินแล้วยืนยัน — ${pointsHint}</p>`,
     input: 'number',
     inputLabel: 'ยอดเงิน (บาท)',
     inputValue: suggestedTotal != null ? String(suggestedTotal) : '',
@@ -3179,10 +3140,12 @@ async function markDone(booking) {
   }
 }
 
-async function loadBookingEditDayData(date) {
+async function loadBookingEditDayData(date, { preserveForm = false } = {}) {
   if (!date) return
-  bookingEditLoading.value = true
-  bookingEditError.value = ''
+  if (!preserveForm) {
+    bookingEditLoading.value = true
+    bookingEditError.value = ''
+  }
   try {
     const [optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
       api.get('/api/bookings/options', { params: { date } }),
@@ -3210,7 +3173,7 @@ async function loadBookingEditDayData(date) {
       }
     }
     bookingEditSelectedIds.value = selected
-    bookingEditMoveToSlotKey.value = ''
+    if (!preserveForm) bookingEditMoveToSlotKey.value = ''
     syncCategorySelection(
       bookingEditCategories.value,
       bookingEditOptions.value,
@@ -3221,7 +3184,7 @@ async function loadBookingEditDayData(date) {
   } catch (error) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดข้อมูลวันจองไม่สำเร็จ'
   } finally {
-    bookingEditLoading.value = false
+    if (!preserveForm) bookingEditLoading.value = false
   }
 }
 
@@ -3261,17 +3224,79 @@ async function editBooking(item) {
     bookingEditError.value = error?.response?.data?.error || 'โหลดรายการบริการไม่สำเร็จ'
   } finally {
     bookingEditLoading.value = false
-    focusAdminModal('admin-booking-edit-modal', 'input[type="date"]')
+    focusAdminModal(
+      'admin-booking-edit-modal',
+      isBookingRestoreMode.value ? 'select.booking-restore-slot' : 'input[type="date"]'
+    )
   }
 }
 
 function closeBookingEdit() {
   bookingEditOpen.value = false
   bookingEditItem.value = null
+  bookingRestoreStatus.value = ''
+  bookingRestoreConflictHint.value = ''
+}
+
+function isRestoreSlotConflict(error) {
+  const data = error?.response?.data
+  if (data?.code === 'SLOT_TAKEN' || data?.code === 'SLOT_BLOCKED') return true
+  const msg = String(data?.error || '')
+  return error?.response?.status === 409 && /ทับกับคิว|ถูกจอง|ปิดรับคิว/.test(msg)
+}
+
+async function openRestoreTimePicker(item, restoreStatus, conflictHint) {
+  bookingRestoreStatus.value = restoreStatus
+  bookingRestoreConflictHint.value = conflictHint || 'เวลาเดิมมีคนจองแล้ว กรุณาเลือกวันหรือเวลาใหม่'
+  await editBooking(item)
+}
+
+async function submitRestoreBooking(item, restoreStatus, slotOverride = null) {
+  const payload = { status: restoreStatus }
+  if (slotOverride) {
+    payload.booking_date = slotOverride.bookingDate
+    payload.start_hour = slotOverride.startHour
+    payload.start_minute = slotOverride.startMinute ?? 0
+  }
+  const { data } = await api.patch(`/api/admin/bookings/${item.id}/restore`, payload)
+  message.value = data?.message || 'คืนสถานะจองแล้ว'
+  if (slotOverride?.bookingDate) {
+    selectedBookingDate.value = slotOverride.bookingDate
+    date.value = slotOverride.bookingDate
+  }
+  await reloadBookingViews()
 }
 
 async function saveBookingEdit() {
   if (!bookingEditItem.value) return
+  if (isBookingRestoreMode.value) {
+    if (!bookingEditDate.value) {
+      bookingEditError.value = 'กรุณาเลือกวันจอง'
+      return
+    }
+    const slot = parseSlotKey(bookingEditMoveToSlotKey.value)
+    if (!slot) {
+      bookingEditError.value = 'กรุณาเลือกเวลาว่างเพื่อคืนสถานะจอง'
+      return
+    }
+    bookingEditSaving.value = true
+    bookingEditError.value = ''
+    message.value = ''
+    errorMessage.value = ''
+    try {
+      await submitRestoreBooking(bookingEditItem.value, bookingRestoreStatus.value, {
+        bookingDate: bookingEditDate.value,
+        startHour: slot.startHour,
+        startMinute: slot.startMinute,
+      })
+      closeBookingEdit()
+    } catch (error) {
+      bookingEditError.value = error?.response?.data?.error || 'คืนสถานะจองไม่สำเร็จ'
+    } finally {
+      bookingEditSaving.value = false
+    }
+    return
+  }
   if (!bookingEditUserId.value) {
     bookingEditError.value = 'กรุณาเลือกลูกค้า'
     return
@@ -3449,7 +3474,7 @@ async function deleteBooking(id) {
     showCancelButton: true,
     confirmButtonText: 'ลบ',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#dc2626',
+    confirmButtonColor: '#C45C5C',
   })
   if (!ok.isConfirmed) return
 
@@ -3481,13 +3506,79 @@ async function restoreBooking(item) {
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch(`/api/admin/bookings/${item.id}/restore`, {
-      status: restoreStatus,
-    })
-    message.value = data?.message || 'คืนสถานะจองแล้ว'
-    await reloadBookingViews()
+    await submitRestoreBooking(item, restoreStatus)
   } catch (error) {
+    if (isRestoreSlotConflict(error)) {
+      await openRestoreTimePicker(
+        item,
+        restoreStatus,
+        error?.response?.data?.error || 'เวลาเดิมมีคนจองแล้ว กรุณาเลือกวันหรือเวลาใหม่'
+      )
+      return
+    }
     errorMessage.value = error?.response?.data?.error || 'คืนสถานะจองไม่สำเร็จ'
+  }
+}
+
+async function loadBookingAddDayData({ preserveForm = false } = {}) {
+  if (!selectedBookingDate.value) return
+  if (!preserveForm) bookingAddLoading.value = true
+  try {
+    const date = selectedBookingDate.value
+    const [hoursRes, optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
+      api.get('/api/bookings/shop-hours'),
+      api.get('/api/bookings/options', { params: { date } }),
+      api.get('/api/bookings/extra-hours', { params: { from: date, to: date } }),
+      api.get('/api/bookings/day-hours', { params: { date } }),
+      api.get('/api/bookings', { params: { date } }),
+    ])
+    shopOpenHour.value = normalizeShopOpenHour(hoursRes.data?.open_hour)
+    shopLastBookingHour.value = normalizeShopLastBookingHour(
+      hoursRes.data?.last_booking_hour,
+      shopOpenHour.value,
+      bookingSlotHours.value
+    )
+    bookingAddExtraHours.value = extraRes.data || []
+    bookingAddDayHours.value = dayHoursRes.data || []
+    bookingAddSlotBookings.value = dayRes.data?.bookings || []
+    bookingAddSlotBlocks.value = dayRes.data?.blocks || []
+    const hourOpts = buildBookingSlotSelectOptions({
+      openHour: shopOpenHour.value,
+      lastBookingHour: shopLastBookingHour.value,
+      extras: bookingAddExtraHours.value,
+      dayWindows: bookingAddDayHours.value,
+      blocks: bookingAddSlotBlocks.value,
+      bookings: bookingAddSlotBookings.value,
+      displayMode: bookingDisplayMode.value,
+      slotHours: bookingSlotHours.value,
+      extendByServices: extendBookingByServices.value,
+    })
+    if (!preserveForm || !hourOpts.some((opt) => opt.key === bookingAddSlotKey.value)) {
+      bookingAddSlotKey.value = hourOpts[0]?.key || ''
+    }
+    const normalized = normalizeBookingOptionsResponse(optionsRes.data)
+    bookingAddOptions.value = normalized.options
+    bookingAddCategories.value = normalized.categories
+    const availableIds = new Set(bookingAddOptions.value.map((o) => String(o.id)))
+    let selected = preserveForm
+      ? bookingAddSelectedIds.value.filter((id) => availableIds.has(String(id)))
+      : []
+    for (const opt of bookingAddOptions.value) {
+      if (opt.is_required && optionBookableOnDate(opt, date) && !selected.includes(String(opt.id))) {
+        selected.push(String(opt.id))
+      }
+    }
+    bookingAddSelectedIds.value = selected
+    syncCategorySelection(
+      bookingAddCategories.value,
+      bookingAddOptions.value,
+      date,
+      bookingAddSelectedCategoryId
+    )
+  } catch (error) {
+    bookingAddError.value = error?.response?.data?.error || 'โหลดข้อมูลไม่สำเร็จ'
+  } finally {
+    if (!preserveForm) bookingAddLoading.value = false
   }
 }
 
@@ -3507,67 +3598,9 @@ async function openBookingAdd() {
   bookingAddSlotBookings.value = []
   bookingAddSlotBlocks.value = []
   bookingAddError.value = ''
-  bookingAddLoading.value = true
   bookingAddOpen.value = true
-
-  try {
-    await ensureUsersLoaded()
-    const [hoursRes, optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
-      api.get('/api/bookings/shop-hours'),
-      api.get('/api/bookings/options', {
-        params: selectedBookingDate.value ? { date: selectedBookingDate.value } : {},
-      }),
-      selectedBookingDate.value
-        ? api.get('/api/bookings/extra-hours', {
-            params: { from: selectedBookingDate.value, to: selectedBookingDate.value },
-          })
-        : Promise.resolve({ data: [] }),
-      selectedBookingDate.value
-        ? api.get('/api/bookings/day-hours', { params: { date: selectedBookingDate.value } })
-        : Promise.resolve({ data: [] }),
-      selectedBookingDate.value
-        ? api.get('/api/bookings', { params: { date: selectedBookingDate.value } })
-        : Promise.resolve({ data: { bookings: [], blocks: [] } }),
-    ])
-    shopOpenHour.value = normalizeShopOpenHour(hoursRes.data?.open_hour)
-    shopLastBookingHour.value = normalizeShopLastBookingHour(hoursRes.data?.last_booking_hour, shopOpenHour.value, bookingSlotHours.value)
-    bookingAddExtraHours.value = extraRes.data || []
-    bookingAddDayHours.value = dayHoursRes.data || []
-    bookingAddSlotBookings.value = dayRes.data?.bookings || []
-    bookingAddSlotBlocks.value = dayRes.data?.blocks || []
-    const hourOpts = buildBookingSlotSelectOptions({
-      openHour: shopOpenHour.value,
-      lastBookingHour: shopLastBookingHour.value,
-      extras: bookingAddExtraHours.value,
-      dayWindows: bookingAddDayHours.value,
-      blocks: bookingAddSlotBlocks.value,
-      bookings: bookingAddSlotBookings.value,
-      displayMode: bookingDisplayMode.value,
-      slotHours: bookingSlotHours.value,
-      extendByServices: extendBookingByServices.value,
-    })
-    bookingAddSlotKey.value = hourOpts[0]?.key || ''
-    const normalized = normalizeBookingOptionsResponse(optionsRes.data)
-    bookingAddOptions.value = normalized.options
-    bookingAddCategories.value = normalized.categories
-    const selected = []
-    for (const opt of bookingAddOptions.value) {
-      if (opt.is_required && optionBookableOnDate(opt, selectedBookingDate.value)) {
-        selected.push(String(opt.id))
-      }
-    }
-    bookingAddSelectedIds.value = selected
-    syncCategorySelection(
-      bookingAddCategories.value,
-      bookingAddOptions.value,
-      selectedBookingDate.value,
-      bookingAddSelectedCategoryId
-    )
-  } catch (error) {
-    bookingAddError.value = error?.response?.data?.error || 'โหลดข้อมูลไม่สำเร็จ'
-  } finally {
-    bookingAddLoading.value = false
-  }
+  await ensureUsersLoaded()
+  await loadBookingAddDayData()
 }
 
 function closeBookingAdd() {
@@ -3861,7 +3894,7 @@ function resetLocationForm() {
   locationForm.value = {
     id: null,
     name: '',
-    color: '#3b82f6',
+    color: '#C4847A',
     description: '',
     map_url: '',
     is_active: true,
@@ -3977,7 +4010,7 @@ function startEditLocation(item) {
   locationForm.value = {
     id: item.id,
     name: item.name,
-    color: item.color && isValidHexColor(item.color) ? item.color : '#3b82f6',
+    color: item.color && isValidHexColor(item.color) ? item.color : '#C4847A',
     description: item.description || '',
     map_url: item.map_url || '',
     is_active: Boolean(item.is_active),
@@ -4039,7 +4072,7 @@ async function removeServiceLocation(item) {
     showCancelButton: true,
     confirmButtonText: 'ลบ',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#dc2626',
+    confirmButtonColor: '#C45C5C',
   })
   if (!ok.isConfirmed) return
 
@@ -4135,7 +4168,7 @@ async function removeShowcaseClip(item) {
     showCancelButton: true,
     confirmButtonText: 'ลบ',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#dc2626',
+    confirmButtonColor: '#C45C5C',
   })
   if (!ok.isConfirmed) return
 
@@ -4329,10 +4362,10 @@ async function removeNailOption(item) {
 
 function statusLabel(s) {
   const map = {
-    awaiting_payment: 'รอชำระเงิน',
-    pending: 'ชำระแล้ว / รอให้บริการ',
+    awaiting_payment: 'รอชำระ',
+    pending: 'รอบริการ',
     done: 'ทำเสร็จแล้ว',
-    cancelled: 'ยกเลิกแล้ว',
+    cancelled: 'ยกเลิก',
   }
   return map[s] || s
 }
@@ -4472,9 +4505,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 <template>
   <main class="admin-page">
     <header class="admin-top-bar">
-      <div>
-        <h2 class="admin-title">แอดมิน</h2>
-        <p class="muted admin-sub">{{ shopStore.shopName || shopSlug }} · {{ auth.user?.name || '-' }}</p>
+      <div class="admin-brand-wrap">
+        <BrandMark show-logo />
+        <p class="muted admin-sub">แอดมิน · {{ auth.user?.name || '-' }}</p>
       </div>
       <div class="admin-top-actions">
         <AccountMenuDrawer ref="accountMenuRef" />
@@ -4507,7 +4540,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         v-for="tab in visibleAdminTabs"
         :key="tab.key"
         type="button"
-        class="admin-nav-item"
+        class="tab-btn admin-nav-item"
         :class="{ active: activeTab === tab.key }"
         :aria-current="activeTab === tab.key ? 'page' : undefined"
         @click="switchTab(tab.key)"
@@ -4518,8 +4551,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </nav>
     </div>
 
-    <p v-if="message" class="alert success">{{ message }}</p>
-    <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+    <p v-if="message" class="alert-banner success" role="status">{{ message }}</p>
+    <p v-if="errorMessage" class="alert-banner error" role="alert">{{ errorMessage }}</p>
     <button
       v-if="showBranchUsageExpiredBanner && activeTab !== 'renewal'"
       type="button"
@@ -4543,7 +4576,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </button>
 
     <div v-if="showSetupWizard" class="admin-setup-wizard card-inner">
-      <div class="admin-setup-wizard-head">
+      <div class="admin-setup-wizard-head admin-section-head">
         <div>
           <h3>เริ่มตั้งร้าน</h3>
           <p class="muted">ทำตามขั้นตอนด้านล่างเพื่อเปิดรับจองลูกค้า</p>
@@ -4569,11 +4602,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </ol>
     </div>
 
-    <section v-show="activeTab === 'bookings'" class="card admin-section">
+    <section v-show="activeTab === 'bookings'" class="admin-section">
       <template v-if="!selectedBookingDate">
-        <div class="service-cal-header">
+        <div class="admin-section-head">
           <h3>จัดการคิวตามวัน</h3>
-          <p class="muted">กดวันที่ในปฏิทินเพื่อดูรายการคิว · สีตามสถานที่ให้บริการ</p>
+          <p class="muted">กดวันที่เพื่อดูคิว · สีตามสถานที่ให้บริการ</p>
         </div>
 
         <div class="service-cal-nav">
@@ -4675,24 +4708,31 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </label>
       </div>
 
-      <p v-if="loading" class="muted">กำลังโหลด...</p>
+      <div v-if="loading" class="state-card">
+        <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+        <span class="state-card-title">กำลังโหลดคิว</span>
+      </div>
 
-        <div v-if="filtered.length === 0 && !loading" class="muted">ไม่มีคิวในวันที่เลือก</div>
+        <div v-else-if="filtered.length === 0" class="state-card">
+          <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+          <p class="state-card-title">ไม่มีคิวในวันที่เลือก</p>
+        </div>
       <div v-for="item in filtered" :key="item.id" class="admin-item">
           <div class="admin-item-body">
-            <strong>{{ bookingTimeRange(item) }}</strong>
-          <p class="muted">{{ item.user_name }} ({{ item.user_email }})</p>
-          <p class="muted">สถานะ: {{ statusLabel(item.status) }}</p>
+            <div class="admin-item-title-row">
+              <strong>{{ bookingTimeRange(item) }}</strong>
+              <span class="status-pill" :class="`status-pill--${item.status}`">{{ statusLabel(item.status) }}</span>
+            </div>
+          <p class="muted">{{ item.user_name }}</p>
           <p class="muted">
-            บริการ:
             {{
               item.nail_options?.length
                 ? item.nail_options.map((opt) => opt.option_name).join(', ')
-                : '-'
+                : 'ไม่มีบริการ'
             }}
           </p>
             <p class="muted">จองเมื่อ {{ formatCreatedAt(item.created_at) }}</p>
-            <p v-if="item.total != null && item.total !== ''" class="muted">
+            <p v-if="item.total != null && item.total !== ''" class="muted tabular-nums">
               ยอด {{ formatBookingTotal(item.total) }}
             </p>
         </div>
@@ -4778,10 +4818,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </template>
     </section>
 
-    <section v-show="activeTab === 'revenue'" class="card admin-section revenue-section">
-      <div class="service-cal-header">
+    <section v-show="activeTab === 'revenue'" class="admin-section revenue-section">
+      <div class="admin-section-head">
         <h3>สรุปยอดรายเดือน</h3>
-        
+        <p class="muted">ยอดมัดจำและยอดบริการตามวันในเดือนที่เลือก</p>
       </div>
 
       <div class="service-cal-nav">
@@ -4794,7 +4834,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </button>
       </div>
 
-      <p v-if="revenueLoading" class="muted">กำลังโหลด...</p>
+      <div v-if="revenueLoading" class="state-card">
+        <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+        <span class="state-card-title">กำลังโหลดยอด</span>
+      </div>
 
       <template v-else>
         <div class="service-cal-weekdays">
@@ -4892,9 +4935,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </template>
     </section>
 
-    <section v-show="activeTab === 'services'" class="card admin-section">
+    <section v-show="activeTab === 'services'" class="admin-section">
       <div class="service-categories-section">
-        <div class="service-everyday-head">
+        <div class="service-everyday-head admin-section-head">
           <div>
             <h3>หมวดหมู่บริการ</h3>
             <p class="muted">ลูกค้าจะเลือกหมวดหมู่ก่อน แล้วค่อยเลือกบริการในหมวดนั้น</p>
@@ -4909,7 +4952,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             {{ cat.name }}
           </span>
         </div>
-        <p v-else class="muted">ยังไม่มีหมวดหมู่ — ถ้าไม่สร้าง ลูกค้าจะเลือกบริการแบบเดิม</p>
+        <div v-else class="state-card">
+          <i class="ti ti-category state-card-icon" aria-hidden="true"></i>
+          <p class="state-card-title">ยังไม่มีหมวดหมู่</p>
+          <p class="muted">ถ้าไม่สร้าง ลูกค้าจะเลือกบริการแบบเดิม</p>
+        </div>
 
         <div v-if="showCategoryPanel" class="service-option-form card-inner" style="margin-top:12px">
           <template v-if="!categoryForm.id">
@@ -4929,10 +4976,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               </label>
             </div>
             <div class="admin-form-row">
-              <label class="admin-checkbox">
-                <input v-model="categoryForm.is_active" type="checkbox" />
-                เปิดใช้งาน
-              </label>
+              <AdminSwitch v-model="categoryForm.is_active" label="เปิดใช้งาน" />
               <button type="button" class="btn primary admin-action-btn" @click="saveServiceCategory">
                 เพิ่มหมวดหมู่
               </button>
@@ -4962,7 +5006,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
       <!-- ปฏิทินเลือกวัน -->
       <template v-if="!selectedServiceDate">
-        <div class="service-cal-header">
+        <div class="service-cal-header admin-section-head">
           <h3>จัดการบริการตามวัน</h3>
           <p class="muted">กดวันที่ในปฏิทินเพื่อเพิ่ม/แก้ไขบริการของวันนั้น</p>
         </div>
@@ -5043,10 +5087,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <label class="admin-color-field admin-color-field-full">
                 <span class="admin-color-label-row">
                   สีแสดงในปฏิทิน
-                  <label class="admin-checkbox admin-checkbox-inline">
-                    <input v-model="optionFormUseColor" type="checkbox" />
-                    ใช้สี
-                  </label>
+                    <AdminSwitch compact v-model="optionFormUseColor" label="ใช้สี" />
                 </span>
                 <template v-if="optionFormUseColor">
                   <div class="color-picker-row">
@@ -5071,14 +5112,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               </label>
             </div>
             <div class="admin-form-row">
-              <label class="admin-checkbox">
-                <input v-model="optionForm.is_active" type="checkbox" />
-                แสดงให้ลูกค้าเลือกจอง
-              </label>
-              <label class="admin-checkbox">
-                <input v-model="optionForm.is_required" type="checkbox" />
-                บังคับเลือกเมื่อจอง
-              </label>
+              <AdminSwitch v-model="optionForm.is_active" label="แสดงให้ลูกค้าเลือกจอง" />
+              <AdminSwitch v-model="optionForm.is_required" label="บังคับเลือกเมื่อจอง" />
               <button class="btn primary admin-action-btn" @click="saveNailOption">
                 เพิ่มบริการ
               </button>
@@ -5086,8 +5121,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
           </div>
 
-          <div v-if="!nailOptionsLoaded" class="muted">กำลังโหลดบริการ...</div>
-          <div v-else-if="everyDayOptions.length === 0 && !showEveryDayForm" class="muted">ยังไม่มีบริการทุกวัน</div>
+          <div v-if="!nailOptionsLoaded" class="state-card">
+            <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+            <span class="state-card-title">กำลังโหลดบริการ</span>
+          </div>
+          <div v-else-if="everyDayOptions.length === 0 && !showEveryDayForm" class="state-card">
+            <i class="ti ti-list state-card-icon" aria-hidden="true"></i>
+            <p class="state-card-title">ยังไม่มีบริการทุกวัน</p>
+          </div>
           <div v-for="(item, index) in everyDayOptions" :key="item.id" class="admin-item">
             <div>
               <strong>{{ item.option_name }}</strong>
@@ -5149,10 +5190,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="service-location-add card-inner">
           <h4>เพิ่มสถานที่ให้บริการ</h4>
           <p class="muted">เลือกสถานที่สำหรับวันนี้ · ลูกค้าต้องเลือกตอนจอง · สีในปฏิทินตามปุ่ม</p>
-          <p v-if="activeLocationPresets.length === 0" class="muted">
-            ยังไม่มีสถานที่ —
-            <button type="button" class="btn-link" @click="goToSettingsSection('locations')">ไปเพิ่มสถานที่</button>
-          </p>
+          <div v-if="activeLocationPresets.length === 0" class="state-card">
+            <i class="ti ti-map-pin state-card-icon" aria-hidden="true"></i>
+            <p class="state-card-title">ยังไม่มีสถานที่</p>
+            <button type="button" class="btn primary" @click="goToSettingsSection('locations')">ไปเพิ่มสถานที่</button>
+          </div>
           <div v-else class="location-preset-row">
             <button
               v-for="preset in activeLocationPresets"
@@ -5200,10 +5242,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <label class="admin-color-field admin-color-field-full">
               <span class="admin-color-label-row">
                 สีแสดงในปฏิทิน
-                <label class="admin-checkbox admin-checkbox-inline">
-                  <input v-model="optionFormUseColor" type="checkbox" />
-                  ใช้สี
-                </label>
+                <AdminSwitch compact v-model="optionFormUseColor" label="ใช้สี" />
               </span>
               <template v-if="optionFormUseColor">
                 <div class="color-picker-row">
@@ -5228,14 +5267,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </label>
           </div>
       <div class="admin-form-row">
-        <label class="admin-checkbox">
-          <input v-model="optionForm.is_active" type="checkbox" />
-          แสดงให้ลูกค้าเลือกจอง
-        </label>
-            <label class="admin-checkbox">
-              <input v-model="optionForm.is_required" type="checkbox" />
-              บังคับเลือกเมื่อจอง
-            </label>
+        <AdminSwitch v-model="optionForm.is_active" label="แสดงให้ลูกค้าเลือกจอง" />
+            <AdminSwitch v-model="optionForm.is_required" label="บังคับเลือกเมื่อจอง" />
         <button class="btn primary admin-action-btn" @click="saveNailOption">
               เพิ่มบริการ
         </button>
@@ -5243,7 +5276,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
         <h4 class="admin-subtitle">รายการในวันนี้ ({{ selectedDayOptions.length }})</h4>
-        <div v-if="selectedDayOptions.length === 0" class="muted">ยังไม่มีบริการในวันนี้</div>
+        <div v-if="selectedDayOptions.length === 0" class="state-card">
+          <i class="ti ti-list state-card-icon" aria-hidden="true"></i>
+          <p class="state-card-title">ยังไม่มีบริการในวันนี้</p>
+        </div>
         <div v-for="(item, index) in selectedDayOptions" :key="item.id" class="admin-item">
         <div>
           <strong>{{ item.option_name }}</strong>
@@ -5293,7 +5329,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </template>
     </section>
 
-    <section v-show="activeTab === 'settings'" class="card admin-section admin-drawer-section">
+    <section v-show="activeTab === 'settings'" class="admin-section admin-drawer-section">
       <div class="admin-drawer-shell">
         <Transition name="admin-drawer-backdrop">
           <button
@@ -5322,7 +5358,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               v-for="section in visibleSettingsSections"
               :key="section.key"
               type="button"
-              class="admin-drawer-nav-item"
+              class="tab-btn admin-drawer-nav-item"
               :class="{ active: activeSettingsSection === section.key }"
               :aria-current="activeSettingsSection === section.key ? 'true' : undefined"
               @click="selectSettingsSection(section.key)"
@@ -5352,7 +5388,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <div class="admin-drawer-panel">
       <div v-show="activeSettingsSection === 'deposit'" id="settings-deposit" class="admin-settings-section">
-      <h3>ตั้งค่ายอดมัดจำ</h3>
+      <div class="admin-section-head">
+        <h3>มัดจำ</h3>
+        <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
+      </div>
       <div class="admin-form-row">
         <label class="admin-label-grow">
           ยอดมัดจำ (บาท)
@@ -5360,12 +5399,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </label>
         <button class="btn primary admin-action-btn" @click="saveDepositSetting">บันทึกยอดมัดจำ</button>
       </div>
-      <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
       </div>
 
       <div v-show="activeSettingsSection === 'coupon'" id="settings-coupon" class="admin-settings-section">
-      <h3>ตั้งค่าคูปองแลกแต้ม</h3>
-      <p class="muted">ลูกค้าใช้แต้มแลกคูปองส่วนลด — ค่านี้แยกตามร้าน</p>
+      <div class="admin-section-head">
+        <h3>คูปองแลกแต้ม</h3>
+        <p class="muted">ลูกค้าใช้แต้มแลกคูปองส่วนลด — ค่านี้แยกตามร้าน</p>
+      </div>
       <div class="admin-form-row" style="flex-wrap:wrap">
         <label class="admin-label-grow">
           ส่วนลด (%)
@@ -5391,8 +5431,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'line'" id="settings-line" class="admin-settings-section">
-      <h3>แจ้งเตือน LINE เมื่อมีคิวจอง</h3>
-      <p class="muted">
+      <div class="admin-section-head">
+        <h3>แจ้งเตือน LINE</h3>
+        <p class="muted">
         ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
         <code>{{ lineWebhookUrlHint }}</code>
         <template v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot">
@@ -5401,7 +5442,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <template v-else>
           แล้วทักบอทของสาขานี้เพื่อผูก User/Group ID อัตโนมัติ (ไม่ต้องพิมพ์ slug)
         </template>
-      </p>
+        </p>
+      </div>
       <div v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
         <i class="ti ti-robot" style="font-size:16px;color:var(--color-primary)"></i>
         บอทกลาง — Token + Secret ตั้งบน server แล้ว (<code>{{ lineTokenMasked }}</code>) · สาขานี้ตั้งแค่ User/Group ID
@@ -5418,34 +5460,32 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <i class="ti ti-link" style="font-size:16px;color:var(--color-primary)"></i>
         slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทกลางด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
       </div>
-      <label
-        v-if="lineCanEditUseOwnBot"
-        class="admin-checkbox admin-label-grow"
-        style="margin-bottom:12px"
-      >
-        <input
-          v-model="lineUseOwnBot"
-          type="checkbox"
-          :disabled="settingToggleSaving === 'line-push:use_own_bot'"
-          @change="saveLinePushToggle('use_own_bot')"
-        />
-        ใช้ LINE Bot ของร้านเอง (Premium)
-        <span class="muted">— override บอทกลางสำหรับสาขานี้</span>
-      </label>
+      <div v-if="lineCanEditUseOwnBot" class="admin-switch-group">
+        <div class="admin-switch-stack">
+          <AdminSwitch
+            v-model="lineUseOwnBot"
+            label="ใช้ LINE Bot ของร้านเอง"
+            hint="Premium — override บอทกลางสำหรับสาขานี้"
+            :disabled="settingToggleSaving === 'line-push:use_own_bot'"
+            @update:model-value="(v) => saveLinePushToggle('use_own_bot', v)"
+          />
+        </div>
+      </div>
       <div v-else-if="lineCentralBotEnabled && lineUsesOwnBot && shopSlug !== 'default'" class="shop-hours-preview" style="margin-bottom:12px">
         <i class="ti ti-crown" style="font-size:16px;color:var(--color-primary)"></i>
         สาขานี้อยู่ในโหมด Premium (บอทของร้านเอง) — ตั้งค่า Token/Secret ด้านล่าง
       </div>
-      <label v-if="lineCanEditEnabled && shopSlug !== 'default'" class="admin-checkbox admin-label-grow" style="margin-bottom:12px">
-        <input
-          v-model="linePushEnabled"
-          type="checkbox"
-          :disabled="settingToggleSaving === 'line-push:enabled'"
-          @change="saveLinePushToggle('enabled')"
-        />
-        เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว
-        <span class="muted">(สาขา {{ shopStore.shopName || shopSlug }})</span>
-      </label>
+      <div v-if="lineCanEditEnabled && shopSlug !== 'default'" class="admin-switch-group">
+        <div class="admin-switch-stack">
+          <AdminSwitch
+            v-model="linePushEnabled"
+            label="เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว"
+            :hint="`สาขา ${shopStore.shopName || shopSlug}`"
+            :disabled="settingToggleSaving === 'line-push:enabled'"
+            @update:model-value="(v) => saveLinePushToggle('enabled', v)"
+          />
+        </div>
+      </div>
       <div v-else-if="!isSuperAdmin && shopSlug !== 'default'" class="shop-hours-preview line-push-status-banner" style="margin-bottom:12px">
         <i class="ti ti-brand-line" style="font-size:16px;color:var(--color-primary)"></i>
         <template v-if="linePushEnabled">
@@ -5468,15 +5508,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <span class="muted">/{{ shop.slug }}</span>
               <span v-if="!shop.is_active" class="shop-inactive-badge">ปิด</span>
             </div>
-            <label class="admin-checkbox line-branch-toggle">
-              <input
-                type="checkbox"
-                :checked="shop.line_push_enabled !== false"
-                :disabled="lineBranchToggling === shop.slug || !shop.is_active"
-                @change="toggleShopLinePush(shop, $event.target.checked)"
-              />
-              แจ้งเตือน
-            </label>
+            <AdminSwitch
+              compact
+              label="แจ้งเตือน"
+              :model-value="shop.line_push_enabled !== false"
+              :disabled="lineBranchToggling === shop.slug || !shop.is_active"
+              @update:model-value="(v) => toggleShopLinePush(shop, v)"
+            />
             <span v-if="shop.line_use_own_bot" class="shop-line-badge shop-line-badge--premium">Premium</span>
             <span v-if="shop.line_push_ready" class="shop-line-badge shop-line-badge--on">พร้อมส่ง</span>
             <span v-else-if="shop.line_push_enabled && shop.line_push_configured" class="shop-line-badge shop-line-badge--warn">เปิด · ยังไม่ครบ</span>
@@ -5492,7 +5530,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </button>
           </li>
         </ul>
-        <p v-else class="muted">ยังไม่มีสาขา</p>
+        <div v-else class="state-card">
+          <i class="ti ti-building-store state-card-icon" aria-hidden="true"></i>
+          <span class="state-card-title">ยังไม่มีสาขา</span>
+        </div>
       </div>
       <div class="admin-form-grid admin-option-grid">
         <template v-if="lineEffectiveUsesOwnBot">
@@ -5528,21 +5569,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               : 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทสาขานี้เพื่อผูกอัตโนมัติ'"
           />
         </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งเตือน (template)
-          <textarea v-model="lineNotifyTemplate" class="admin-input" rows="7" />
-        </label>
       </div>
-      <p class="muted" style="margin-top:8px">
-        ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code>
-      </p>
       <p v-if="lineEffectiveUsesOwnBot" class="muted" style="margin-top:8px">
         Token จาก Messaging API → Issue · Secret จาก Basic settings → Channel secret · Webhook ใน LINE Developers ต้องตรงกับ <code>{{ lineWebhookUrlHint }}</code>
       </p>
       <p v-else-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="muted" style="margin-top:8px">
-        หลังทักบอทกลาง slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · ร้าน Premium ให้แอดมินหลักติ๊ก “ใช้ LINE Bot ของร้านเอง” ด้านบน
+        หลังทักบอทกลาง slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · ร้าน Premium ให้แอดมินหลักเปิด “ใช้ LINE Bot ของร้านเอง” ด้านบน
       </p>
-      <p class="muted" style="margin-top:8px">ช่องติ๊กด้านบนบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึก ID, Token และข้อความ</p>
+      <p class="muted" style="margin-top:8px">สวิตช์ด้านบนบันทึกทันที — ปุ่มนี้ใช้บันทึก ID และ Token</p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
         <button type="button" class="btn primary admin-action-btn" @click="saveLinePushSetting">บันทึก LINE แจ้งเตือน</button>
         <button
@@ -5558,90 +5592,73 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'chat-notify'" id="settings-chat-notify" class="admin-settings-section">
-      <h3>แจ้งเตือนในแอป (แชท)</h3>
-      <p class="muted">
-        แจ้งเตือนผ่าน toast บนหน้าเว็บ — แอดมินและลูกค้าต้องล็อกอินและเปิดเว็บอยู่ · แจ้งก่อนถึงคิวตรวจทุก 1 นาที (toast โผล่ภายใน ~12 วินาทีหลังส่ง)
-      </p>
-      <div class="admin-form-row" style="flex-wrap:wrap;gap:12px;margin-bottom:12px">
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyNewBookingEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:new_booking_enabled'"
-            @change="saveChatNotifyToggle('new_booking_enabled')"
-          />
-          แจ้งแอดมินเมื่อมีคิวจองใหม่
-          <span class="muted">(เหมือน LINE — “มีคิวจองมา”)</span>
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyUpcomingAdminEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:upcoming_admin_enabled'"
-            @change="saveChatNotifyToggle('upcoming_admin_enabled')"
-          />
-          แจ้งแอดมินก่อนถึงคิว
-          <span class="muted">(เหมือน LINE — “มีคิวใน X นาที”)</span>
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyUpcomingCustomerEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:upcoming_customer_enabled'"
-            @change="saveChatNotifyToggle('upcoming_customer_enabled')"
-          />
-          แจ้งลูกค้าก่อนถึงคิว
-          <span class="muted">(“อีก X นาทีถึงคิวของคุณ”)</span>
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyCancelAdminEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:cancel_admin_enabled'"
-            @change="saveChatNotifyToggle('cancel_admin_enabled')"
-          />
-          แจ้งแอดมินเมื่อคิวถูกยกเลิก
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyCancelCustomerEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:cancel_customer_enabled'"
-            @change="saveChatNotifyToggle('cancel_customer_enabled')"
-          />
-          แจ้งลูกค้าเมื่อคิวถูกยกเลิก
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyPaidAdminEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:paid_admin_enabled'"
-            @change="saveChatNotifyToggle('paid_admin_enabled')"
-          />
-          แจ้งแอดมินเมื่อชำระเงินแล้ว
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifyPaidCustomerEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:paid_customer_enabled'"
-            @change="saveChatNotifyToggle('paid_customer_enabled')"
-          />
-          แจ้งลูกค้าเมื่อชำระเงินแล้ว
-        </label>
-        <label class="admin-checkbox admin-label-grow">
-          <input
-            v-model="chatNotifySlipAdminEnabled"
-            type="checkbox"
-            :disabled="settingToggleSaving === 'chat-notify:slip_admin_enabled'"
-            @change="saveChatNotifyToggle('slip_admin_enabled')"
-          />
-          แจ้งแอดมินเมื่อลูกค้าอัปโหลดสลิป
-          <span class="muted">(แชท + push บนมือถือ)</span>
-        </label>
+      <div class="admin-section-head">
+        <h3>แจ้งเตือนในแอป</h3>
+        <p class="muted">เปิดสวิตช์เพื่อส่งแจ้งเตือนในแอป — บันทึกทันทีที่สลับ</p>
       </div>
-      <label class="admin-label-grow" style="display:block;margin-bottom:12px;max-width:240px">
-        แจ้งเตือนก่อนถึงคิว (นาที)
+
+      <div class="admin-switch-group">
+        <h4 class="admin-switch-group-title">แจ้งแอดมิน</h4>
+        <div class="admin-switch-stack">
+          <AdminSwitch
+            v-model="chatNotifyNewBookingEnabled"
+            label="มีคิวจองใหม่"
+            :disabled="settingToggleSaving === 'chat-notify:new_booking_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('new_booking_enabled', v)"
+          />
+          <AdminSwitch
+            v-model="chatNotifyUpcomingAdminEnabled"
+            label="ก่อนถึงคิว"
+            :disabled="settingToggleSaving === 'chat-notify:upcoming_admin_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('upcoming_admin_enabled', v)"
+          />
+          <AdminSwitch
+            v-model="chatNotifyCancelAdminEnabled"
+            label="คิวถูกยกเลิก"
+            :disabled="settingToggleSaving === 'chat-notify:cancel_admin_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('cancel_admin_enabled', v)"
+          />
+          <AdminSwitch
+            v-model="chatNotifyPaidAdminEnabled"
+            label="ชำระเงินแล้ว"
+            :disabled="settingToggleSaving === 'chat-notify:paid_admin_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('paid_admin_enabled', v)"
+          />
+          <AdminSwitch
+            v-model="chatNotifySlipAdminEnabled"
+            label="ลูกค้าอัปโหลดสลิป"
+            :disabled="settingToggleSaving === 'chat-notify:slip_admin_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('slip_admin_enabled', v)"
+          />
+        </div>
+      </div>
+
+      <div class="admin-switch-group">
+        <h4 class="admin-switch-group-title">แจ้งลูกค้า</h4>
+        <div class="admin-switch-stack">
+          <AdminSwitch
+            v-model="chatNotifyUpcomingCustomerEnabled"
+            label="ก่อนถึงคิว"
+            :disabled="settingToggleSaving === 'chat-notify:upcoming_customer_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('upcoming_customer_enabled', v)"
+          />
+          <AdminSwitch
+            v-model="chatNotifyCancelCustomerEnabled"
+            label="คิวถูกยกเลิก"
+            :disabled="settingToggleSaving === 'chat-notify:cancel_customer_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('cancel_customer_enabled', v)"
+          />
+          <AdminSwitch
+            v-model="chatNotifyPaidCustomerEnabled"
+            label="ชำระเงินแล้ว"
+            :disabled="settingToggleSaving === 'chat-notify:paid_customer_enabled'"
+            @update:model-value="(v) => saveChatNotifyToggle('paid_customer_enabled', v)"
+          />
+        </div>
+      </div>
+
+      <label class="admin-label-grow" style="display:block;max-width:240px">
+        แจ้งก่อนถึงคิว (นาที)
         <input
           v-model.number="chatNotifyUpcomingMinutes"
           type="number"
@@ -5651,64 +5668,27 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           class="admin-input"
         />
       </label>
-      <div class="admin-form-grid admin-option-grid">
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งแอดมิน — คิวจองใหม่
-          <textarea v-model="chatNotifyNewBookingTemplate" class="admin-input" rows="6" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งแอดมิน — ใกล้ถึงคิว
-          <textarea v-model="chatNotifyUpcomingAdminTemplate" class="admin-input" rows="6" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งลูกค้า — ใกล้ถึงคิว
-          <textarea v-model="chatNotifyUpcomingCustomerTemplate" class="admin-input" rows="5" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งแอดมิน — คิวถูกยกเลิก
-          <textarea v-model="chatNotifyCancelAdminTemplate" class="admin-input" rows="5" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งลูกค้า — คิวถูกยกเลิก
-          <textarea v-model="chatNotifyCancelCustomerTemplate" class="admin-input" rows="4" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งแอดมิน — ชำระเงินแล้ว
-          <textarea v-model="chatNotifyPaidAdminTemplate" class="admin-input" rows="5" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งลูกค้า — ชำระเงินแล้ว
-          <textarea v-model="chatNotifyPaidCustomerTemplate" class="admin-input" rows="4" />
-        </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งแอดมิน — อัปโหลดสลิป
-          <textarea v-model="chatNotifySlipAdminTemplate" class="admin-input" rows="5" />
-        </label>
-      </div>
-      <p class="muted" style="margin-top:8px">
-        ตัวแปร: <code>{shop}</code> <code>{customer}</code> <code>{date}</code> <code>{start}</code> <code>{end}</code> <code>{services}</code> <code>{status}</code> <code>{bookingId}</code> <code>{minutesUntil}</code>
-      </p>
-      <p class="muted" style="margin-top:8px">ช่องติ๊กด้านบนบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึกเวลาแจ้งเตือนและข้อความ</p>
       <div class="admin-form-row" style="margin-top:12px">
-        <button type="button" class="btn primary admin-action-btn" @click="saveChatNotifySetting">บันทึกแจ้งเตือนในแอป</button>
+        <button type="button" class="btn primary admin-action-btn" @click="saveChatNotifySetting">บันทึกเวลา</button>
       </div>
       </div>
 
       <div v-show="activeSettingsSection === 'unpaid'" id="settings-unpaid" class="admin-settings-section">
-      <h3>ยกเลิกคิวรอชำระอัตโนมัติ</h3>
-      <p class="muted">
-        คิวสถานะรอชำระเงินที่ไม่ชำระภายในเวลาที่กำหนดจะถูกยกเลิกเอง และช่วงเวลานั้นจะว่างให้จองใหม่
-      </p>
-      <div class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end">
-        <label class="admin-checkbox admin-label-grow">
-          <input
+      <div class="admin-section-head">
+        <h3>ยกเลิกอัตโนมัติ</h3>
+        <p class="muted">
+          คิวสถานะรอชำระเงินที่ไม่ชำระภายในเวลาที่กำหนดจะถูกยกเลิกเอง และช่วงเวลานั้นจะว่างให้จองใหม่
+        </p>
+      </div>
+      <div class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end;gap:12px">
+        <div class="admin-switch-stack" style="flex:1;min-width:min(100%,260px)">
+          <AdminSwitch
             v-model="unpaidAutoCancelEnabled"
-            type="checkbox"
+            label="เปิดยกเลิกอัตโนมัติ"
             :disabled="settingToggleSaving === 'unpaid:enabled'"
-            @change="saveUnpaidAutoCancelToggle"
+            @update:model-value="saveUnpaidAutoCancelToggle"
           />
-          เปิดใช้งานยกเลิกอัตโนมัติ
-        </label>
+        </div>
         <label class="admin-label-grow" :class="{ muted: !unpaidAutoCancelEnabled }">
           ยกเลิกหลัง (ชั่วโมง)
           <input
@@ -5723,7 +5703,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </label>
         <button class="btn primary admin-action-btn" @click="saveUnpaidAutoCancelSetting">บันทึก</button>
       </div>
-      <p class="muted" style="margin:8px 0 0">ช่องติ๊กบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึกจำนวนชั่วโมง</p>
+      <p class="muted" style="margin:8px 0 0">สวิตช์บันทึกทันที — ปุ่มนี้ใช้บันทึกจำนวนชั่วโมง</p>
       <div class="shop-hours-preview">
         <i class="ti ti-clock-pause" style="font-size:16px;color:var(--color-primary)"></i>
         <template v-if="unpaidAutoCancelEnabled">
@@ -5736,9 +5716,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'shops'" id="settings-shops" class="admin-settings-section">
-      <h3>ร้าน / สาขา</h3>
-      <p v-if="isSuperAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
-      <p v-else class="muted">สาขาของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
+      <div class="admin-section-head">
+        <h3>ร้าน / สาขา</h3>
+        <p v-if="isSuperAdmin" class="muted">แต่ละร้านมีคิว บริการ และตั้งค่าแยกกัน · URL รูปแบบ <code>/slug/bookings</code></p>
+        <p v-else class="muted">สาขาของคุณ · URL <code>/{{ shopSlug }}/bookings</code></p>
+      </div>
       <ul v-if="allShops.length" class="admin-shop-list">
         <li v-for="shop in allShops" :key="shop.id" class="admin-shop-row">
           <button
@@ -5764,19 +5746,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <span class="muted">/{{ shop.slug }}</span>
           </div>
           <div v-if="isSuperAdmin" class="admin-shop-actions">
-            <label
+            <AdminSwitch
               v-if="shop.slug !== 'default'"
-              class="admin-checkbox admin-shop-line-toggle"
-              :title="shop.line_push_ready ? 'LINE แจ้งเตือนเปิดและพร้อมส่ง' : 'เปิด/ปิด LINE แจ้งเตือนสาขานี้'"
-            >
-              <input
-                type="checkbox"
-                :checked="shop.line_push_enabled !== false"
-                :disabled="lineBranchToggling === shop.slug || !shop.is_active"
-                @change="toggleShopLinePush(shop, $event.target.checked)"
-              />
-              LINE
-            </label>
+              compact
+              label="LINE"
+              :model-value="shop.line_push_enabled !== false"
+              :disabled="lineBranchToggling === shop.slug || !shop.is_active"
+              @update:model-value="(v) => toggleShopLinePush(shop, v)"
+            />
             <button type="button" class="btn" @click="openShopEdit(shop)">แก้ไข</button>
             <button
               v-if="shop.slug !== 'default'"
@@ -5828,10 +5805,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'register-pin'" id="settings-register-pin" class="admin-settings-section">
-      <h3>รหัสสร้างร้านค้า</h3>
-      <p class="muted">
-        รหัส 4 หลักที่ต้องกรอกก่อนสมัครร้านใหม่ — แสดงเฉพาะแอดมินหลัก (default)
-      </p>
+      <div class="admin-section-head">
+        <h3>รหัสสร้างร้านค้า</h3>
+        <p class="muted">
+          รหัส 4 หลักที่ต้องกรอกก่อนสมัครร้านใหม่ — แสดงเฉพาะแอดมินหลัก (default)
+        </p>
+      </div>
       <div class="admin-form-row" style="flex-wrap:wrap">
         <label class="admin-label-grow">
           รหัส 4 หลัก
@@ -5859,8 +5838,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'locations'" id="settings-locations" class="admin-settings-section">
-      <h3>สถานที่บริการในแต่ละวัน (ปุ่มลัด)</h3>
-      <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเปิดบริการแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำ · ลิงก์แผนที่ใช้ปุ่ม "ดูแผนที่" ตอนจอง/ชำระเงิน</p>
+      <div class="admin-section-head">
+        <h3>สถานที่บริการ</h3>
+        <p class="muted">จัดการปุ่ม “เพิ่มสถานที่” ตอนเปิดบริการแต่ละวัน · ชื่อสถานที่ต้องไม่ซ้ำ · ลิงก์แผนที่ใช้ปุ่ม "ดูแผนที่" ตอนจอง/ชำระเงิน</p>
+      </div>
 
       <div v-if="!locationForm.id" class="service-option-form card-inner">
         <h4>เพิ่มสถานที่ใหม่</h4>
@@ -5885,7 +5866,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             สีในปฏิทิน
             <div class="color-picker-row">
               <input v-model="locationForm.color" type="color" class="admin-color-input" />
-              <input v-model="locationForm.color" type="text" class="admin-input" maxlength="7" placeholder="#3b82f6" />
+              <input v-model="locationForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
             </div>
             <div class="color-preset-row">
               <button
@@ -5903,17 +5884,17 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </label>
         </div>
         <div class="admin-form-row">
-          <label class="admin-checkbox">
-            <input v-model="locationForm.is_active" type="checkbox" />
-            แสดงเป็นปุ่มลัด
-          </label>
+          <AdminSwitch v-model="locationForm.is_active" label="แสดงเป็นปุ่มลัด" />
           <button class="btn primary admin-action-btn" @click="saveServiceLocation">
             เพิ่มสถานที่
           </button>
         </div>
       </div>
 
-      <div v-if="serviceLocations.length === 0" class="muted" style="margin-top:10px">ยังไม่มีสถานที่ในระบบ</div>
+      <div v-if="serviceLocations.length === 0" class="state-card" style="margin-top:10px">
+        <i class="ti ti-map-pin state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">ยังไม่มีสถานที่</p>
+      </div>
       <div v-for="item in serviceLocations" :key="item.id" class="admin-item">
         <div>
           <strong>{{ item.name }}</strong>
@@ -5933,7 +5914,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
 
       <div v-show="activeSettingsSection === 'use-coupon'" id="settings-use-coupon" class="admin-settings-section">
-      <h3>ใช้คูปองลูกค้า</h3>
+      <div class="admin-section-head">
+        <h3>ใช้คูปอง</h3>
+        <p class="muted">กรอกรหัสคูปองของลูกค้าเพื่อใช้ส่วนลด</p>
+      </div>
       <div class="admin-form-row">
         <label class="admin-label-grow">
           รหัสคูปอง (10 หลัก)
@@ -5947,7 +5931,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
     </section>
 
-    <section v-show="activeTab === 'ui'" id="settings-ui" class="card admin-section admin-drawer-section">
+    <section v-show="activeTab === 'ui'" id="settings-ui" class="admin-section admin-drawer-section">
       <div class="admin-drawer-shell">
         <Transition name="admin-drawer-backdrop">
           <button
@@ -5976,7 +5960,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               v-for="(group, idx) in visibleUiFieldGroups"
               :key="group.title"
               type="button"
-              class="admin-drawer-nav-item"
+              class="tab-btn admin-drawer-nav-item"
               :class="{ active: activeUiSection === idx }"
               :aria-current="activeUiSection === idx ? 'true' : undefined"
               @click="selectUiSection(idx)"
@@ -6011,36 +5995,27 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             :key="group.title"
             class="ui-settings-group admin-settings-section"
           >
-            <h4 class="ui-settings-group-title">{{ group.title }}</h4>
-            <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
+            <div class="admin-section-head">
+              <h4 class="ui-settings-group-title">{{ group.title }}</h4>
+              <p v-if="group.hint" class="muted ui-settings-hint">{{ group.hint }}</p>
+            </div>
             <div class="admin-form-grid admin-option-grid">
               <template
                 v-for="field in group.fields"
                 :key="field.key"
               >
-                <label
+                <div
                   v-if="field.type === 'toggle' && shouldShowUiField(field)"
                   class="ui-field-label ui-field-toggle"
                 >
-                  <div class="ui-field-toggle-row">
-                    <span class="ui-field-toggle-label">{{ field.label }}</span>
-                    <label
-                      class="ui-slide-switch"
-                      :class="{ disabled: settingToggleSaving === `ui:${field.key}` }"
-                    >
-                      <input
-                        type="checkbox"
-                        :checked="isUiFormToggleOn(field.key)"
-                        :disabled="settingToggleSaving === `ui:${field.key}`"
-                        @change="onUiToggleChange(field, $event.target.checked)"
-                      />
-                      <span class="ui-slide-track" aria-hidden="true">
-                        <span class="ui-slide-thumb"></span>
-                      </span>
-                    </label>
-                  </div>
-                  <p v-if="field.hint" class="muted ui-field-toggle-hint">{{ field.hint }}</p>
-                </label>
+                  <AdminSwitch
+                    :model-value="isUiFormToggleOn(field.key)"
+                    :label="field.label"
+                    :hint="field.hint"
+                    :disabled="settingToggleSaving === `ui:${field.key}`"
+                    @update:model-value="(v) => onUiToggleChange(field, v)"
+                  />
+                </div>
                 <label
                   v-else-if="shouldShowUiField(field)"
                   class="ui-field-label"
@@ -6131,7 +6106,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
     </section>
 
-    <section v-show="activeTab === 'blocks'" class="card admin-section admin-drawer-section admin-blocks-section">
+    <section v-show="activeTab === 'blocks'" class="admin-section admin-drawer-section admin-blocks-section">
       <div class="admin-drawer-shell">
         <Transition name="admin-drawer-backdrop">
           <button
@@ -6160,7 +6135,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               v-for="section in visibleBlocksSections"
               :key="section.key"
               type="button"
-              class="admin-drawer-nav-item"
+              class="tab-btn admin-drawer-nav-item"
               :class="{ active: activeBlocksSection === section.key }"
               :aria-current="activeBlocksSection === section.key ? 'true' : undefined"
               @click="selectBlocksSection(section.key)"
@@ -6190,8 +6165,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <div class="admin-drawer-panel">
             <div v-show="activeBlocksSection === 'shop-hours'" id="blocks-shop-hours" class="admin-settings-section">
-              <h3>เวลาเปิด-ปิดร้าน (ปกติ)</h3>
-              <p class="muted">ใช้ทุกวันที่ไม่ได้ตั้งใน <strong>เวลาเปิด-ปิดเฉพาะวัน</strong> (เมนูด้านซ้าย)</p>
+              <div class="admin-section-head">
+                <h3>เวลาเปิด-ปิดปกติ</h3>
+                <p class="muted">ใช้ทุกวันที่ไม่ได้ตั้งในแท็บ <strong>เวลาเปิด-ปิดเฉพาะวัน</strong></p>
+              </div>
               <div class="admin-form-row" style="flex-wrap:wrap">
                 <label class="admin-label-grow">
                   เวลาเปิดร้าน
@@ -6219,11 +6196,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
             <div v-show="activeBlocksSection === 'day-hours'" id="blocks-day-hours" class="admin-settings-section">
               <template v-if="!selectedDayHoursDate">
-                <h3>ตั้งเวลาเปิด-ปิดเฉพาะวัน</h3>
-                <p class="muted">
-                  สำหรับวันที่อยากเปิด-ปิดไม่ตามปกติ (ชม. นาที) · กดวันในปฏิทินแล้วเพิ่มช่วงเวลา ·
-                  วันที่ไม่ตั้งจะใช้เวลาเปิด-ปิดปกติที่ <strong>เวลาเปิด-ปิดปกติ</strong>
-                </p>
+                <div class="admin-section-head">
+                  <h3>เวลาเปิด-ปิดเฉพาะวัน</h3>
+                  <p class="muted">
+                    สำหรับวันที่อยากเปิด-ปิดไม่ตามปกติ · กดวันในปฏิทินแล้วเพิ่มช่วงเวลา ·
+                    วันที่ไม่ตั้งจะใช้แท็บ <strong>เวลาเปิด-ปิดปกติ</strong>
+                  </p>
+                </div>
 
                 <div class="service-cal-nav">
                   <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="เดือนก่อน">
@@ -6273,8 +6252,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   </div>
                 </div>
 
-                <div v-if="dayHoursForSelectedDate.length === 0" class="muted">
-                  ยังไม่ตั้งเวลาเฉพาะวัน — ใช้เวลาเปิด-ปิดปกติจากเมนู <strong>เวลาเปิด-ปิดปกติ</strong>
+                <div v-if="dayHoursForSelectedDate.length === 0" class="state-card">
+                  <i class="ti ti-clock state-card-icon" aria-hidden="true"></i>
+                  <p class="state-card-title">ยังไม่ตั้งเวลาเฉพาะวัน</p>
+                  <p class="muted">วันนี้ใช้เวลาเปิด-ปิดปกติ</p>
                 </div>
                 <div v-for="item in dayHoursForSelectedDate" :key="item.id" class="admin-item">
                   <div>
@@ -6357,8 +6338,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
 
             <div v-show="activeBlocksSection === 'slot-display'" id="blocks-slot-display" class="admin-settings-section">
-              <h3>ความยาวคิว & รูปแบบแสดงผล</h3>
-              <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจองลูกค้า</p>
+              <div class="admin-section-head">
+                <h3>ความยาวคิว</h3>
+                <p class="muted">กำหนดความยาวคิวและวิธีแสดงช่วงเวลาในหน้าจองลูกค้า</p>
+              </div>
               <div class="admin-form-row" style="flex-wrap:wrap;margin-bottom:12px">
                 <label class="admin-label-grow">
                   ความยาวคิว (ชม.)
@@ -6377,65 +6360,30 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <div class="service-option-form card-inner" style="margin-bottom:14px">
                 <h4>ขยายเวลาจองตามบริการ</h4>
                 <p class="muted">
-                  เมื่อเปิด ระยะเวลารวมของบริการที่ลูกค้าเลือกจะขยายเวลาคิว · คิวถัดไปเลื่อนตามเวลาจริง · ช่องว่าง 1 ชม. ก่อนปิดร้านเปิดเป็นคิวสั้นได้
+                  เมื่อเปิด คิวจะยาวตามบริการที่เลือก · คิวถัดไปเริ่มจากเวลาจบจริง (เช่น 13:00–14:20 แล้วต่อ 14:20–15:20) · ช่วงที่ตั้งชนกันถูกรวมเป็นเส้นเดียว · ช่วงพักที่ขาดยังไม่จอง · เศษท้ายวันที่สั้นกว่า 1 ชม. ไม่เปิดเป็นคิวใหม่
                 </p>
-                <label class="admin-checkbox">
-                  <input
+                <div class="admin-switch-stack" style="margin-bottom:10px">
+                  <AdminSwitch
                     v-model="extendBookingByServices"
-                    type="checkbox"
+                    label="ขยายเวลาจองตามบริการ"
                     :disabled="settingToggleSaving === 'extend-booking:enabled'"
-                    @change="saveExtendBookingToggle('enabled')"
+                    @update:model-value="(v) => saveExtendBookingToggle('enabled', v)"
                   />
-                  เปิดใช้งานขยายเวลาจองตามบริการ
-                </label>
-                <label
-                  v-if="extendBookingByServices"
-                  class="admin-checkbox"
-                  style="margin-top:10px"
-                >
-                  <input
+                  <AdminSwitch
+                    v-if="extendBookingByServices"
                     v-model="extendBookingPastClose"
-                    type="checkbox"
+                    label="ขยายเกินเวลาปิดร้านได้"
+                    hint="ลูกค้าจองได้แม้บริการรวมยาวเกินเวลาปิด (ยังติดคิวถัดไปไม่ได้)"
                     :disabled="settingToggleSaving === 'extend-booking:past_close_enabled'"
-                    @change="saveExtendBookingToggle('past_close_enabled')"
+                    @update:model-value="(v) => saveExtendBookingToggle('past_close_enabled', v)"
                   />
-                  อนุญาตให้ขยายเวลาเกินเวลาปิดร้าน
-                </label>
-                <p v-if="extendBookingByServices" class="muted" style="margin:6px 0 0">
-                  ถ้าเปิด ลูกค้าจองได้แม้บริการรวมยาวเกินเวลาปิดร้าน (ยังติดคิวถัดไปไม่ได้)
-                </p>
+                </div>
                 <div class="shop-hours-preview">
                   <i class="ti ti-hourglass" style="font-size:16px;color:var(--color-primary)"></i>
                   <template v-if="extendBookingByServices">
                     เปิดอยู่ — ตั้ง <strong>ระยะเวลา (นาที)</strong> ในแต่ละบริการด้วย
                   </template>
                   <template v-else>ปิดอยู่ — คิวใช้ความยาวตามที่ตั้งไว้เท่านั้น</template>
-                </div>
-                <template v-if="extendBookingByServices">
-                  <label class="admin-label-grow" style="margin-top:12px">
-                    ข้อความเตือน — มีคิวถัดไป
-                    <textarea
-                      v-model="extendBlockNextBookingMessage"
-                      class="admin-input"
-                      rows="2"
-                      placeholder="เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากมีคิวต่อถัดไปไม่สามารถขยายเวลาได้"
-                    ></textarea>
-                  </label>
-                  <label class="admin-label-grow" style="margin-top:10px">
-                    ข้อความเตือน — ชนเวลาปิดร้าน
-                    <textarea
-                      v-model="extendBlockClosingMessage"
-                      class="admin-input"
-                      rows="2"
-                      placeholder="เวลารวมบริการของท่านยาวกว่าเวลาคิวเนื่องจากชนเวลาปิดร้านไม่สามารถขยายเวลาได้"
-                    ></textarea>
-                  </label>
-                </template>
-                <p class="muted" style="margin:8px 0 0">ช่องติ๊กบันทึกทันทีที่กด — ปุ่มนี้ใช้บันทึกข้อความเตือน</p>
-                <div class="admin-form-row" style="margin-top:12px">
-                  <button type="button" class="btn primary admin-action-btn" @click="saveExtendBookingByServices">
-                    บันทึก
-                  </button>
                 </div>
               </div>
 
@@ -6444,7 +6392,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   type="button"
                   class="view-toggle-btn"
                   :class="{ active: bookingDisplayMode === 'normal' }"
-                  @click="bookingDisplayMode = 'normal'"
+                  :disabled="settingToggleSaving === 'booking-display'"
+                  @click="selectBookingDisplayMode('normal')"
                 >
                   <i class="ti ti-list" aria-hidden="true"></i>
                   ปกติ (ทีละชม.)
@@ -6453,14 +6402,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   type="button"
                   class="view-toggle-btn"
                   :class="{ active: bookingDisplayMode === 'slots_2h' }"
-                  @click="bookingDisplayMode = 'slots_2h'"
+                  :disabled="settingToggleSaving === 'booking-display'"
+                  @click="selectBookingDisplayMode('slots_2h')"
                 >
                   <i class="ti ti-clock" aria-hidden="true"></i>
                   ช่วงบล็อก (กระโดด {{ bookingSlotHours }} ชม.)
                 </button>
-              </div>
-              <div class="admin-form-row" style="margin-top:10px">
-                <button class="btn primary admin-action-btn" @click="saveBookingDisplay">บันทึกรูปแบบแสดงเวลา</button>
               </div>
               <div v-if="bookingDisplayMode === 'slots_2h'" class="shop-hours-preview">
                 <i class="ti ti-layout-list" style="font-size:16px;color:var(--color-primary)"></i>
@@ -6469,8 +6416,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
 
             <div v-show="activeBlocksSection === 'advance'" id="blocks-advance-days" class="admin-settings-section">
-              <h3>จำนวนวันจองล่วงหน้า</h3>
-              <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
+              <div class="admin-section-head">
+                <h3>จองล่วงหน้า</h3>
+                <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
+              </div>
               <div class="admin-form-row">
                 <label class="admin-label-grow">
                   จองล่วงหน้าได้ (วัน)
@@ -6486,8 +6435,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
 
             <div v-show="activeBlocksSection === 'bulk'" class="admin-settings-section">
-              <h3>ปิดล่วงหน้า 7 / 15 / 30 วัน</h3>
-              <p class="muted">ปิดทั้งวัน หรือ บางช่วงเวลา ตั้งแต่วันที่ที่เลือก</p>
+              <div class="admin-section-head">
+                <h3>ปิดหลายวัน</h3>
+                <p class="muted">ปิดทั้งวัน หรือ บางช่วงเวลา ตั้งแต่วันที่ที่เลือก</p>
+              </div>
 
       <div class="bulk-block-box">
         <div class="admin-form-grid admin-bulk-settings">
@@ -6537,8 +6488,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
             <div v-show="activeBlocksSection === 'calendar'" class="admin-settings-section">
               <template v-if="!selectedBlockDate">
-                <h3>ปิดทีละวัน</h3>
-                <p class="muted">กดวันที่ในปฏิทินเพื่อจัดการรายการปิด · สีตามสถานที่ให้บริการ</p>
+                <div class="admin-section-head">
+                  <h3>ปิดทีละวัน</h3>
+                  <p class="muted">กดวันที่ในปฏิทินเพื่อจัดการรายการปิด · สีตามสถานที่ให้บริการ</p>
+                </div>
 
                 <div class="service-cal-nav">
                   <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="เดือนก่อน">
@@ -6607,7 +6560,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   </div>
                 </div>
 
-                <div v-if="selectedDayBlocks.length === 0" class="muted">ยังไม่มีรายการปิดในวันนี้</div>
+                <div v-if="selectedDayBlocks.length === 0" class="state-card">
+                  <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+                  <p class="state-card-title">ยังไม่มีรายการปิดในวันนี้</p>
+                </div>
                 <div v-for="item in selectedDayBlocks" :key="item.id" class="admin-item">
                   <div>
                     <strong>
@@ -6653,7 +6609,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   เช่น เปิด 19:00–21:00 วันพิเศษ ทั้งที่ปกติปิดรับ 19:00
                 </p>
 
-                <div v-if="selectedDayExtraHours.length === 0" class="muted">ยังไม่มีช่วงเปิดเพิ่มในวันนี้</div>
+                <div v-if="selectedDayExtraHours.length === 0" class="state-card">
+                  <i class="ti ti-clock-plus state-card-icon" aria-hidden="true"></i>
+                  <p class="state-card-title">ยังไม่มีช่วงเปิดเพิ่มในวันนี้</p>
+                </div>
                 <div v-for="item in selectedDayExtraHours" :key="item.id" class="admin-item admin-extra-item">
         <div>
                     <strong>เปิดเพิ่ม {{ item.start_hour }}:00 – {{ item.end_hour }}:00</strong>
@@ -6687,13 +6646,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </section>
 
     <!-- ── รีวิว TikTok / Instagram ── -->
-    <section v-show="activeTab === 'reviews'" class="card admin-section">
-      <h3>จัดการคลิปรีวิว (TikTok / Instagram)</h3>
-          <p class="muted">
-        วางลิงก์ทีละคลิป
-        · TikTok: .../video/123 หรือ .../photo/123 · vm.tiktok.com
-        · Instagram: .../p/... หรือ .../reel/...
-      </p>
+    <section v-show="activeTab === 'reviews'" class="admin-section">
+      <div class="admin-section-head">
+        <h3>คลิปรีวิว</h3>
+        <p class="muted">วางลิงก์ TikTok หรือ Instagram ทีละคลิป</p>
+      </div>
 
       <div id="reviews-clip-form" class="admin-settings-section">
       <template v-if="!clipForm.id">
@@ -6733,7 +6690,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </template>
       </div>
 
-      <p v-if="showcaseClips.length === 0" class="muted" style="margin-top:14px">ยังไม่มีคลิป</p>
+      <div v-if="showcaseClips.length === 0" class="state-card" style="margin-top:14px">
+        <i class="ti ti-brand-tiktok state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">ยังไม่มีคลิป</p>
+        <p class="muted">วางลิงก์ด้านบนแล้วกดเพิ่มคลิป</p>
+      </div>
 
       <div v-for="(item, index) in showcaseClips" :key="item.id" class="admin-item showcase-clip-item">
         <div class="showcase-clip-info">
@@ -6788,20 +6749,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     />
 
     <AdminShopFeaturesPanel
-      v-if="isSuperAdmin && shopSlug === 'default'"
+      v-if="isSuperAdmin && shopSlug === 'default' && activeTab === 'features'"
       :is-super-admin="isSuperAdmin"
       :shop-slug="shopSlug"
-      :active="activeTab === 'features'"
+      :active="true"
     />
 
     <!-- ── ผู้ใช้ ── -->
-    <section v-show="activeTab === 'users'" class="card admin-section">
-      <h3>รายชื่อผู้ใช้</h3>
-      <p v-if="shopSlug === 'default'" class="muted">แสดงผู้ใช้ทั้งหมดในระบบ (สาขาหลัก)</p>
-      <p v-else class="muted">
-        แสดงเฉพาะลูกค้าที่เคยจองที่สาขา <strong>/{{ shopSlug }}</strong>
-        · แอดมินสาขาสามารถให้/ถอดสิทธิ์แอดมินได้เฉพาะสาขานี้
-      </p>
+    <section v-show="activeTab === 'users'" class="admin-section">
+      <div class="admin-section-head">
+        <h3>รายชื่อผู้ใช้</h3>
+        <p v-if="shopSlug === 'default'" class="muted">ผู้ใช้ทั้งหมดในระบบ</p>
+        <p v-else class="muted">ลูกค้าที่เคยจองสาขา /{{ shopSlug }}</p>
+      </div>
       <div class="admin-form-row" style="margin-bottom:14px;flex-wrap:wrap">
         <label class="admin-label-grow">
           ค้นหา
@@ -6828,8 +6788,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         แสดง {{ users.length }} จาก {{ usersTotal }} คน
       </p>
 
-      <p v-if="usersLoading" class="muted">กำลังโหลดรายชื่อ...</p>
-      <p v-else-if="filteredUsers.length === 0" class="muted">ไม่พบผู้ใช้</p>
+      <div v-if="usersLoading" class="state-card">
+        <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+        <span class="state-card-title">กำลังโหลดรายชื่อ</span>
+      </div>
+      <div v-else-if="filteredUsers.length === 0" class="state-card">
+        <i class="ti ti-users state-card-icon" aria-hidden="true"></i>
+        <span class="state-card-title">ไม่พบผู้ใช้</span>
+      </div>
 
       <div ref="usersListRef" class="admin-users-list">
       <div v-for="u in filteredUsers" :key="u.id" class="admin-item user-item">
@@ -6893,10 +6859,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             ชื่อสาขา
             <input v-model="shopEditName" id="shop-edit-name-input" class="admin-input" @input="shopEditError = ''" />
           </label>
-          <label class="admin-checkbox">
-            <input v-model="shopEditActive" type="checkbox" />
-            เปิดใช้งาน
-          </label>
+          <AdminSwitch v-model="shopEditActive" label="เปิดใช้งาน" />
           <label class="booking-edit-field">
             จำกัดเวลาใช้งาน (วัน)
             <input
@@ -7177,15 +7140,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             />
           </label>
 
-          <label v-if="canEditUserAdminRights(userEditItem)" class="admin-checkbox user-edit-admin-check">
-            <input
-              v-model="userEditIsAdmin"
-              type="checkbox"
-              :disabled="userEditItem?.id === auth.user?.id && userEditItem?.is_admin"
-              @change="userEditError = ''"
-            />
-            สิทธิ์แอดมิน
-          </label>
+          <AdminSwitch
+            v-if="canEditUserAdminRights(userEditItem)"
+            v-model="userEditIsAdmin"
+            label="สิทธิ์แอดมิน"
+            :disabled="userEditItem?.id === auth.user?.id && userEditItem?.is_admin"
+            @update:model-value="userEditError = ''"
+          />
 
           <label v-if="isSuperAdmin && userEditIsAdmin" class="booking-edit-field">
             สาขาที่ดูแล
@@ -7399,11 +7360,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       >
         <div id="admin-booking-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="booking-edit-title">
           <div class="booking-edit-header">
-            <h3 id="booking-edit-title">แก้ไขข้อมูลคิว</h3>
+            <h3 id="booking-edit-title">{{ isBookingRestoreMode ? 'เลือกเวลาเพื่อคืนสถานะจอง' : 'แก้ไขข้อมูลคิว' }}</h3>
             <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingEdit">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
+
+          <p v-if="isBookingRestoreMode" class="alert-banner warning booking-restore-banner" role="status">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+            <span>{{ bookingRestoreConflictHint }} · เวลาเดิม {{ bookingEditCurrentHourLabel }}</span>
+          </p>
 
           <label class="booking-edit-field">
             วันจอง
@@ -7416,7 +7382,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             />
           </label>
 
-          <p v-if="bookingEditOriginalSlotKey" class="muted booking-edit-current-hour">
+          <p v-if="bookingEditOriginalSlotKey && !isBookingRestoreMode" class="muted booking-edit-current-hour">
             เวลาปัจจุบัน: {{ bookingEditCurrentHourLabel }}
           </p>
 
@@ -7434,21 +7400,25 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </p>
 
           <label class="booking-edit-field">
-            ย้ายไปเวลา
+            {{ isBookingRestoreMode ? 'เวลาคิวที่คืนสถานะ' : 'ย้ายไปเวลา' }}
             <select
               v-model="bookingEditMoveToSlotKey"
               class="admin-input"
+              :class="{ 'booking-restore-slot': isBookingRestoreMode }"
               :disabled="bookingEditLoading"
               @change="bookingEditError = ''"
             >
-              <option value="">— คงเวลาเดิม —</option>
-              <option v-if="!bookingEditHourOptions.length" value="" disabled>ไม่มีช่วงว่างอื่น</option>
+              <option value="">{{ isBookingRestoreMode ? '— เลือกเวลาว่าง —' : '— คงเวลาเดิม —' }}</option>
+              <option v-if="!bookingEditHourOptions.length" value="" disabled>
+                {{ isBookingRestoreMode ? 'วันนี้ไม่มีช่วงว่าง' : 'ไม่มีช่วงว่างอื่น' }}
+              </option>
               <option v-for="opt in bookingEditHourOptions" :key="opt.key" :value="opt.key">
                 {{ opt.label }}
               </option>
             </select>
           </label>
 
+          <template v-if="!isBookingRestoreMode">
           <label class="booking-edit-field">
             ค้นหาลูกค้า
             <input
@@ -7560,6 +7530,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <p v-else-if="!bookingEditRequiredOptions.length" class="muted">ไม่มีบริการให้เลือกในวันนี้</p>
             </template>
           </div>
+          </template>
 
           <p v-if="bookingEditError" class="alert error">{{ bookingEditError }}</p>
 
@@ -7570,10 +7541,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="btn primary"
-              :disabled="bookingEditSaving || bookingEditLoading"
+              :disabled="bookingEditSaving || bookingEditLoading || (isBookingRestoreMode && !bookingEditMoveToSlotKey)"
               @click="saveBookingEdit"
             >
-              {{ bookingEditSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+              {{
+                bookingEditSaving
+                  ? (isBookingRestoreMode ? 'กำลังคืนสถานะ...' : 'กำลังบันทึก...')
+                  : (isBookingRestoreMode ? 'คืนสถานะจอง' : 'บันทึก')
+              }}
             </button>
           </div>
         </div>
@@ -7668,10 +7643,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <input v-model.number="categoryForm.sort_order" type="number" min="0" step="1" class="admin-input" />
             </label>
           </div>
-          <label class="admin-checkbox" style="display:block;margin-bottom:16px">
-            <input v-model="categoryForm.is_active" type="checkbox" />
-            เปิดใช้งาน
-          </label>
+          <AdminSwitch v-model="categoryForm.is_active" label="เปิดใช้งาน" />
           <div class="booking-edit-actions">
             <button type="button" class="btn" @click="resetCategoryForm">ยกเลิก</button>
             <button type="button" class="btn primary" @click="saveServiceCategory">บันทึก</button>
@@ -7721,10 +7693,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <label class="admin-color-field admin-color-field-full">
               <span class="admin-color-label-row">
                 สีแสดงในปฏิทิน
-                <label class="admin-checkbox admin-checkbox-inline">
-                  <input v-model="optionFormUseColor" type="checkbox" />
-                  ใช้สี
-                </label>
+                <AdminSwitch compact v-model="optionFormUseColor" label="ใช้สี" />
               </span>
               <template v-if="optionFormUseColor">
                 <div class="color-picker-row">
@@ -7749,14 +7718,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </label>
           </div>
           <div class="admin-form-row" style="margin-bottom:16px">
-            <label class="admin-checkbox">
-              <input v-model="optionForm.is_active" type="checkbox" />
-              แสดงให้ลูกค้าเลือกจอง
-            </label>
-            <label class="admin-checkbox">
-              <input v-model="optionForm.is_required" type="checkbox" />
-              บังคับเลือกเมื่อจอง
-            </label>
+            <AdminSwitch v-model="optionForm.is_active" label="แสดงให้ลูกค้าเลือกจอง" />
+            <AdminSwitch v-model="optionForm.is_required" label="บังคับเลือกเมื่อจอง" />
           </div>
           <div class="booking-edit-actions">
             <button type="button" class="btn" @click="resetOptionForm">ยกเลิก</button>
@@ -7798,7 +7761,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               สีในปฏิทิน
               <div class="color-picker-row">
                 <input v-model="locationForm.color" type="color" class="admin-color-input" />
-                <input v-model="locationForm.color" type="text" class="admin-input" maxlength="7" placeholder="#3b82f6" />
+                <input v-model="locationForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
               </div>
               <div class="color-preset-row">
                 <button
@@ -7815,10 +7778,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               </div>
             </label>
           </div>
-          <label class="admin-checkbox" style="display:block;margin-bottom:16px">
-            <input v-model="locationForm.is_active" type="checkbox" />
-            แสดงเป็นปุ่มลัด
-          </label>
+          <AdminSwitch v-model="locationForm.is_active" label="แสดงเป็นปุ่มลัด" />
           <div class="booking-edit-actions">
             <button type="button" class="btn" @click="resetLocationForm">ยกเลิก</button>
             <button type="button" class="btn primary" @click="saveServiceLocation">บันทึก</button>
@@ -7877,7 +7837,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 <style scoped>
 .admin-page {
   width: 100%;
-  max-width: 100%;
+  max-width: 1200px;
   min-width: 0;
   margin: 0 auto;
   padding: var(--page-padding-x);
@@ -7900,15 +7860,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   flex-wrap: wrap;
 }
 
-.admin-title {
-  margin: 0;
-  font-size: var(--text-h2);
-  color: var(--color-text-primary);
+.admin-brand-wrap {
+  min-width: 0;
+  flex: 1 1 0;
 }
 
 .admin-sub {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--text-caption);
 }
 
 .admin-back-btn {
@@ -7939,6 +7898,23 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .admin-share-btn:hover {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary-light) 80%, var(--color-primary) 20%);
+}
+
+@media (max-width: 640px) {
+  .admin-top-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .admin-brand-wrap {
+    flex: 1 1 auto;
+  }
+
+  .admin-top-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .admin-tab-wrap {
@@ -7988,23 +7964,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .admin-nav-item {
-  flex: 1 0 auto;
-  min-width: 88px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
+  flex: 0 0 auto;
+  min-width: unset;
+  flex-direction: row;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  font-size: var(--text-caption);
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color var(--transition), background var(--transition), color var(--transition);
-  min-height: var(--touch-min);
 }
 
 .admin-nav-item i {
@@ -8022,9 +7986,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .admin-nav-item.active {
-  border-color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   background: var(--color-primary-light);
-  color: var(--color-primary);
+  color: var(--color-primary-dark);
 }
 
 .admin-users-count {
@@ -8051,17 +8015,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .admin-push-reminder {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 3px;
+  flex-wrap: wrap;
+  gap: var(--space-1);
   width: 100%;
   margin: 0 0 var(--space-3);
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   border: none;
-  font-size: 10px;
-  line-height: 1.2;
+  font-size: var(--text-caption);
+  line-height: 1.4;
   font-weight: 500;
   text-align: left;
-  white-space: nowrap;
   cursor: pointer;
   transition: filter var(--transition), transform var(--transition);
 }
@@ -8116,39 +8079,37 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   transform: scale(0.99);
 }
 
-.alert {
-  margin: 0;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 14px;
-}
-
-.alert.success {
-  background: #ecfdf5;
-  color: #166534;
-  border: 1px solid #bbf7d0;
-}
-
-.alert.error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
+.alert-banner {
+  margin: 0 0 var(--space-3);
 }
 
 .admin-divider {
   border: none;
-  border-top: 1px solid #e2e8f0;
-  margin: 20px 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-5) 0;
 }
 
 .admin-section {
-  border-radius: var(--radius-card);
-  padding: var(--space-4);
+  padding: 0;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  overflow-x: hidden;
-  box-shadow: var(--shadow-card);
+}
+
+.admin-section-head {
+  margin: 0 0 var(--space-4);
+}
+
+.admin-section-head h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-h3);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.admin-section-head .muted {
+  margin: 0;
+  font-size: var(--text-caption);
 }
 
 .admin-form-row {
@@ -8156,6 +8117,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 12px;
   align-items: end;
   margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-form-row > .admin-switch {
+  flex: 1 1 180px;
+  align-self: center;
 }
 
 .admin-form-grid {
@@ -8185,34 +8152,50 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   justify-content: center;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--text-caption);
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: all .15s;
+  min-height: var(--touch-min);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
 .view-toggle-btn i { font-size: 16px; }
 
 .view-toggle-btn:hover {
-  border-color: #cbd5e1;
-  color: #334155;
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
 }
 
 .view-toggle-btn.active {
-  border-color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   background: var(--color-primary-light);
-  color: var(--color-primary);
+  color: var(--color-primary-dark);
+}
+
+.view-toggle-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.view-toggle-btn:disabled:hover {
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.view-toggle-btn.active:disabled:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-primary-dark);
 }
 
 .admin-filter-item {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 8px 10px;
 }
 
@@ -8227,9 +8210,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   min-width: 0;
   box-sizing: border-box;
   margin-top: 4px;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
+  font-size: var(--text-body);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
 }
 
 .register-pin-admin-input {
@@ -8251,9 +8237,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .bulk-block-box {
   margin: 12px 0 16px;
   padding: 14px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 12px;
-  background: #f8fafc;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-muted);
 }
 
 .bulk-block-box h4,
@@ -8274,16 +8260,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .admin-extra-item strong {
-  color: var(--accent, #C4847A);
+  color: var(--color-primary);
 }
 
 .bulk-preview {
   margin: 8px 0 10px;
   padding: 8px 10px;
-  border-radius: 8px;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary-dark);
+  font-size: var(--text-body);
   font-weight: 600;
 }
 
@@ -8303,7 +8289,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   object-fit: cover;
   border-radius: 8px;
   flex-shrink: 0;
-  background: #0f172a;
+  background: var(--color-text-primary);
 }
 
 .showcase-clip-preview-empty {
@@ -8311,7 +8297,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   text-align: center;
   padding: 4px;
 }
@@ -8366,19 +8352,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
 }
 
 .badge-active {
-  background: #dcfce7;
-  color: #166534;
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
 }
 
 .badge-inactive {
-  background: #fee2e2;
-  color: #991b1b;
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
 }
 
 .badge-required {
@@ -8396,22 +8382,22 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--color-info) 16%, transparent);
+  color: var(--color-info);
 }
 
 .badge-category {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
-  background: #fdf2f8;
-  color: #be185d;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
 }
 
 .service-category-chips {
@@ -8438,11 +8424,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
 }
 
 .admin-color-field-full {
@@ -8456,6 +8442,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
+}
+
+.admin-color-label-row > .admin-switch {
+  flex: 0 0 auto;
+  min-height: 32px;
 }
 
 .admin-checkbox-inline {
@@ -8510,18 +8501,18 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .location-preset-added {
   font-size: 11px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .badge-everyday {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-caption);
   font-weight: 600;
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
 }
 
 .service-cal-header h3 {
@@ -8537,8 +8528,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .service-cal-nav-btn {
-  width: 36px;
-  height: 36px;
+  width: var(--touch-min);
+  height: var(--touch-min);
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -8548,9 +8539,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .service-cal-month {
   min-width: 160px;
   text-align: center;
-  font-size: 16px;
+  font-size: var(--text-h3);
   font-weight: 700;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .service-cal-weekdays {
@@ -8563,9 +8554,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .service-cal-wd {
   text-align: center;
-  font-size: 12px;
+  font-size: var(--text-caption);
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   padding: 4px 0;
 }
 
@@ -8588,19 +8579,24 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   position: relative;
   min-height: 52px;
   min-width: 0;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-elevated);
   padding: 6px 2px;
   cursor: pointer;
   font-family: inherit;
-  transition: border-color .15s, background .15s;
+  transition: border-color var(--transition), background var(--transition);
   overflow: hidden;
 }
 
+.service-cal-day:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .service-cal-day:not(.empty):hover {
-  border-color: #fbcfe8;
-  background: #fdf2f8;
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  background: var(--color-primary-light);
 }
 
 .service-cal-day.empty {
@@ -8612,11 +8608,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .service-cal-day.today {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px rgba(196, 132, 122, 0.2);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .service-cal-day.has-options {
-  background: #fff1f2;
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-elevated));
 }
 
 .booking-cal-day,
@@ -8625,7 +8621,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .block-cal-day.has-block {
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .block-cal-marker {
@@ -8637,11 +8633,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .block-cal-marker.full {
-  color: #991b1b;
+  color: var(--color-error);
 }
 
 .block-cal-marker.partial {
-  color: #b45309;
+  color: var(--color-warning);
 }
 
 .block-cal-marker.inline {
@@ -8660,7 +8656,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .day-hours-cal-day.has-hours {
-  background: #eef2ff;
+  background: var(--color-primary-light);
 }
 
 .day-hours-cal-badge {
@@ -8668,7 +8664,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin-top: 2px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--color-primary, #6366f1);
+  color: var(--color-primary-dark);
 }
 
 .day-hour-form {
@@ -8726,13 +8722,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   flex-wrap: wrap;
 }
 
-.booking-stat-paid { color: #15803d; }
-.booking-stat-sep { color: #94a3b8; }
+.booking-stat-paid { color: var(--color-success); }
+.booking-stat-sep { color: var(--color-text-muted); }
 .booking-stat-unpaid { color: var(--color-primary); }
 
 .booking-stat-cancelled {
   margin-left: 4px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-weight: 800;
 }
 
@@ -8743,8 +8739,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: #fbbf24;
-  color: #92400e;
+  background: var(--color-warning);
+  color: var(--color-surface-elevated);
   font-size: 11px;
   font-weight: 800;
   line-height: 16px;
@@ -8763,7 +8759,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 12px;
   margin-top: 14px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .legend-paid,
@@ -8776,12 +8772,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin-right: 4px;
 }
 
-.legend-paid { color: #15803d; }
+.legend-paid { color: var(--color-success); }
 .legend-unpaid { color: var(--color-primary); }
-.legend-cancelled { color: #64748b; }
+.legend-cancelled { color: var(--color-text-secondary); }
 
 .service-cal-day.has-bookings {
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .revenue-cal-day {
@@ -8794,7 +8790,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .revenue-cal-day.has-revenue {
-  background: #ecfdf5;
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface-elevated));
 }
 
 .revenue-cal-day .service-cal-num {
@@ -8816,7 +8812,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   font-size: 9px;
   font-weight: 700;
   line-height: 1.15;
-  color: #b45309;
+  color: var(--color-warning);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8826,7 +8822,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   font-size: 9px;
   font-weight: 700;
   line-height: 1.15;
-  color: #15803d;
+  color: var(--color-success);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8847,19 +8843,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   font-size: 9px;
   font-weight: 700;
   line-height: 1.15;
-  color: #475569;
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .revenue-cal-cancelled {
-  color: #b91c1c;
+  color: var(--color-error);
   font-weight: 800;
 }
 
 .revenue-cal-amount {
   flex: 1;
   min-width: 0;
-  color: #15803d;
+  color: var(--color-success);
   word-break: break-word;
 }
 
@@ -9006,13 +9002,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   }
 
   .admin-section {
-    padding: 14px 12px;
+    padding: 0;
   }
 
   .admin-nav-item {
-    min-width: 64px;
-    padding: 8px 6px;
-    font-size: 10px;
+    min-width: unset;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-caption);
   }
 
   .admin-nav-item i {
@@ -9172,31 +9168,31 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 6px 8px;
   margin-top: 10px;
   font-size: 14px;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .revenue-stat-item strong {
   font-weight: 800;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .revenue-stat-cancelled strong {
-  color: #b91c1c;
+  color: var(--color-error);
 }
 
 .revenue-stat-done strong {
-  color: #15803d;
+  color: var(--color-success);
 }
 
 .revenue-stat-sep {
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .service-cal-num {
   display: block;
   font-size: 14px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .service-cal-count {
@@ -9209,7 +9205,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   padding: 0 5px;
   border-radius: 999px;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-size: 11px;
   font-weight: 700;
 }
@@ -9217,7 +9213,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .service-everyday-section {
   margin-top: 24px;
   padding-top: 20px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border);
 }
 
 .service-everyday-head {
@@ -9256,7 +9252,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 12px;
+  gap: var(--space-3);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-card);
+  margin-top: var(--space-3);
+}
+
+.admin-item-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 4px;
 }
 
 .admin-item > div:first-child,
@@ -9296,10 +9306,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .card-inner {
-  padding: 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f8fafc;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
 }
 
 .card-inner h4 {
@@ -9322,9 +9332,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   width: 44px;
   height: 40px;
   padding: 2px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface-elevated);
   cursor: pointer;
 }
 
@@ -9344,8 +9354,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .color-preset-btn.active {
-  border-color: #1e293b;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #1e293b;
+  border-color: var(--color-text-primary);
+  box-shadow: 0 0 0 2px var(--color-surface-elevated), 0 0 0 4px var(--color-text-primary);
 }
 
 .option-color-dot {
@@ -9392,8 +9402,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
   vertical-align: middle;
 }
 
@@ -9404,15 +9414,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  background: #fef3c7;
-  color: #b45309;
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
   vertical-align: middle;
 }
 
 .user-admin-note {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-text-muted);
   line-height: 1.45;
 }
 
@@ -9430,7 +9440,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: block;
   margin-top: 2px;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .user-history-modal {
@@ -9448,9 +9458,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .user-history-item {
   padding: 12px 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .user-history-item-main {
@@ -9462,7 +9472,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .user-history-time {
   font-size: 13px;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .user-history-status {
@@ -9473,23 +9483,23 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .user-history-status--awaiting {
-  background: #fef3c7;
-  color: #b45309;
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
 }
 
 .user-history-status--pending {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--color-info) 18%, transparent);
+  color: var(--color-info);
 }
 
 .user-history-status--done {
-  background: #dcfce7;
-  color: #15803d;
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
 }
 
 .user-history-status--cancelled {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
 }
 
 .user-history-services {
@@ -9509,7 +9519,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .user-history-error {
   margin: 12px 0 0;
-  color: #b91c1c;
+  color: var(--color-error);
   font-size: 13px;
 }
 
@@ -9553,9 +9563,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   }
 
   .admin-nav-item {
-    min-width: 64px;
-    padding: 8px 8px;
-    font-size: 10px;
+    min-width: unset;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-caption);
   }
 
   .admin-nav-item i {
@@ -9803,7 +9813,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin-bottom: 16px;
   font-size: 14px;
   font-weight: 600;
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .booking-edit-services {
@@ -9814,7 +9824,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin: 0 0 4px;
   font-size: 14px;
   font-weight: 600;
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .booking-edit-hint {
@@ -9826,7 +9836,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin: 0 0 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .booking-edit-required-list {
@@ -9842,36 +9852,37 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .admin-booking-category-btn {
   padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
   font-size: 13px;
   cursor: pointer;
   font-family: inherit;
-  color: #334155;
+  color: var(--color-text-primary);
+  min-height: var(--touch-min);
 }
 
 .admin-booking-category-btn.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+  background: var(--color-primary-light);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-primary-dark);
 }
 
 .admin-booking-category-btn.active .admin-booking-category-count {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-primary-dark);
 }
 
 .admin-booking-category-count {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .booking-edit-orphaned {
   margin: 0 0 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #fef2f2;
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -9888,15 +9899,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 4px 10px;
   align-items: start;
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--color-surface-muted);
   cursor: pointer;
 }
 
 .booking-edit-option.selected {
-  border-color: #fbcfe8;
-  background: #fdf2f8;
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface-elevated));
 }
 
 .booking-edit-option.required {
@@ -9911,12 +9922,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin: 0 0 8px;
 }
 
+.booking-restore-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
 .booking-edit-duration-summary {
   margin: 0 0 12px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #f0f9ff;
-  color: #0c4a6e;
+  background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface-elevated));
+  color: var(--color-info);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -9925,8 +9943,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #e0f2fe;
-  color: #0369a1;
+  background: color-mix(in srgb, var(--color-info) 20%, transparent);
+  color: var(--color-info);
   font-size: 11px;
   font-weight: 600;
 }
@@ -9934,15 +9952,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .booking-edit-option-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .booking-edit-required {
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error);
   font-size: 11px;
   font-weight: 700;
 }
@@ -9950,7 +9968,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .booking-edit-option-desc {
   grid-column: 2;
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-muted);
   line-height: 1.4;
 }
 
@@ -10200,6 +10218,58 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   }
 }
 
+/* UX.md: หัวข้อเป็นแท็บเม็ดยาเลื่อนแนวนอน ไม่ใช้เมนูซ้อน */
+.admin-drawer-shell {
+  flex-direction: column;
+}
+
+.admin-drawer-nav-head,
+.admin-drawer-toolbar,
+.admin-drawer-backdrop {
+  display: none !important;
+}
+
+.admin-drawer-nav,
+.admin-drawer-nav.admin-drawer-nav--open,
+.admin-drawer-nav:not(.admin-drawer-nav--open) {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  overflow: visible !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.admin-drawer-nav-list {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: var(--space-2) 0 var(--space-3);
+  gap: var(--space-2);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-drawer-nav-list::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-drawer-nav-item {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.admin-drawer-panel {
+  padding: var(--space-4) 0;
+}
+
 .admin-shop-list {
   list-style: none;
   margin: 0;
@@ -10224,6 +10294,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  align-items: center;
 }
 
 .admin-shop-item.inactive {
@@ -10234,8 +10305,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   margin-left: auto;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error);
   font-size: 11px;
   font-weight: 700;
 }
@@ -10250,18 +10321,18 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .shop-usage-badge--ok {
-  background: #dcfce7;
-  color: #166534;
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
 }
 
 .shop-usage-badge--warn {
-  background: #fef3c7;
-  color: #b45309;
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
 }
 
 .shop-usage-badge--expired {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error);
 }
 
 .usage-preset-row {
@@ -10280,9 +10351,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .line-branch-panel {
   margin: 0 0 16px;
   padding: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--color-surface-muted);
 }
 
 .line-branch-title {
@@ -10311,8 +10382,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
 }
 
 .line-branch-info {
@@ -10344,28 +10415,28 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 
 .shop-line-badge--on {
-  background: #dcfce7;
-  color: #166534;
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
 }
 
 .shop-line-badge--warn {
-  background: #fef3c7;
-  color: #b45309;
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
 }
 
 .shop-line-badge--premium {
-  background: #ede9fe;
-  color: #6d28d9;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-primary-dark);
 }
 
 .line-push-status-off {
-  color: #b91c1c;
+  color: var(--color-error);
 }
 
 .admin-shop-item {
@@ -10375,16 +10446,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface-elevated);
   cursor: pointer;
   font-family: inherit;
 }
 
 .admin-shop-item.active {
-  border-color: var(--color-primary, #c4847a);
-  background: #fdf2f8;
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 .ui-settings-group-title {
@@ -10407,81 +10478,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   grid-column: 1 / -1;
 }
 
-.ui-field-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.ui-field-toggle-label {
-  font-weight: 500;
-}
-
 .ui-field-toggle-hint {
   margin: 0;
   font-size: var(--text-caption);
-}
-
-.ui-slide-switch {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.ui-slide-switch.disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.ui-slide-switch input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.ui-slide-track {
-  display: block;
-  width: 44px;
-  height: 26px;
-  border-radius: 999px;
-  background: #cbd5e1;
-  transition: background 0.2s ease;
-  position: relative;
-}
-
-.ui-slide-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s ease;
-}
-
-.ui-slide-switch input:checked + .ui-slide-track {
-  background: var(--color-primary);
-}
-
-.ui-slide-switch input:checked + .ui-slide-track .ui-slide-thumb {
-  transform: translateX(18px);
-}
-
-.ui-slide-switch input:focus-visible + .ui-slide-track {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
 }
 
 .ui-color-input {
   width: 56px;
   height: 40px;
   padding: 0;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
@@ -10490,7 +10496,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   max-height: 80px;
   border-radius: 8px;
   object-fit: cover;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
 }
 
 .ui-image-preview--wide {
@@ -10535,7 +10541,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   background: none;
   padding: 0;
   font: inherit;
-  color: var(--color-primary, #6366f1);
+  color: var(--color-primary);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -10600,5 +10606,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .admin-booking-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.admin-booking-actions .btn {
+  min-height: var(--touch-min);
 }
 </style>

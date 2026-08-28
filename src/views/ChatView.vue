@@ -891,6 +891,19 @@ watch(
   max-width: 900px;
 }
 
+@media (min-width: 900px) {
+  .chat-page,
+  .chat-page--admin {
+    max-width: min(var(--page-wide-max), 100%);
+    padding-left: var(--sidebar-width);
+    padding-bottom: 0;
+  }
+
+  .chat-jump-btn {
+    bottom: 88px;
+  }
+}
+
 /* ── Admin shell ── */
 .chat-admin-shell {
   flex: 1;

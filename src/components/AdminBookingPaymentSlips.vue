@@ -209,7 +209,7 @@ async function cancelBooking(row) {
     showCancelButton: true,
     confirmButtonText: 'ยกเลิกคิว',
     cancelButtonText: 'ไม่',
-    confirmButtonColor: '#c0392b',
+    confirmButtonColor: '#C45C5C',
   })
   if (!result.isConfirmed) return
 
@@ -235,7 +235,7 @@ async function deleteSlip(row) {
     showCancelButton: true,
     confirmButtonText: 'ลบ',
     cancelButtonText: 'ยกเลิก',
-    confirmButtonColor: '#c0392b',
+    confirmButtonColor: '#C45C5C',
   })
   if (!result.isConfirmed) return
 
@@ -311,9 +311,9 @@ onUnmounted(() => {
 
 <template>
   <div v-if="showSlipSection" class="admin-booking-slips card-inner">
-    <header class="admin-booking-slips-head">
+    <header class="admin-booking-slips-head admin-section-head">
       <div>
-        <h4>{{ bookingDate ? `สลิปวันที่ ${formatBookingDate(bookingDate)}` : 'สลิปชำระเงิน (จอง)' }}</h4>
+        <h4>{{ bookingDate ? `สลิปวันที่ ${formatBookingDate(bookingDate)}` : 'สลิปชำระเงิน' }}</h4>
         <p class="muted">
           ลูกค้าอัปโหลดจากหน้าชำระเงิน · เก็บรูป {{ retentionDays }} วันแล้วลบอัตโนมัติ
         </p>
@@ -344,10 +344,17 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <p v-if="message" class="admin-booking-slips-msg success">{{ message }}</p>
-    <p v-if="errorMessage" class="admin-booking-slips-msg error">{{ errorMessage }}</p>
-    <p v-if="loading" class="muted">กำลังโหลดสลิป...</p>
-    <p v-else-if="slips.length === 0" class="muted">ยังไม่มีสลิปในช่วง {{ retentionDays }} วันล่าสุด</p>
+    <p v-if="message" class="alert-banner success">{{ message }}</p>
+    <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
+    <div v-if="loading" class="state-card">
+      <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+      <span class="state-card-title">กำลังโหลดสลิป</span>
+    </div>
+    <div v-else-if="slips.length === 0" class="state-card">
+      <i class="ti ti-receipt state-card-icon" aria-hidden="true"></i>
+      <p class="state-card-title">ยังไม่มีสลิป</p>
+      <p class="muted">ในช่วง {{ retentionDays }} วันล่าสุด</p>
+    </div>
 
     <div v-else class="admin-booking-slips-list">
       <article
@@ -468,7 +475,7 @@ onUnmounted(() => {
 }
 
 .admin-booking-slips-msg.success {
-  color: #15803d;
+  color: var(--color-success);
 }
 
 .admin-booking-slips-msg.error {
@@ -543,18 +550,18 @@ onUnmounted(() => {
 }
 
 .admin-booking-slips-badge.pending {
-  background: color-mix(in srgb, var(--color-primary) 15%, white);
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface-elevated));
   color: var(--color-primary);
 }
 
 .admin-booking-slips-badge.confirmed {
-  background: #dcfce7;
-  color: #15803d;
+  background: color-mix(in srgb, var(--color-success) 16%, transparent);
+  color: var(--color-success);
 }
 
 .admin-booking-slips-badge.cancelled {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
 }
 
 .admin-booking-slips-meta {

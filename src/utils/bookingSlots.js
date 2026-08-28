@@ -222,6 +222,31 @@ function packDynamicSlotsInRange({
   return result
 }
 
+function slotFromExcludedBookingStart({
+  bookings,
+  excludeBookingId,
+  openRanges,
+  occupied,
+  slotLenM,
+  minGapMinutes,
+  slotHours,
+}) {
+  if (excludeBookingId == null) return null
+  const row = (bookings || []).find((b) => String(b.id) === String(excludeBookingId))
+  if (!row || row.status === 'cancelled') return null
+  const startM = slotStartMinutes(bookingRowToSlot(row, slotHours))
+  const range = (openRanges || []).find((r) => startM >= r.startM && startM < r.endM)
+  if (!range) return null
+  const nextStart = occupied
+    .filter((o) => o.startM > startM)
+    .reduce((min, o) => Math.min(min, o.startM), range.endM)
+  const gapEnd = Math.min(nextStart, range.endM)
+  const space = gapEnd - startM
+  if (space >= slotLenM) return makeDynamicSlot(startM, startM + slotLenM)
+  if (space >= minGapMinutes) return makeDynamicSlot(startM, startM + space)
+  return null
+}
+
 export function buildDynamicBookableSlots({
   slotHours = DEFAULT_SLOT_HOURS,
   bookings = [],
@@ -251,28 +276,42 @@ export function buildDynamicBookableSlots({
   if (occupied.some((o) => o.fullDay)) return []
 
   const windows = normalizeDayWindows(dayWindows)
-  if (windows.length) {
-    return windows.flatMap((window) => {
-      const rangeStartM = toMinutesFromHm(window.start_hour, window.start_minute)
-      const rangeEndM = toMinutesFromHm(window.end_hour, window.end_minute)
-      if (rangeEndM <= rangeStartM) return []
-      return packDynamicSlotsInRange({
-        rangeStartM,
-        rangeEndM,
-        occupied,
-        slotLenM,
-        minGapMinutes,
-      })
-    })
-  }
+  const windowRanges = windows.length
+    ? mergeOccupiedIntervals(
+      windows.map((window) => ({
+        startM: toMinutesFromHm(window.start_hour, window.start_minute),
+        endM: toMinutesFromHm(window.end_hour, window.end_minute),
+      }))
+    )
+    : []
+  const openRanges = windowRanges.length
+    ? windowRanges
+    : [{ startM: timelineStartM, endM: maxEndM }]
 
-  return packDynamicSlotsInRange({
-    rangeStartM: timelineStartM,
-    rangeEndM: maxEndM,
+  const packed = openRanges.flatMap((window) => {
+    if (window.endM <= window.startM) return []
+    return packDynamicSlotsInRange({
+      rangeStartM: window.startM,
+      rangeEndM: window.endM,
+      occupied,
+      slotLenM,
+      minGapMinutes,
+    })
+  })
+
+  const kept = slotFromExcludedBookingStart({
+    bookings,
+    excludeBookingId,
+    openRanges,
     occupied,
     slotLenM,
     minGapMinutes,
+    slotHours: slot,
   })
+  if (!kept || packed.some((s) => slotKey(s) === slotKey(kept))) {
+    return packed
+  }
+  return [...packed, kept].sort((a, b) => slotStartMinutes(a) - slotStartMinutes(b))
 }
 
 export function buildDynamicTimelineSlots(params) {

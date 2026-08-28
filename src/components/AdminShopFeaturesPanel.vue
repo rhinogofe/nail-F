@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import api from '../api/axios'
 import Swal from 'sweetalert2'
 import AdminShopFeatureInlineSettings from './AdminShopFeatureInlineSettings.vue'
+import AdminSwitch from './AdminSwitch.vue'
 
 const props = defineProps({
   isSuperAdmin: { type: Boolean, default: false },
@@ -26,8 +27,8 @@ const defaultFeatures = ref({})
 const selectedMode = ref('shop')
 const selectedShopSlug = ref('')
 const selectedGroupKey = ref('')
-const selectedItemKey = ref('')
-const selectedChildKey = ref('')
+const expandedItemKey = ref('')
+const expandedChildKey = ref('')
 
 const DEFAULTS_ID = '__defaults__'
 
@@ -41,10 +42,6 @@ const selectedGroup = computed(() =>
 
 const groupItems = computed(() => selectedGroup.value?.items || [])
 
-const selectedItem = computed(() =>
-  groupItems.value.find((item) => item.key === selectedItemKey.value) || groupItems.value[0] || null
-)
-
 const currentFeatures = computed(() => {
   if (selectedMode.value === 'defaults') {
     return defaultFeatures.value
@@ -53,22 +50,6 @@ const currentFeatures = computed(() => {
 })
 
 const canEditBranch = computed(() => selectedMode.value === 'shop' && !!selectedShopSlug.value)
-
-const activeSetup = computed(() => {
-  if (selectedChildKey.value && selectedItem.value?.children?.length) {
-    const child = selectedItem.value.children.find((c) => c.key === selectedChildKey.value)
-    if (child?.setup) return child.setup
-  }
-  return selectedItem.value?.setup || null
-})
-
-const activeSetupLabel = computed(() => {
-  if (selectedChildKey.value && selectedItem.value?.children?.length) {
-    const child = selectedItem.value.children.find((c) => c.key === selectedChildKey.value)
-    if (child) return child.label
-  }
-  return selectedItem.value?.label || ''
-})
 
 const shopRows = computed(() => [
   {
@@ -93,8 +74,47 @@ function isConfigOnly(item) {
   return Boolean(item?.configOnly)
 }
 
+function hasSetup(item) {
+  return Boolean(item?.setup) || (Array.isArray(item?.children) && item.children.some((c) => c.setup))
+}
+
 function hasChildren(item) {
   return Array.isArray(item?.children) && item.children.length > 0
+}
+
+function itemStatusLabel(item) {
+  if (isConfigOnly(item)) return 'ตั้งค่า'
+  return isItemEnabled(item.key) ? 'เปิด' : 'ปิด'
+}
+
+function isExpanded(itemKey) {
+  return expandedItemKey.value === itemKey
+}
+
+function toggleExpand(item) {
+  if (isExpanded(item.key)) {
+    expandedItemKey.value = ''
+    expandedChildKey.value = ''
+    return
+  }
+  expandedItemKey.value = item.key
+  expandedChildKey.value = ''
+}
+
+function activeSetupForItem(item) {
+  if (expandedChildKey.value && item.children?.length) {
+    const child = item.children.find((c) => c.key === expandedChildKey.value)
+    if (child?.setup) return child.setup
+  }
+  return item.setup || null
+}
+
+function activeSetupLabelForItem(item) {
+  if (expandedChildKey.value && item.children?.length) {
+    const child = item.children.find((c) => c.key === expandedChildKey.value)
+    if (child) return child.label
+  }
+  return item.label
 }
 
 async function loadAll() {
@@ -116,22 +136,10 @@ async function loadAll() {
     if (selectedMode.value === 'shop' && !selectedShopSlug.value && shops.value.length) {
       selectedShopSlug.value = shops.value[0].slug
     }
-    syncSelectedItem()
   } catch (err) {
     errorMessage.value = err.response?.data?.error || err.message || 'โหลดไม่สำเร็จ'
   } finally {
     loading.value = false
-  }
-}
-
-function syncSelectedItem() {
-  const items = groupItems.value
-  if (!items.length) {
-    selectedItemKey.value = ''
-    return
-  }
-  if (!items.some((item) => item.key === selectedItemKey.value)) {
-    selectedItemKey.value = items[0].key
   }
 }
 
@@ -143,22 +151,18 @@ function selectShop(row) {
     selectedMode.value = 'shop'
     selectedShopSlug.value = row.slug
   }
-  selectedGroupKey.value = catalog.value[0]?.key || ''
-  syncSelectedItem()
+  expandedItemKey.value = ''
+  expandedChildKey.value = ''
 }
 
 function selectGroup(groupKey) {
   selectedGroupKey.value = groupKey
-  syncSelectedItem()
-}
-
-function selectItem(itemKey) {
-  selectedItemKey.value = itemKey
-  selectedChildKey.value = ''
+  expandedItemKey.value = ''
+  expandedChildKey.value = ''
 }
 
 function selectChild(childKey) {
-  selectedChildKey.value = childKey
+  expandedChildKey.value = childKey
 }
 
 function onInlineSaved(label) {
@@ -170,9 +174,9 @@ function onInlineError(err) {
   errorMessage.value = err
 }
 
-async function toggleItem(item) {
+async function toggleItem(item, nextValue) {
   if (isItemLocked(item)) return
-  const next = !isItemEnabled(item.key)
+  const next = typeof nextValue === 'boolean' ? nextValue : !isItemEnabled(item.key)
   savingKey.value = item.key
   message.value = ''
   errorMessage.value = ''
@@ -237,8 +241,6 @@ async function resetShopToDefaults() {
   }
 }
 
-watch(selectedGroupKey, () => syncSelectedItem())
-
 watch(
   () => props.active,
   (on) => {
@@ -253,13 +255,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <section v-if="isManager" class="card admin-section shop-features-panel">
-    <header class="shop-features-head">
+  <section v-if="isManager" class="admin-section shop-features-panel">
+    <header class="shop-features-head admin-section-head">
       <div>
         <h3>ฟังก์ชันตามสาขา</h3>
-        <p class="muted">
-          เลือกร้าน → เลือกหัวข้อ → ตั้งค่าในหน้านี้ · เปิด/ปิดฟังก์ชันแยกจากตั้งค่าเนื้อหา
-        </p>
+        <p class="muted">เลือกสาขาและหมวด — สไลด์เปิด/ปิดได้ทันที</p>
       </div>
       <button type="button" class="btn ghost admin-action-btn" :disabled="loading" @click="loadAll">
         <i class="ti ti-refresh" aria-hidden="true"></i>
@@ -267,98 +267,88 @@ onMounted(() => {
       </button>
     </header>
 
-    <p v-if="message" class="shop-features-msg shop-features-msg--ok">{{ message }}</p>
-    <p v-if="errorMessage" class="shop-features-msg shop-features-msg--err">{{ errorMessage }}</p>
+    <p v-if="message" class="alert-banner success">{{ message }}</p>
+    <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
 
-    <div v-if="loading" class="muted shop-features-loading">กำลังโหลด...</div>
+    <div v-if="loading" class="state-card">
+      <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+      <span class="state-card-title">กำลังโหลดฟังก์ชัน</span>
+    </div>
 
     <div v-else class="shop-features-layout">
-      <aside class="shop-features-shops" aria-label="รายชื่อร้าน">
-        <h4 class="shop-features-col-title">ร้าน / สาขา</h4>
-        <ul class="shop-features-shop-list">
-          <li
-            v-for="row in shopRows"
-            :key="row.slug"
-            class="shop-features-shop-row"
-            :class="{
-              'shop-features-shop-row--active':
-                (row.isDefaults && selectedMode === 'defaults')
-                || (!row.isDefaults && selectedMode === 'shop' && selectedShopSlug === row.slug),
-              'shop-features-shop-row--defaults': row.isDefaults,
-            }"
-          >
-            <button type="button" class="shop-features-shop-btn" @click="selectShop(row)">
-              <span class="shop-features-shop-name">{{ row.name }}</span>
-              <span v-if="!row.isDefaults" class="muted shop-features-shop-slug">/{{ row.slug }}</span>
-              <span v-if="!row.isDefaults && !row.is_active" class="shop-inactive-badge">ปิด</span>
-              <span v-if="row.isDefaults" class="shop-features-defaults-badge">เทมเพลต</span>
-            </button>
-          </li>
-        </ul>
-        <p v-if="!shops.length" class="muted shop-features-empty">ยังไม่มีสาขา — สร้างได้ที่ ตั้งค่า → ร้าน/สาขา</p>
-      </aside>
+      <!-- ชั้น 1: เลือกสาขา -->
+      <nav class="shop-features-nav shop-features-shops" aria-label="ร้าน / สาขา">
+        <button
+          v-for="row in shopRows"
+          :key="row.slug"
+          type="button"
+          class="shop-features-pill"
+          :class="{
+            active:
+              (row.isDefaults && selectedMode === 'defaults')
+              || (!row.isDefaults && selectedMode === 'shop' && selectedShopSlug === row.slug),
+          }"
+          @click="selectShop(row)"
+        >
+          {{ row.name }}
+          <span v-if="row.isDefaults" class="shop-features-badge">เทมเพลต</span>
+          <span v-if="!row.isDefaults && !row.is_active" class="shop-features-badge shop-features-badge--off">ปิด</span>
+        </button>
+      </nav>
 
-      <aside class="shop-features-groups" aria-label="หัวข้อและรายการย่อย">
-        <h4 class="shop-features-col-title">หัวข้อ</h4>
-        <nav class="shop-features-group-list">
-          <button
-            v-for="group in catalog"
-            :key="group.key"
-            type="button"
-            class="shop-features-group-btn"
-            :class="{ 'shop-features-group-btn--active': selectedGroupKey === group.key }"
-            @click="selectGroup(group.key)"
-          >
-            <i :class="['ti', group.icon]" aria-hidden="true"></i>
-            <span>{{ group.label }}</span>
-            <span class="shop-features-group-count">{{ group.items.length }}</span>
-          </button>
-        </nav>
+      <div v-if="!shops.length" class="state-card">
+        <i class="ti ti-building-store state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">ยังไม่มีสาขา</p>
+        <p class="muted">สร้างได้ที่ตั้งค่า → ร้าน / สาขา</p>
+      </div>
 
-        <div v-if="selectedGroup" class="shop-features-subitems">
-          <h4 class="shop-features-col-title shop-features-subitems-title">
-            รายการย่อย · {{ selectedGroup.label }}
-          </h4>
-          <ul class="shop-features-subitem-list">
-            <li
-              v-for="item in groupItems"
-              :key="item.key"
-              class="shop-features-subitem-row"
-              :class="{
-                'shop-features-subitem-row--active': selectedItemKey === item.key,
-                'shop-features-subitem-row--off': !isConfigOnly(item) && !isItemEnabled(item.key),
-              }"
-            >
-              <button type="button" class="shop-features-subitem-btn" @click="selectItem(item.key)">
-                <span class="shop-features-subitem-label">{{ item.label }}</span>
-                <span v-if="isConfigOnly(item)" class="shop-features-subitem-status shop-features-subitem-status--config">
-                  ตั้งค่า
-                </span>
-                <span v-else class="shop-features-subitem-status">{{ isItemEnabled(item.key) ? 'เปิด' : 'ปิด' }}</span>
-              </button>
-            </li>
-          </ul>
-        </div>
-      </aside>
+      <!-- ชั้น 2: เลือกหมวด -->
+      <nav class="shop-features-nav shop-features-groups" aria-label="หมวดฟังก์ชัน">
+        <button
+          v-for="group in catalog"
+          :key="group.key"
+          type="button"
+          class="shop-features-pill shop-features-pill--group"
+          :class="{ active: selectedGroupKey === group.key }"
+          @click="selectGroup(group.key)"
+        >
+          <i :class="['ti', group.icon]" aria-hidden="true"></i>
+          {{ group.label }}
+        </button>
+      </nav>
 
-      <div class="shop-features-items">
-        <header class="shop-features-items-head">
+      <!-- สรุปสถานะในหมวด -->
+      <div v-if="selectedGroup && groupItems.length" class="shop-features-status-row" aria-hidden="true">
+        <span
+          v-for="item in groupItems"
+          :key="item.key"
+          class="shop-features-status-chip"
+          :class="{
+            'shop-features-status-chip--off': !isConfigOnly(item) && !isItemEnabled(item.key),
+            'shop-features-status-chip--config': isConfigOnly(item),
+          }"
+        >
+          {{ item.label }} {{ itemStatusLabel(item) }}
+        </span>
+      </div>
+
+      <!-- รายการ toggle ทั้งหมดในหมวด -->
+      <div v-if="selectedGroup" class="shop-features-list">
+        <header class="shop-features-list-head">
           <div>
-            <h4 class="shop-features-col-title">
-              {{ selectedItem?.label || 'รายละเอียด' }}
-            </h4>
-            <p v-if="selectedGroup?.hint" class="muted shop-features-group-hint">{{ selectedGroup.hint }}</p>
+            <h4>{{ selectedGroup.label }}</h4>
+            <p v-if="selectedGroup.hint" class="muted shop-features-group-hint">{{ selectedGroup.hint }}</p>
             <p v-if="selectedMode === 'defaults'" class="muted shop-features-mode-hint">
-              กำลังตั้งค่าเริ่มต้น — ร้านที่สร้างใหม่จะได้ค่านี้ · เลือกสาขาเพื่อแก้ข้อมูลจริง
+              กำลังตั้งค่าเริ่มต้น — ร้านที่สร้างใหม่จะได้ค่านี้
             </p>
             <p v-else-if="selectedShop" class="muted shop-features-mode-hint">
-              สาขา: <strong>{{ selectedShop.name }}</strong> — แก้ข้อมูลด้านล่างแล้วกดบันทึก
+              สาขา: <strong>{{ selectedShop.name }}</strong>
             </p>
           </div>
           <button
             v-if="selectedMode === 'shop' && selectedShop"
             type="button"
-            class="btn ghost admin-action-btn"
+            class="btn ghost admin-action-btn shop-features-reset-btn"
             :disabled="savingKey === '__reset__'"
             @click="resetShopToDefaults"
           >
@@ -366,75 +356,110 @@ onMounted(() => {
           </button>
         </header>
 
-        <div v-if="selectedItem" class="shop-features-detail">
-          <div
-            v-if="!isConfigOnly(selectedItem)"
-            class="shop-features-item-row"
-            :class="{ 'shop-features-item-row--off': !isItemEnabled(selectedItem.key) }"
+        <div class="shop-features-cards">
+          <article
+            v-for="item in groupItems"
+            :key="item.key"
+            class="shop-features-card"
+            :class="{
+              'shop-features-card--off': !isConfigOnly(item) && !isItemEnabled(item.key),
+              'shop-features-card--expanded': isExpanded(item.key),
+            }"
           >
-            <div class="shop-features-item-info">
-              <strong>{{ selectedItem.label }}</strong>
-              <span v-if="isItemLocked(selectedItem)" class="shop-features-locked">บังคับเปิด</span>
-              <span v-else class="muted shop-features-item-desc">เปิด/ปิดการแสดงให้สาขานี้</span>
-            </div>
-            <div class="shop-features-item-actions">
-              <label class="admin-checkbox shop-features-toggle">
-                <input
-                  type="checkbox"
-                  :checked="isItemEnabled(selectedItem.key)"
-                  :disabled="isItemLocked(selectedItem) || savingKey === selectedItem.key"
-                  @change="toggleItem(selectedItem)"
-                />
-                {{ isItemEnabled(selectedItem.key) ? 'เปิด' : 'ปิด' }}
-              </label>
-            </div>
-          </div>
+            <div class="shop-features-card-main">
+              <div class="shop-features-card-info">
+                <strong class="shop-features-card-title">{{ item.label }}</strong>
+                <span v-if="isItemLocked(item)" class="shop-features-locked">บังคับเปิด</span>
+                <span v-else-if="isConfigOnly(item)" class="muted shop-features-card-desc">
+                  ตั้งค่าเนื้อหา — ไม่มีสวิตช์เปิด/ปิด
+                </span>
+                <span v-else class="muted shop-features-card-desc">
+                  เปิด/ปิดการแสดงให้สาขานี้
+                </span>
+              </div>
 
-          <p v-else class="shop-features-config-only-hint muted">
-            หัวข้อนี้ใช้ตั้งค่าเนื้อหาเท่านั้น — ไม่มีสวิตช์เปิด/ปิดแยก
-          </p>
-
-          <p v-if="selectedItem.configNote" class="shop-features-config-note">
-            {{ selectedItem.configNote }}
-          </p>
-
-          <div v-if="hasChildren(selectedItem)" class="shop-features-children">
-            <h5 class="shop-features-children-title">รายการย่อย — เลือกเพื่อตั้งค่า</h5>
-            <ul class="shop-features-children-list">
-              <li
-                v-for="child in selectedItem.children"
-                :key="child.key"
-                class="shop-features-child-row"
-                :class="{ 'shop-features-child-row--active': selectedChildKey === child.key }"
-              >
-                <button type="button" class="shop-features-child-btn" @click="selectChild(child.key)">
-                  <strong>{{ child.label }}</strong>
+              <div class="shop-features-card-actions">
+                <span
+                  v-if="!isConfigOnly(item)"
+                  class="shop-features-card-status"
+                  :class="{ 'shop-features-card-status--on': isItemEnabled(item.key) }"
+                >
+                  {{ isItemEnabled(item.key) ? 'เปิด' : 'ปิด' }}
+                </span>
+                <AdminSwitch
+                  v-if="!isConfigOnly(item)"
+                  :model-value="isItemEnabled(item.key)"
+                  compact
+                  :disabled="isItemLocked(item) || savingKey === item.key"
+                  @update:model-value="(v) => toggleItem(item, v)"
+                >
+                  <span class="visually-hidden">{{ item.label }} — {{ isItemEnabled(item.key) ? 'เปิด' : 'ปิด' }}</span>
+                </AdminSwitch>
+                <button
+                  v-if="hasSetup(item) && !item.configNote"
+                  type="button"
+                  class="shop-features-expand-btn"
+                  :aria-expanded="isExpanded(item.key)"
+                  :aria-label="isExpanded(item.key) ? `ย่อ ${item.label}` : `ตั้งค่า ${item.label}`"
+                  @click="toggleExpand(item)"
+                >
+                  <i
+                    class="ti"
+                    :class="isExpanded(item.key) ? 'ti-chevron-up' : 'ti-chevron-down'"
+                    aria-hidden="true"
+                  ></i>
+                  {{ isExpanded(item.key) ? 'ย่อ' : 'ตั้งค่า' }}
                 </button>
-              </li>
-            </ul>
-          </div>
+              </div>
+            </div>
 
-          <AdminShopFeatureInlineSettings
-            v-if="canEditBranch && activeSetup && !selectedItem.configNote"
-            :shop-slug="selectedShopSlug"
-            :setup="activeSetup"
-            :child-key="selectedChildKey"
-            :label="activeSetupLabel"
-            :active="true"
-            @saved="onInlineSaved"
-            @error="onInlineError"
-          />
-          <p v-else-if="selectedMode === 'defaults' && activeSetup && !selectedItem.configNote" class="muted shop-features-inline-hint">
-            เลือกสาขาจริงทางซ้ายเพื่อตั้งค่าข้อมูล — โหมดนี้ใช้เปิด/ปิดฟังก์ชันร้านใหม่เท่านั้น
-          </p>
+            <p v-if="item.configNote" class="shop-features-config-note">
+              {{ item.configNote }}
+            </p>
+
+            <div v-if="isExpanded(item.key) && hasSetup(item)" class="shop-features-card-body">
+              <nav
+                v-if="hasChildren(item)"
+                class="shop-features-nav shop-features-children"
+                aria-label="รายการย่อย"
+              >
+                <button
+                  v-for="child in item.children"
+                  :key="child.key"
+                  type="button"
+                  class="shop-features-pill shop-features-pill--child"
+                  :class="{ active: expandedChildKey === child.key }"
+                  @click="selectChild(child.key)"
+                >
+                  {{ child.label }}
+                </button>
+              </nav>
+
+              <AdminShopFeatureInlineSettings
+                v-if="canEditBranch && activeSetupForItem(item)"
+                :shop-slug="selectedShopSlug"
+                :setup="activeSetupForItem(item)"
+                :child-key="expandedChildKey"
+                :label="activeSetupLabelForItem(item)"
+                :active="true"
+                @saved="onInlineSaved"
+                @error="onInlineError"
+              />
+              <p v-else-if="selectedMode === 'defaults'" class="muted shop-features-inline-hint">
+                เลือกสาขาจริงด้านบนเพื่อตั้งค่าข้อมูล — โหมดนี้ใช้เปิด/ปิดฟังก์ชันร้านใหม่เท่านั้น
+              </p>
+            </div>
+          </article>
         </div>
-        <p v-else class="muted">เลือกรายการย่อยจากคอลัมน์กลาง</p>
       </div>
     </div>
   </section>
 
-  <section v-else class="card admin-section">
-    <p class="muted">เฉพาะแอดมินหลักที่ร้าน default เท่านั้น</p>
+  <section v-else class="admin-section">
+    <div class="state-card">
+      <i class="ti ti-lock state-card-icon" aria-hidden="true"></i>
+      <p class="state-card-title">เฉพาะแอดมินหลักที่ร้าน default</p>
+    </div>
   </section>
 </template>
 
@@ -456,129 +481,60 @@ onMounted(() => {
   margin: 0 0 4px;
 }
 
-.shop-features-subitem-status--config {
-  color: var(--color-primary-dark);
-  font-weight: 600;
-}
-
-.shop-features-config-only-hint {
-  margin: 0 0 10px;
-  font-size: 13px;
-}
-
-.shop-features-config-note {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-text);
-}
-
-.shop-features-msg {
-  margin: 0 0 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-}
-
-.shop-features-msg--ok {
-  background: color-mix(in srgb, var(--color-success, #16a34a) 12%, transparent);
-  color: var(--color-text-secondary);
-}
-
-.shop-features-msg--err {
-  background: color-mix(in srgb, var(--color-error) 12%, transparent);
-  color: var(--color-error);
-}
-
-.shop-features-loading {
-  padding: 24px 0;
-}
-
 .shop-features-layout {
-  display: grid;
-  grid-template-columns: minmax(170px, 200px) minmax(200px, 260px) minmax(0, 1fr);
-  gap: 0;
-  min-height: 460px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 
-.shop-features-col-title {
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted);
-}
-
-.shop-features-shops,
-.shop-features-groups {
-  background: color-mix(in srgb, var(--color-surface-elevated) 96%, var(--color-primary-light));
-  border-right: 1px solid var(--color-border);
-  padding: 14px 10px;
-  overflow-y: auto;
-  max-height: 620px;
-}
-
-.shop-features-items {
-  padding: 14px 16px;
-  overflow-y: auto;
-  max-height: 620px;
-}
-
-.shop-features-shop-list,
-.shop-features-group-list,
-.shop-features-subitem-list,
-.shop-features-children-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.shop-features-shop-row {
-  margin-bottom: 4px;
-}
-
-.shop-features-shop-btn {
-  width: 100%;
+.shop-features-nav {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shop-features-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 4px 6px;
-  text-align: left;
-  padding: 10px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition: background var(--transition), border-color var(--transition);
-}
-
-.shop-features-shop-row--active .shop-features-shop-btn {
-  background: var(--color-primary-light);
-  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
-}
-
-.shop-features-shop-row--defaults .shop-features-shop-btn {
-  border-style: dashed;
-}
-
-.shop-features-shop-name {
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.shop-features-pill:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+}
+
+.shop-features-pill.active {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface-elevated));
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  color: var(--color-primary-dark);
+}
+
+.shop-features-pill--group {
+  padding: 10px 16px;
   font-size: 14px;
 }
 
-.shop-features-shop-slug {
+.shop-features-pill--group .ti {
+  font-size: 16px;
+}
+
+.shop-features-pill--child {
+  padding: 6px 12px;
   font-size: 12px;
 }
 
-.shop-features-defaults-badge {
+.shop-features-badge {
   font-size: 10px;
   font-weight: 700;
   padding: 2px 6px;
@@ -587,114 +543,41 @@ onMounted(() => {
   color: var(--color-primary-dark);
 }
 
-.shop-features-group-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px;
-  margin-bottom: 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  transition: background var(--transition);
-}
-
-.shop-features-group-btn i {
-  font-size: 16px;
-  opacity: 0.85;
-}
-
-.shop-features-group-btn span:first-of-type {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.shop-features-group-btn--active {
-  background: var(--color-primary-light);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-  color: var(--color-primary-dark);
-  font-weight: 600;
-}
-
-.shop-features-group-count {
-  font-size: 11px;
-  font-weight: 700;
-  min-width: 20px;
-  height: 20px;
-  line-height: 20px;
-  text-align: center;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+.shop-features-badge--off {
+  background: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
   color: var(--color-text-muted);
 }
 
-.shop-features-subitems {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--color-border);
-}
-
-.shop-features-subitems-title {
-  font-size: 11px;
-}
-
-.shop-features-subitem-row {
-  margin-bottom: 4px;
-}
-
-.shop-features-subitem-btn {
-  width: 100%;
+.shop-features-status-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  text-align: left;
-  padding: 9px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition: background var(--transition), border-color var(--transition);
+  gap: 6px;
 }
 
-.shop-features-subitem-row--active .shop-features-subitem-btn {
-  background: var(--color-primary-light);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-}
-
-.shop-features-subitem-row--off .shop-features-subitem-btn {
-  opacity: 0.75;
-}
-
-.shop-features-subitem-label {
-  flex: 1 1 120px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.shop-features-subitem-status {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-text-muted);
-}
-
-.shop-features-subitem-child-count {
-  font-size: 10px;
-  padding: 1px 6px;
+.shop-features-status-chip {
+  padding: 4px 10px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-text-muted) 12%, transparent);
-  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
-.shop-features-items-head {
+.shop-features-status-chip--off {
+  opacity: 0.65;
+}
+
+.shop-features-status-chip--config {
+  color: var(--color-primary-dark);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+}
+
+.shop-features-list {
+  min-width: 0;
+}
+
+.shop-features-list-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -703,38 +586,70 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.shop-features-list-head h4 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
 .shop-features-group-hint,
 .shop-features-mode-hint {
   margin: 4px 0 0;
   font-size: 13px;
 }
 
-.shop-features-item-row {
+.shop-features-reset-btn {
+  flex-shrink: 0;
+}
+
+.shop-features-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shop-features-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card, var(--radius-md));
+  background: var(--color-surface-elevated);
+  box-shadow: var(--shadow-sm, none);
+  overflow: hidden;
+  transition: opacity 150ms ease;
+}
+
+.shop-features-card--off {
+  opacity: 0.82;
+}
+
+.shop-features-card--expanded {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+}
+
+.shop-features-card-main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-elevated);
 }
 
-.shop-features-item-row--off {
-  opacity: 0.78;
-  background: color-mix(in srgb, var(--color-text-muted) 6%, var(--color-surface-elevated));
-}
-
-.shop-features-item-info {
+.shop-features-card-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
   flex: 1 1 180px;
+  min-width: 0;
 }
 
-.shop-features-item-desc {
+.shop-features-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.shop-features-card-desc {
   font-size: 12px;
 }
 
@@ -743,94 +658,90 @@ onMounted(() => {
   color: var(--color-text-muted);
 }
 
-.shop-features-item-actions {
+.shop-features-card-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
-.shop-features-toggle {
-  margin: 0;
-  white-space: nowrap;
-}
-
-.shop-features-setup-btn {
-  padding: 6px 12px;
-  font-size: 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.shop-features-children {
-  margin-top: 4px;
-}
-
-.shop-features-children-title {
-  margin: 0 0 10px;
+.shop-features-card-status {
   font-size: 13px;
   font-weight: 700;
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
+  min-width: 2.5em;
+  text-align: right;
 }
 
-.shop-features-child-row {
-  margin-bottom: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.shop-features-child-row--active {
-  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 20%, transparent);
-}
-
-.shop-features-child-btn {
-  width: 100%;
-  display: block;
-  text-align: left;
-  padding: 10px 12px;
-  border: none;
-  background: color-mix(in srgb, var(--color-surface-elevated) 90%, var(--color-primary-light));
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-}
-
-.shop-features-child-row--active .shop-features-child-btn {
-  background: var(--color-primary-light);
+.shop-features-card-status--on {
   color: var(--color-primary-dark);
 }
 
+.shop-features-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.shop-features-expand-btn:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  color: var(--color-primary-dark);
+}
+
+.shop-features-expand-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.shop-features-config-note {
+  margin: 0;
+  padding: 0 16px 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.shop-features-card-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-text-muted) 4%, var(--color-surface-elevated));
+}
+
+.shop-features-children {
+  padding: 12px 0 8px;
+}
+
 .shop-features-inline-hint {
-  margin-top: 12px;
+  margin: 12px 0 0;
   font-size: 13px;
   padding: 10px 12px;
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
 }
 
-.shop-features-empty {
-  font-size: 13px;
-  margin-top: 8px;
-}
-
-@media (max-width: 900px) {
-  .shop-features-layout {
-    grid-template-columns: 1fr;
-    min-height: unset;
+@media (max-width: 640px) {
+  .shop-features-card-main {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .shop-features-shops,
-  .shop-features-groups {
-    border-right: none;
-    border-bottom: 1px solid var(--color-border);
-    max-height: 240px;
+  .shop-features-card-actions {
+    justify-content: space-between;
+    width: 100%;
   }
 
-  .shop-features-items {
-    max-height: none;
+  .shop-features-status-row {
+    display: none;
   }
 }
 </style>

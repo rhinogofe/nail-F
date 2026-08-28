@@ -5,9 +5,12 @@ import BottomNav from '../components/BottomNav.vue'
 import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { useShopRoute } from '../composables/useShopRoute'
+import { useShopRealtime } from '../composables/useShopRealtime'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 
 const ui = useUiSettingsStore()
+const { shopSlug } = useShopRoute()
 
 const clips = ref([])
 const failedThumbs = ref(new Set())
@@ -65,8 +68,8 @@ function onThumbError(clipId) {
   failedThumbs.value = new Set([...failedThumbs.value, clipId])
 }
 
-async function loadClips() {
-  loading.value = true
+async function loadClips({ silent = false } = {}) {
+  if (!silent) loading.value = true
   errorMessage.value = ''
   try {
     const { data } = await api.get('/api/reviews/clips')
@@ -75,9 +78,21 @@ async function loadClips() {
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดคลิปไม่สำเร็จ'
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
+
+useShopRealtime({
+  enabled: true,
+  shopSlug,
+  onChange: (event) => {
+    const type = event?.type || ''
+    if (type === 'reviews' || type === 'settings' || !type) {
+      if (type === 'settings') void ui.fetch().catch(() => null)
+      void loadClips({ silent: true })
+    }
+  },
+})
 
 function lockBodyScroll(lock) {
   document.body.style.overflow = lock ? 'hidden' : ''
@@ -225,7 +240,8 @@ onUnmounted(() => lockBodyScroll(false))
 
 <style scoped>
 .reviews-page {
-  padding: 0;
+  padding-top: 0;
+  padding-right: 0;
   background: var(--color-background);
 }
 
@@ -287,6 +303,13 @@ onUnmounted(() => lockBodyScroll(false))
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
   padding: var(--space-2) 0 0;
+}
+
+@media (min-width: 900px) {
+  .clip-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-3);
+  }
 }
 
 .clip-cell {
@@ -375,6 +398,14 @@ onUnmounted(() => lockBodyScroll(false))
   max-width: var(--page-max-width);
   z-index: var(--z-overlay);
   background: var(--color-text-primary);
+}
+
+@media (min-width: 900px) {
+  .viewer {
+    left: 0;
+    transform: none;
+    max-width: none;
+  }
 }
 
 .viewer-close {

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { shopAdminApi } from '../api/adminShopApi'
+import AdminSwitch from './AdminSwitch.vue'
 import {
   resolveInlineEditor,
   uiFieldsForEditor,
@@ -28,7 +29,7 @@ const uiFields = computed(() => uiFieldsForEditor(editor.value))
 
 const depositAmount = ref(300)
 const coupon = ref({ discount_percent: 20, required_points: 100, completion_points: 10 })
-const line = ref({ enabled: false, push_to_id: '', notify_template: '', can_edit_enabled: false })
+const line = ref({ enabled: false, push_to_id: '', can_edit_enabled: false })
 const chatNotify = ref({
   new_booking_enabled: true,
   upcoming_admin_enabled: true,
@@ -189,7 +190,6 @@ async function loadEditor() {
       line.value = {
         enabled: Boolean(data?.enabled),
         push_to_id: data?.push_to_id || '',
-        notify_template: data?.notify_template || '',
         can_edit_enabled: Boolean(data?.can_edit_enabled),
       }
     } else if (kind === 'chat-notify') {
@@ -280,7 +280,6 @@ async function saveEditor() {
       await shopAdminApi.patch(props.shopSlug, '/api/admin/settings/line-push', {
         enabled: line.value.enabled,
         push_to_id: line.value.push_to_id,
-        notify_template: line.value.notify_template,
       })
     } else if (kind === 'chat-notify') {
       await shopAdminApi.patch(props.shopSlug, '/api/admin/settings/chat-notify', {
@@ -460,7 +459,10 @@ watch(
 
     <p v-if="localMessage" class="inline-settings-msg inline-settings-msg--ok">{{ localMessage }}</p>
     <p v-if="localError" class="inline-settings-msg inline-settings-msg--err">{{ localError }}</p>
-    <p v-if="loading" class="muted">กำลังโหลด...</p>
+    <div v-if="loading" class="state-card">
+      <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+      <span class="state-card-title">กำลังโหลด</span>
+    </div>
 
     <div v-else-if="editor.kind === 'note'" class="inline-settings-note muted">
       {{ editor.note }}
@@ -489,32 +491,37 @@ watch(
     </div>
 
     <div v-else-if="editor.kind === 'line'" class="inline-settings-form">
-      <label v-if="line.can_edit_enabled" class="admin-checkbox admin-label-grow">
-        <input v-model="line.enabled" type="checkbox" />
-        เปิดแจ้งเตือน LINE
-      </label>
+      <AdminSwitch
+        v-if="line.can_edit_enabled"
+        v-model="line.enabled"
+        label="เปิดแจ้งเตือน LINE"
+      />
       <div class="admin-form-grid">
         <label style="grid-column:1/-1">
           User / Group ID
           <input v-model="line.push_to_id" type="text" class="admin-input" placeholder="Uxxxxxxxx หรือ Cxxxxxxxx" />
         </label>
-        <label style="grid-column:1/-1">
-          ข้อความแจ้งเตือน
-          <textarea v-model="line.notify_template" class="admin-input" rows="5" />
-        </label>
       </div>
     </div>
 
     <div v-else-if="editor.kind === 'chat-notify'" class="inline-settings-form">
-      <div class="inline-settings-checks">
-        <label class="admin-checkbox"><input v-model="chatNotify.new_booking_enabled" type="checkbox" /> แจ้งคิวใหม่</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.upcoming_admin_enabled" type="checkbox" /> แจ้งก่อนถึงคิว (แอดมิน)</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.upcoming_customer_enabled" type="checkbox" /> แจ้งก่อนถึงคิว (ลูกค้า)</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.cancel_admin_enabled" type="checkbox" /> แจ้งยกเลิก (แอดมิน)</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.cancel_customer_enabled" type="checkbox" /> แจ้งยกเลิก (ลูกค้า)</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.paid_admin_enabled" type="checkbox" /> แจ้งชำระแล้ว (แอดมิน)</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.paid_customer_enabled" type="checkbox" /> แจ้งชำระแล้ว (ลูกค้า)</label>
-        <label class="admin-checkbox"><input v-model="chatNotify.slip_admin_enabled" type="checkbox" /> แจ้งมีสลิป</label>
+      <div class="admin-switch-group">
+        <h5 class="admin-switch-group-title">แจ้งแอดมิน</h5>
+        <div class="admin-switch-stack">
+          <AdminSwitch v-model="chatNotify.new_booking_enabled" label="มีคิวจองใหม่" />
+          <AdminSwitch v-model="chatNotify.upcoming_admin_enabled" label="ก่อนถึงคิว" />
+          <AdminSwitch v-model="chatNotify.cancel_admin_enabled" label="คิวถูกยกเลิก" />
+          <AdminSwitch v-model="chatNotify.paid_admin_enabled" label="ชำระเงินแล้ว" />
+          <AdminSwitch v-model="chatNotify.slip_admin_enabled" label="มีสลิป" />
+        </div>
+      </div>
+      <div class="admin-switch-group">
+        <h5 class="admin-switch-group-title">แจ้งลูกค้า</h5>
+        <div class="admin-switch-stack">
+          <AdminSwitch v-model="chatNotify.upcoming_customer_enabled" label="ก่อนถึงคิว" />
+          <AdminSwitch v-model="chatNotify.cancel_customer_enabled" label="คิวถูกยกเลิก" />
+          <AdminSwitch v-model="chatNotify.paid_customer_enabled" label="ชำระเงินแล้ว" />
+        </div>
       </div>
       <label class="inline-settings-minutes">
         แจ้งก่อนถึงคิว (นาที)
@@ -523,10 +530,7 @@ watch(
     </div>
 
     <div v-else-if="editor.kind === 'unpaid'" class="inline-settings-form">
-      <label class="admin-checkbox admin-label-grow">
-        <input v-model="unpaid.enabled" type="checkbox" />
-        ยกเลิกคิวรอชำระอัตโนมัติ
-      </label>
+      <AdminSwitch v-model="unpaid.enabled" label="ยกเลิกคิวรอชำระอัตโนมัติ" />
       <label>
         หมดเวลาหลัง (ชม.)
         <input v-model.number="unpaid.expire_hours" type="number" min="1" max="168" class="admin-input" />
@@ -570,49 +574,47 @@ watch(
           </select>
         </label>
       </div>
-      <label class="admin-checkbox admin-label-grow">
-        <input v-model="slotDisplay.enabled" type="checkbox" />
-        ขยายเวลาตามระยะบริการ
-      </label>
-      <label class="admin-checkbox admin-label-grow">
-        <input v-model="slotDisplay.past_close_enabled" type="checkbox" />
-        ขยายเกินเวลาปิดได้
-      </label>
+      <AdminSwitch v-model="slotDisplay.enabled" label="ขยายเวลาตามระยะบริการ" />
+      <AdminSwitch v-model="slotDisplay.past_close_enabled" label="ขยายเกินเวลาปิดได้" />
     </div>
 
     <div v-else-if="editor.kind === 'ui-fields' || editor.kind === 'ui-section'" class="inline-settings-form admin-form-grid">
-      <label
-        v-for="field in uiFields"
-        :key="field.key"
-        :style="field.multiline ? 'grid-column:1/-1' : ''"
-      >
-        {{ field.label }}
-        <input
-          v-if="field.type === 'color'"
+      <template v-for="field in uiFields" :key="field.key">
+        <AdminSwitch
+          v-if="field.type === 'toggle'"
           v-model="uiForm[field.key]"
-          type="color"
-          class="admin-input admin-input-color"
+          :label="field.label"
+          :hint="field.hint"
+          style="grid-column:1/-1"
         />
-        <textarea
-          v-else-if="field.multiline"
-          v-model="uiForm[field.key]"
-          class="admin-input"
-          :rows="field.rows || 3"
-          :placeholder="field.placeholder || ''"
-        />
-        <label v-else-if="field.type === 'toggle'" class="admin-checkbox" style="margin-top:6px">
-          <input v-model="uiForm[field.key]" type="checkbox" />
-          เปิดใช้งาน
-        </label>
-        <input
+        <label
           v-else
-          v-model="uiForm[field.key]"
-          type="text"
-          class="admin-input"
-          :placeholder="field.placeholder || ''"
-        />
-        <span v-if="field.hint" class="muted inline-settings-hint">{{ field.hint }}</span>
-      </label>
+          :style="field.multiline ? 'grid-column:1/-1' : ''"
+        >
+          {{ field.label }}
+          <input
+            v-if="field.type === 'color'"
+            v-model="uiForm[field.key]"
+            type="color"
+            class="admin-input admin-input-color"
+          />
+          <textarea
+            v-else-if="field.multiline"
+            v-model="uiForm[field.key]"
+            class="admin-input"
+            :rows="field.rows || 3"
+            :placeholder="field.placeholder || ''"
+          />
+          <input
+            v-else
+            v-model="uiForm[field.key]"
+            type="text"
+            class="admin-input"
+            :placeholder="field.placeholder || ''"
+          />
+          <span v-if="field.hint" class="muted inline-settings-hint">{{ field.hint }}</span>
+        </label>
+      </template>
     </div>
 
     <div v-else-if="editor.kind === 'reviews'" class="inline-settings-form">
@@ -625,10 +627,7 @@ watch(
           ชื่อ (ไม่บังคับ)
           <input v-model="clipForm.title" type="text" class="admin-input" />
         </label>
-        <label class="admin-checkbox" style="align-self:end">
-          <input v-model="clipForm.is_active" type="checkbox" />
-          แสดง
-        </label>
+        <AdminSwitch v-model="clipForm.is_active" label="แสดง" compact />
       </div>
       <button type="button" class="btn primary" :disabled="saving" @click="addClip">เพิ่มคลิป</button>
       <ul v-if="clips.length" class="inline-settings-list">
@@ -637,7 +636,7 @@ watch(
           <button type="button" class="btn danger" :disabled="saving" @click="removeClip(item)">ลบ</button>
         </li>
       </ul>
-      <p v-else class="muted">ยังไม่มีคลิป</p>
+      <p v-else class="muted">ยังไม่มีคลิปในสาขานี้</p>
     </div>
 
     <div v-else-if="editor.kind === 'service-locations'" class="inline-settings-form">
@@ -706,14 +705,8 @@ watch(
           รายละเอียด (ไม่บังคับ)
           <input v-model="serviceForm.description" type="text" class="admin-input" />
         </label>
-        <label class="admin-checkbox">
-          <input v-model="serviceForm.is_active" type="checkbox" />
-          เปิดแสดง
-        </label>
-        <label class="admin-checkbox">
-          <input v-model="serviceForm.is_required" type="checkbox" />
-          บังคับเลือก
-        </label>
+        <AdminSwitch v-model="serviceForm.is_active" label="เปิดแสดง" />
+        <AdminSwitch v-model="serviceForm.is_required" label="บังคับเลือก" />
       </div>
       <div class="inline-settings-actions inline-settings-actions--row">
         <button type="button" class="btn primary" :disabled="saving" @click="saveService">
@@ -801,12 +794,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.inline-settings-checks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .inline-settings-minutes {

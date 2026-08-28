@@ -347,4 +347,11 @@ defineExpose({
     transition: none;
   }
 }
+
+@media (min-width: 900px) {
+  .account-menu-drawer {
+    right: max(0px, calc((100vw - min(var(--page-wide-max), 100vw)) / 2));
+    max-width: 320px;
+  }
+}
 </style>

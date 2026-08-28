@@ -7,11 +7,12 @@ import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { useShopRoute } from '../composables/useShopRoute'
+import { useShopRealtime } from '../composables/useShopRealtime'
 import { hasShopMapUrl, normalizeMapIframeUrl, resolveShopMapEmbedUrl } from '../utils/shopMapEmbed'
 
 const ui = useUiSettingsStore()
 const router = useRouter()
-const { shopPath } = useShopRoute()
+const { shopPath, shopSlug } = useShopRoute()
 const ready = ref(false)
 
 const pageTitle = computed(() => ui.get('ui_shop_location_page_title', 'ที่อยู่ร้าน'))
@@ -22,10 +23,10 @@ const embedUrl = ref('')
 
 const hasMap = computed(() => hasShopMapUrl(mapUrl.value))
 
-onMounted(async () => {
+async function loadLocationPage({ replaceIfMissing = false } = {}) {
   await ui.fetch().catch(() => null)
   if (!hasMap.value) {
-    router.replace(shopPath('/bookings'))
+    if (replaceIfMissing || ready.value) router.replace(shopPath('/bookings'))
     return
   }
 
@@ -52,7 +53,19 @@ onMounted(async () => {
   }
 
   ready.value = true
+}
+
+useShopRealtime({
+  enabled: true,
+  shopSlug,
+  onChange: (event) => {
+    if (event?.type === 'settings' || !event?.type) {
+      void loadLocationPage()
+    }
+  },
 })
+
+onMounted(() => loadLocationPage({ replaceIfMissing: true }))
 
 function openMaps() {
   if (!mapUrl.value) return
@@ -107,7 +120,8 @@ function openMaps() {
 
 <style scoped>
 .location-page {
-  padding: 0;
+  padding-top: 0;
+  padding-right: 0;
   background: var(--color-background);
 }
 
@@ -211,5 +225,18 @@ function openMaps() {
 
 .btn-open-maps:active {
   transform: scale(0.99);
+}
+
+@media (min-width: 900px) {
+  .map-embed-wrap {
+    aspect-ratio: 16 / 9;
+    min-height: 380px;
+  }
+
+  .btn-open-maps {
+    width: auto;
+    align-self: start;
+    min-width: 220px;
+  }
 }
 </style>

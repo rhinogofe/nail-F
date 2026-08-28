@@ -6,6 +6,7 @@ import QRCode from 'qrcode'
 import generatePayload from 'promptpay-qr'
 import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
+import { useShopRealtime } from '../composables/useShopRealtime'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { formatUiText } from '../utils/formatUiText'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
@@ -49,6 +50,7 @@ const paymentHint = computed(() => ui.get('ui_payment_hint', ''))
 const copyAccountHint = computed(() => ui.get('ui_copy_account_hint', 'แตะเพื่อคัดลอก'))
 const qrCodeImage = ref('')
 const copyHint = ref('')
+const copyOk = ref(false)
 const paymentLoading = ref(true)
 const paymentError = ref('')
 const locationName = ref('')
@@ -104,6 +106,22 @@ const canDeleteSubmittedSlip = computed(() => {
 const submittedSlipStatusLabel = computed(() => {
   if (!submittedSlip.value) return ''
   return slipStatusLabels[submittedSlip.value.status] || submittedSlip.value.status
+})
+
+function paymentLoadErrorMessage(err) {
+  const status = err?.response?.status
+  const raw = String(err?.response?.data?.error || '')
+  if (status === 404 || /invalid input syntax for type uuid|ไม่พบคิว/i.test(raw)) {
+    return 'ไม่พบคิวนี้ หรือลิงก์หมดอายุแล้ว'
+  }
+  if (status === 401 || status === 403) return 'ไม่มีสิทธิ์ดูคิวนี้'
+  if (raw && !/syntax|uuid|relation |column /i.test(raw)) return raw
+  return 'โหลดข้อมูลคิวไม่สำเร็จ'
+}
+
+const paymentErrorIcon = computed(() => {
+  if (/หมดเวลา|ยกเลิกอัตโนมัติ/.test(paymentError.value)) return 'ti ti-clock-off'
+  return 'ti ti-calendar-off'
 })
 
 function formatSlipDateTime(iso) {
@@ -280,9 +298,14 @@ async function copyAccountNo() {
   try {
     await navigator.clipboard.writeText(bankAccountNo.value)
     copyHint.value = ui.get('ui_copy_success', 'คัดลอกแล้ว')
-    setTimeout(() => { copyHint.value = '' }, 2000)
+    copyOk.value = true
+    setTimeout(() => {
+      copyHint.value = ''
+      copyOk.value = false
+    }, 2000)
   } catch {
     copyHint.value = 'คัดลอกไม่สำเร็จ'
+    copyOk.value = false
   }
 }
 
@@ -309,6 +332,63 @@ async function generateThaiQr() {
 }
 
 let expiryTimer = null
+
+async function refreshPaymentLive() {
+  if (document.hidden || paymentLoading.value) return
+  try {
+    const [depositRes, infoRes] = await Promise.all([
+      api.get('/api/bookings/deposit-setting'),
+      api.get(`/api/bookings/${bookingId.value}/payment-info`),
+    ])
+    if (Number.isFinite(Number(depositRes.data?.deposit_amount)) && Number(depositRes.data.deposit_amount) > 0) {
+      depositAmount.value = Number(depositRes.data.deposit_amount)
+    }
+    const info = infoRes.data
+    bookingStatus.value = info?.booking?.status || ''
+    if (info?.booking?.created_at) bookingCreatedAt.value = info.booking.created_at
+    locationName.value = info?.location_name || locationName.value
+    locationMapUrl.value = info?.location_map_url || locationMapUrl.value
+    if (info?.unpaid_expire) {
+      unpaidSettings.value = {
+        enabled: info.unpaid_expire.enabled !== false,
+        expireHours: Number(info.unpaid_expire.expire_hours) || 24,
+      }
+    }
+    if (info?.is_expired || info?.booking?.status === 'cancelled') {
+      bookingStatus.value = 'cancelled'
+      paymentError.value = ui.get('ui_payment_expired', 'คิวนี้หมดเวลาชำระแล้ว ถูกยกเลิกอัตโนมัติ')
+    } else if (info?.booking?.status !== 'awaiting_payment') {
+      paymentError.value = ui.get('ui_payment_not_awaiting', 'คิวนี้ไม่อยู่ในสถานะรอชำระเงินแล้ว')
+    } else {
+      paymentError.value = ''
+    }
+    if (canPay.value) {
+      await generateThaiQr()
+      if (showSlipUpload.value) await loadPaymentSlip()
+    }
+    await ui.fetch().catch(() => null)
+  } catch {
+    // keep current payment screen until next event
+  }
+}
+
+useShopRealtime({
+  enabled: true,
+  shopSlug,
+  onChange: (event) => {
+    const type = event?.type || ''
+    if (
+      type === 'settings' ||
+      type === 'payment_confirmed' ||
+      type === 'cancelled' ||
+      type === 'unpaid_expired' ||
+      type === 'updated' ||
+      type === 'created'
+    ) {
+      void refreshPaymentLive()
+    }
+  },
+})
 
 onMounted(async () => {
   dismissBlockingOverlays()
@@ -341,7 +421,7 @@ onMounted(async () => {
       paymentError.value = ui.get('ui_payment_not_awaiting', 'คิวนี้ไม่อยู่ในสถานะรอชำระเงินแล้ว')
     }
   } catch (err) {
-    paymentError.value = err?.response?.data?.error || 'โหลดข้อมูลคิวไม่สำเร็จ'
+    paymentError.value = paymentLoadErrorMessage(err)
   } finally {
     paymentLoading.value = false
   }
@@ -385,10 +465,13 @@ onUnmounted(() => {
         <span>{{ bookedNoticeText }}</span>
       </div>
 
-      <p v-if="paymentLoading" class="muted">กำลังโหลด...</p>
+      <div v-if="paymentLoading" class="state-card">
+        <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">กำลังโหลดข้อมูลการชำระ</p>
+      </div>
 
       <div v-else-if="paymentError" class="state-card payment-expired">
-        <i class="ti ti-clock-off state-card-icon" aria-hidden="true"></i>
+        <i :class="paymentErrorIcon" class="state-card-icon" aria-hidden="true"></i>
         <p class="state-card-title">{{ paymentError }}</p>
         <button type="button" class="btn ghost back-link" @click="backToBooking">กลับหน้าจอง</button>
       </div>
@@ -420,8 +503,8 @@ onUnmounted(() => {
           </span>
         </div>
         <div class="summary-row">
-          <span class="summary-label"><i class="ti ti-hash" aria-hidden="true"></i> Booking ID</span>
-          <span class="summary-val">{{ bookingId }}</span>
+          <span class="summary-label"><i class="ti ti-hash" aria-hidden="true"></i> รหัสจอง</span>
+          <span class="summary-val booking-id">{{ bookingId }}</span>
         </div>
         <div class="summary-deposit">
           <span class="deposit-label">ยอดมัดจำ</span>
@@ -440,14 +523,18 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <button type="button" class="bank-card" @click="copyAccountNo">
+      <button type="button" class="bank-card" :aria-label="`คัดลอกเลขบัญชี ${bankAccountNo}`" @click="copyAccountNo">
         <div class="bank-info">
           <p class="bank-name"><i class="ti ti-building-bank" aria-hidden="true"></i> {{ bankName }}</p>
           <p class="bank-detail">ชื่อบัญชี: {{ bankAccountName }}</p>
           <p class="bank-account">เลขบัญชี: {{ bankAccountNo }}</p>
         </div>
-        <span class="copy-action">
-          <i class="ti ti-copy" aria-hidden="true"></i>
+        <span class="copy-action" :class="{ 'is-ok': copyHint && copyOk, 'is-fail': copyHint && !copyOk }" aria-live="polite">
+          <i
+            class="ti"
+            :class="copyHint ? (copyOk ? 'ti-check' : 'ti-alert-circle') : 'ti-copy'"
+            aria-hidden="true"
+          ></i>
           {{ copyHint || copyAccountHint }}
         </span>
       </button>
@@ -460,7 +547,10 @@ onUnmounted(() => {
       <section v-if="showSlipUpload" class="slip-upload-panel">
         <p class="slip-upload-label">หรืออัปโหลดสลิปในระบบ</p>
 
-        <p v-if="slipLoading" class="muted slip-loading">กำลังโหลดสลิป...</p>
+        <div v-if="slipLoading" class="state-card slip-loading-state" role="status">
+          <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+          <p class="state-card-title">กำลังโหลดสลิป</p>
+        </div>
 
         <article
           v-else-if="submittedSlip"
@@ -588,7 +678,7 @@ onUnmounted(() => {
 .payment-booked-notice {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .summary-card {
@@ -620,6 +710,15 @@ onUnmounted(() => {
 .summary-val {
   font-weight: 500;
   color: var(--color-text-primary);
+  text-align: right;
+  word-break: break-word;
+}
+
+.booking-id {
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  max-width: 58%;
 }
 
 .summary-val-with-action {
@@ -637,7 +736,7 @@ onUnmounted(() => {
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary-light) 40%, white);
+  background: color-mix(in srgb, var(--color-primary-light) 40%, var(--color-surface-elevated));
   color: var(--color-primary);
   font-size: 11px;
   font-weight: 600;
@@ -734,6 +833,11 @@ onUnmounted(() => {
   box-shadow: var(--shadow-md);
 }
 
+.bank-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .bank-card:active {
   transform: scale(0.99);
 }
@@ -769,6 +873,14 @@ onUnmounted(() => {
   font-size: 18px;
 }
 
+.copy-action.is-ok {
+  color: var(--color-success);
+}
+
+.copy-action.is-fail {
+  color: var(--color-error);
+}
+
 .line-cta i {
   font-size: 22px;
 }
@@ -791,10 +903,9 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.slip-loading {
-  margin: 0;
-  text-align: center;
-  font-size: var(--text-caption);
+.slip-loading-state {
+  padding: var(--space-4);
+  box-shadow: none;
 }
 
 .slip-submitted-card {
@@ -804,7 +915,7 @@ onUnmounted(() => {
   padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-surface-muted) 40%, white);
+  background: color-mix(in srgb, var(--color-surface-muted) 40%, var(--color-surface-elevated));
 }
 
 .slip-submitted-card.status-pending {
@@ -812,7 +923,11 @@ onUnmounted(() => {
 }
 
 .slip-submitted-card.status-cancelled {
-  border-color: #cbd5e1;
+  border-color: var(--color-border-strong);
+}
+
+.slip-submitted-card.status-confirmed {
+  border-color: color-mix(in srgb, var(--color-success) 35%, var(--color-border));
 }
 
 .slip-submitted-head {
@@ -831,13 +946,18 @@ onUnmounted(() => {
 }
 
 .slip-status-badge.pending {
-  background: color-mix(in srgb, var(--color-primary) 15%, white);
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface-elevated));
   color: var(--color-primary);
 }
 
+.slip-status-badge.confirmed {
+  background: color-mix(in srgb, var(--color-success) 15%, var(--color-surface-elevated));
+  color: var(--color-success);
+}
+
 .slip-status-badge.cancelled {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
 }
 
 .slip-submitted-meta {
@@ -903,7 +1023,7 @@ onUnmounted(() => {
 
 .slip-success {
   margin: 0;
-  color: #15803d;
+  color: var(--color-success);
   font-size: var(--text-caption);
   text-align: center;
 }

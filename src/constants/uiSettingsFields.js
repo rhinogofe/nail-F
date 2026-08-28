@@ -209,18 +209,6 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_date_nav_hint', label: 'คำใบ้เลื่อนดูวัน' },
       { key: 'ui_no_open_days', label: 'ไม่มีวันเปิดรับคิว' },
       { key: 'ui_slot_taken_error', label: 'เวลาถูกจองแล้ว' },
-      {
-        key: 'ui_extend_blocked_next_booking',
-        label: 'ขยายเวลาไม่ได้ — มีคิวถัดไป',
-        multiline: true,
-        rows: 2,
-      },
-      {
-        key: 'ui_extend_blocked_closing',
-        label: 'ขยายเวลาไม่ได้ — ชนเวลาปิดร้าน',
-        multiline: true,
-        rows: 2,
-      },
     ],
   },
   {

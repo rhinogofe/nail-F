@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useShopStore } from '../stores/shop'
 import { useUiSettingsStore } from '../stores/uiSettings'
-import BrandMark from '../components/BrandMark.vue'
 import api from '../api/axios'
 import defaultShopImage from '../assets/S__22888451.jpg'
 
@@ -18,8 +17,6 @@ const phone = ref('')
 const submitting = ref(false)
 const errorMessage = ref('')
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
-
 const shopSlug = computed(() => route.params.shopSlug || shopStore.slug || 'default')
 const logoSrc = computed(() => ui.logoUrl || defaultShopImage)
 const heroSrc = computed(() => ui.heroImageUrl || defaultShopImage)
@@ -32,18 +29,6 @@ const displayName = computed(() => {
 
 const shopExpired = computed(() => Boolean(shopStore.shop?.usage_expired))
 const shopExpiryMessage = computed(() => shopStore.error || 'สาขานี้หมดระยะเวลาใช้งานแล้ว กรุณาติดต่อผู้ดูแลระบบ')
-
-const providers = [
-  { key: 'line', label: 'เข้าสู่ระบบด้วย LINE', icon: 'L' },
-  { key: 'facebook', label: 'เข้าสู่ระบบด้วย Facebook', icon: 'f' },
-]
-
-const loginLinks = computed(() =>
-  providers.map((provider) => ({
-    ...provider,
-    href: `${apiBase}/api/auth/${provider.key}?state=${encodeURIComponent(shopSlug.value)}`,
-  })),
-)
 
 function bookingsPath() {
   return `/${shopSlug.value}/bookings`
@@ -96,32 +81,54 @@ async function loginWithPhone() {
   <main class="login-page app-page app-page--standalone center">
     <section class="card login-card login-pretty">
       <div class="login-hero-wrap">
-        <img :src="heroSrc" alt="Nail studio cover" class="login-hero-image" />
+        <img :src="heroSrc" :alt="`ภาพปก ${displayName}`" class="login-hero-image" />
       </div>
       <div class="login-body">
         <div class="brand-row">
           <div class="brand-icon">
-            <img :src="logoSrc" alt="Shop logo" class="brand-logo-image" />
+            <img :src="logoSrc" :alt="`โลโก้ ${displayName}`" class="brand-logo-image" />
           </div>
-          <div>
-            <h1 class="login-brand-title">{{ displayName }}</h1>
+          <div class="login-brand-copy">
+            <h1 class="login-brand-title">
+              {{ ui.brandMain }}<span v-if="ui.brandAccent" class="login-brand-accent">{{ ui.brandAccent }}</span>
+            </h1>
             <p class="login-tagline">{{ ui.tagline }}</p>
           </div>
         </div>
 
-        <div class="login-form">
-          <p v-if="shopExpired" class="alert-banner error">{{ shopExpiryMessage }}</p>
-          <template v-else>
+        <p v-if="shopExpired" class="alert-banner error" role="alert">{{ shopExpiryMessage }}</p>
+        <form v-else class="login-form" @submit.prevent="loginWithPhone">
           <label class="field">
             <i class="ti ti-user field-icon" aria-hidden="true"></i>
-            <input v-model="name" type="text" placeholder="ชื่อผู้จอง" />
+            <input
+              v-model="name"
+              type="text"
+              name="name"
+              autocomplete="name"
+              placeholder="ชื่อผู้จอง"
+              aria-label="ชื่อผู้จอง"
+            />
           </label>
           <label class="field">
             <i class="ti ti-phone field-icon" aria-hidden="true"></i>
-            <input v-model="phone" type="tel" placeholder="เบอร์โทร" />
+            <input
+              v-model="phone"
+              type="tel"
+              name="tel"
+              autocomplete="tel"
+              inputmode="tel"
+              placeholder="เบอร์โทร"
+              aria-label="เบอร์โทร"
+            />
           </label>
           <p class="login-hint">ชื่อและเบอร์ตรงกับที่เคยใช้ = เข้าบัญชีเดิม · ไม่ตรง = บัญชีใหม่</p>
-          <button class="btn primary login-submit" :disabled="submitting" @click="loginWithPhone">
+          <p v-if="errorMessage" class="alert-banner error" role="alert">{{ errorMessage }}</p>
+          <button
+            type="submit"
+            class="btn primary login-submit"
+            :disabled="submitting"
+            :aria-busy="submitting"
+          >
             {{ submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบด้วยชื่อและเบอร์' }}
           </button>
 
@@ -140,10 +147,8 @@ async function loginWithPhone() {
             <i class="ti ti-chevron-right login-register-arrow" aria-hidden="true"></i>
           </RouterLink>
 
-          <p v-if="errorMessage" class="alert-banner error">{{ errorMessage }}</p>
           <p class="login-privacy">ข้อมูลของคุณใช้เพื่อยืนยันตัวตนและติดต่อการจองเท่านั้น</p>
-          </template>
-        </div>
+        </form>
       </div>
     </section>
   </main>
@@ -156,13 +161,6 @@ async function loginWithPhone() {
   place-content: center;
   padding: var(--page-padding-x);
   background: transparent;
-}
-
-.login-register-link {
-  width: 100%;
-  margin-top: var(--space-2);
-  text-align: center;
-  text-decoration: none;
 }
 
 .login-divider {
@@ -187,22 +185,25 @@ async function loginWithPhone() {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
+  min-height: var(--touch-min);
   padding: var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  background: linear-gradient(
-    135deg,
-    var(--color-surface-elevated) 0%,
-    var(--color-primary-light) 100%
-  );
+  background: var(--color-surface-elevated);
   text-decoration: none;
   color: inherit;
-  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition), background var(--transition);
 }
 
 .login-register-btn:hover {
   border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
   box-shadow: var(--shadow-sm);
+  background: var(--color-primary-light);
+}
+
+.login-register-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .login-register-btn:active {
