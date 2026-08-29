@@ -21,7 +21,7 @@ export const UI_FORM_DEFAULTS = {
   ui_shop_open_maps_btn: 'เปิดใน Google Maps',
   ui_line_chat_url: 'https://line.me',
   ui_bank_name: 'ธนาคารกสิกรไทย',
-  ui_bank_account_name: 'Nail Studio',
+  ui_bank_account_name: '',
   ui_bank_account_no: '',
   ui_promptpay_id: '',
   ui_kshop_qr_url: '',
@@ -142,7 +142,7 @@ export const UI_FIELD_GROUPS = [
       { key: 'ui_payment_page_title', label: 'หัวข้อหน้าชำระเงิน', hideInRegister: true },
       { key: 'ui_line_chat_url', label: 'ลิงก์ LINE (เปิดแชท — หน้าชำระเงิน)' },
       { key: 'ui_bank_name', label: 'ชื่อธนาคาร' },
-      { key: 'ui_bank_account_name', label: 'ชื่อบัญชี' },
+      { key: 'ui_bank_account_name', label: 'ชื่อบัญชี', placeholder: 'ไม่บังคับ', optional: true },
       { key: 'ui_bank_account_no', label: 'เลขบัญชี' },
       {
         key: 'ui_promptpay_id',

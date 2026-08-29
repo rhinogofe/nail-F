@@ -342,6 +342,7 @@ async function goStepOwner() {
       ...UI_FORM_DEFAULTS,
       ui_brand_main: name.value.trim(),
       ui_brand_accent: '',
+      ui_bank_account_name: '',
       ui_page_title: '',
     }
     shopName.value = name.value.trim()
@@ -1244,13 +1245,31 @@ onUnmounted(() => {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  background: linear-gradient(
-    to top,
-    var(--color-surface-elevated) 78%,
-    color-mix(in srgb, var(--color-surface-elevated) 92%, transparent) 100%
-  );
   padding-top: var(--space-3);
   padding-bottom: max(var(--space-1), env(safe-area-inset-bottom, 0px));
+}
+
+.register-panel .btn.primary.register-cta {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.register-panel .btn.primary.register-cta:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: #fff;
+}
+
+.register-panel .btn.primary.register-cta:active:not(:disabled) {
+  background: var(--color-primary-dark, var(--color-primary));
+  border-color: var(--color-primary-dark, var(--color-primary));
+  color: #fff;
+}
+
+.register-panel .btn.primary.register-cta:disabled {
+  opacity: 0.55;
+  color: #fff;
 }
 
 .register-meta-card {
