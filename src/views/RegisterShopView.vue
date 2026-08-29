@@ -341,6 +341,7 @@ async function goStepOwner() {
     uiForm.value = {
       ...UI_FORM_DEFAULTS,
       ui_brand_main: name.value.trim(),
+      ui_brand_accent: '',
       ui_page_title: '',
     }
     shopName.value = name.value.trim()
@@ -959,12 +960,19 @@ onUnmounted(() => {
   padding: var(--page-padding-x);
   padding-top: var(--space-4);
   padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  box-sizing: border-box;
 }
 
 .register-card {
   width: 100%;
   max-width: 440px;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(
+    100dvh - var(--space-4) - var(--space-8) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+  );
   overflow: hidden;
   border-radius: var(--radius-login);
   box-shadow: var(--shadow-card);
@@ -1052,7 +1060,18 @@ onUnmounted(() => {
 }
 
 .register-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.register-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: min-content;
 }
 
 .register-progress-wrap {
@@ -1221,6 +1240,17 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: var(--space-4);
   border-radius: var(--radius-lg);
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: linear-gradient(
+    to top,
+    var(--color-surface-elevated) 78%,
+    color-mix(in srgb, var(--color-surface-elevated) 92%, transparent) 100%
+  );
+  padding-top: var(--space-3);
+  padding-bottom: max(var(--space-1), env(safe-area-inset-bottom, 0px));
 }
 
 .register-meta-card {

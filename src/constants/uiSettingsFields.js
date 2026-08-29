@@ -8,7 +8,7 @@ export function formatUiText(template, vars = {}) {
 
 export const UI_FORM_DEFAULTS = {
   ui_brand_main: 'Nail',
-  ui_brand_accent: 'Thuean',
+  ui_brand_accent: '',
   ui_tagline: 'จองคิวง่าย · สะสมแต้ม',
   ui_page_title: 'Nail Thuean',
   ui_logo_url: '',
@@ -80,7 +80,7 @@ export const UI_FIELD_GROUPS = [
     hint: 'อัปโหลดจากมือถือได้ หรือวาง URL รูปโดยตรง · ชื่อแท็บเบราว์เซอร์ใช้ชื่อร้านจากขั้นต่อก่อน · ลิงก์ Google Maps วางลิงก์แชร์จากแอปได้เลย ระบบแสดงแผนที่ให้อัตโนมัติ',
     fields: [
       { key: 'ui_brand_main', label: 'ชื่อแบรนด์ (ส่วนหลัก)', placeholder: 'Nail' },
-      { key: 'ui_brand_accent', label: 'ชื่อแบรนด์ (ส่วนเน้น)', placeholder: 'Thuean' },
+      { key: 'ui_brand_accent', label: 'ชื่อแบรนด์ (ส่วนเน้น)', placeholder: 'ไม่บังคับ', optional: true },
       { key: 'ui_tagline', label: 'คำโปรย', placeholder: 'จองคิวง่าย · สะสมแต้ม' },
       { key: 'ui_page_title', label: 'ชื่อแท็บเบราว์เซอร์', placeholder: 'Nail Thuean' },
       { key: 'ui_logo_url', label: 'โลโก้', placeholder: 'อัปโหลดหรือวาง URL', uploadKind: 'logo' },
