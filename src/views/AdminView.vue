@@ -220,9 +220,15 @@ const linePushToId = ref('')
 const lineChannelToken = ref('')
 const lineChannelSecret = ref('')
 
-const lineBranchShops = computed(() =>
-  allShops.value.filter((shop) => shop.slug !== 'default')
-)
+const lineBranchShops = computed(() => {
+  const shops = [...allShops.value]
+  shops.sort((a, b) => {
+    if (a.slug === 'default') return -1
+    if (b.slug === 'default') return 1
+    return String(a.name || '').localeCompare(String(b.name || ''), 'th')
+  })
+  return shops
+})
 const lineTokenConfigured = ref(false)
 const lineTokenMasked = ref('')
 const lineSecretConfigured = ref(false)
@@ -2751,7 +2757,7 @@ async function saveLinePushSetting() {
 }
 
 async function toggleShopLinePush(shop, enabled) {
-  if (!shop?.slug || shop.slug === 'default') return
+  if (!shop?.slug) return
   lineBranchToggling.value = shop.slug
   message.value = ''
   errorMessage.value = ''
@@ -5654,13 +5660,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <div v-if="isSuperAdmin && shopSlug === 'default'" class="line-branch-panel">
         <h4 class="line-branch-title">เปิด/ปิดแจ้งเตือนตามสาขา</h4>
         <p class="muted line-branch-hint">
-          เปิด/ปิดแจ้งเตือนได้เฉพาะแอดมินหลัก — สาขาเปิดเองไม่ได้ · สลับไปสาขาเพื่อตั้ง ID และข้อความ
+          รวมร้านหลัก (/default) และสาขาทั้งหมด — เปิด/ปิดได้เฉพาะแอดมินหลัก · กด “ตั้งค่า” เพื่อใส่ User/Group ID และข้อความ
         </p>
         <ul v-if="lineBranchShops.length" class="line-branch-list">
           <li v-for="shop in lineBranchShops" :key="`line-branch-${shop.id}`" class="line-branch-row">
             <div class="line-branch-info">
               <strong>{{ shop.name }}</strong>
               <span class="muted">/{{ shop.slug }}</span>
+              <span v-if="shop.slug === 'default'" class="shop-line-badge shop-line-badge--on">ร้านหลัก</span>
               <span v-if="!shop.is_active" class="shop-inactive-badge">ปิด</span>
             </div>
             <AdminSwitch
@@ -5679,7 +5686,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               v-if="shop.is_active"
               type="button"
               class="btn line-branch-setup-btn"
-              @click="switchShopAdmin(shop.slug); activeSettingsSection = 'line'"
+              @click="shop.slug === 'default' ? (activeSettingsSection = 'line') : (switchShopAdmin(shop.slug), activeSettingsSection = 'line')"
             >
               ตั้งค่า
             </button>
@@ -5691,6 +5698,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
       </div>
       <div class="admin-form-grid admin-option-grid">
+        <p class="muted" style="grid-column:1/-1;margin:0">
+          ตั้งค่าสำหรับร้านที่กำลังเปิดอยู่: <strong>/{{ shopSlug }}</strong>
+        </p>
         <template v-if="lineEffectiveUsesOwnBot">
           <label>
             Channel Access Token
