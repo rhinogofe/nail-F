@@ -16,6 +16,7 @@ import {
   normalizeShopLastBookingHour,
   normalizeShopOpenHour,
 } from '../utils/bookingSlots'
+import defaultShopImage from '../assets/S__22888451.jpg'
 
 const route = useRoute()
 const router = useRouter()
