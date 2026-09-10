@@ -612,9 +612,12 @@ const visibleSettingsSections = computed(() =>
     if (section.superAdminOnly && !(isSuperAdmin.value && shopSlug.value === 'default')) {
       return false
     }
+    // Super admin on default must always see LINE — branch toggles live here.
+    if (section.key === 'line' && isSuperAdmin.value && shopSlug.value === 'default') {
+      return true
+    }
     if (!shopFeaturesStore.settingsSectionEnabled(section.key)) return false
     if (section.key === 'line') {
-      if (isSuperAdmin.value && shopSlug.value === 'default') return true
       return linePushEnabled.value
     }
     return true

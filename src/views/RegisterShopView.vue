@@ -343,6 +343,7 @@ async function goStepOwner() {
       ui_brand_main: name.value.trim(),
       ui_brand_accent: '',
       ui_bank_account_name: '',
+      ui_bank_account_no: '',
       ui_page_title: '',
     }
     shopName.value = name.value.trim()
@@ -504,7 +505,11 @@ async function submitRegister() {
   } catch (error) {
     const fields = error?.response?.data?.fields
     if (fields?.length) {
-      errorMessage.value = `กรุณากรอกข้อมูลให้ครบ (${fields.length} ช่องที่ยังว่าง)`
+      const labelByKey = Object.fromEntries(
+        uiFieldGroups.flatMap((group) => group.fields.map((field) => [field.key, field.label])),
+      )
+      const labels = fields.map((key) => labelByKey[key] || key)
+      errorMessage.value = `กรุณากรอกให้ครบ: ${labels.join(', ')}`
     } else {
       errorMessage.value = error?.response?.data?.error || 'สมัครร้านไม่สำเร็จ'
     }
