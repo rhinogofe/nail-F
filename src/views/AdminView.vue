@@ -5912,7 +5912,6 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </div>
           <div v-if="isSuperAdmin" class="admin-shop-actions">
             <AdminSwitch
-              v-if="shop.slug !== 'default'"
               compact
               label="LINE"
               :model-value="shop.line_push_enabled !== false"
