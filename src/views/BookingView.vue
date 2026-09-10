@@ -126,7 +126,7 @@ function categorySelectionCount(categoryId) {
   }).length
 }
 const todayDate = startOfDay(new Date())
-// bookUntilDate = วันสิ้นสุดที่ล็อกตอนแอดมินกดบันทึก (ไม่เลื่อนตามวันนี้)
+// bookUntilDate = วันสิ้นสุดจาก API (ขยายตามวันนี้ หรือล็อกตามที่แอดมินตั้ง)
 const maxBookDate = computed(() => {
   if (bookingStore.bookUntilDate && /^\d{4}-\d{2}-\d{2}$/.test(bookingStore.bookUntilDate)) {
     return parseYmdLocal(bookingStore.bookUntilDate)

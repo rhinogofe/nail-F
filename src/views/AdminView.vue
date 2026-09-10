@@ -947,21 +947,40 @@ const dayHourSaving = ref(false)
 // ── Advance days ────────────────────────────
 const advanceDays = ref(30)
 const bookUntilDate = ref('')
+const advanceExtendEnabled = ref(true)
 
 function formatBookUntilLabel(iso) {
   if (!iso) return '-'
   const [y, m, d] = iso.split('-').map(Number)
   return `${d} ${serviceThMonths[m - 1]} ${y + 543}`
 }
-//nettyfiy
+
 async function loadAdvanceDays() {
   try {
     const { data } = await api.get('/api/admin/settings/advance-days')
     advanceDays.value = data.advance_days ?? 30
     bookUntilDate.value = data.book_until_date || ''
+    advanceExtendEnabled.value = data.extend_enabled !== false
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดจำนวนวันล่วงหน้าไม่สำเร็จ'
   }
+}
+
+async function saveAdvanceExtendToggle(nextValue) {
+  if (typeof nextValue === 'boolean') advanceExtendEnabled.value = nextValue
+  await autoSaveSettingToggle({
+    key: 'advance-days:extend',
+    url: '/api/admin/settings/advance-days',
+    payload: { extend_enabled: nextValue },
+    label: 'ขยายวันจองล่วงหน้า',
+    nextValue,
+    revert: () => { advanceExtendEnabled.value = !nextValue },
+    apply: (data) => {
+      advanceDays.value = data.advance_days ?? advanceDays.value
+      bookUntilDate.value = data.book_until_date || bookUntilDate.value
+      advanceExtendEnabled.value = data.extend_enabled !== false
+    },
+  })
 }
 
 async function saveAdvanceDays() {
@@ -971,16 +990,24 @@ async function saveAdvanceDays() {
   }
   const ok = await confirmAdminSave(
     'ยืนยันบันทึก',
-    `ตั้งจองล่วงหน้า ${advanceDays.value} วัน และล็อกวันสิ้นสุดใหม่ใช่ไหม`
+    advanceExtendEnabled.value
+      ? `ตั้งจองล่วงหน้า ${advanceDays.value} วัน (ขยายตามวันนี้) ใช่ไหม`
+      : `ตั้งจองล่วงหน้า ${advanceDays.value} วัน และล็อกวันสิ้นสุดใหม่ใช่ไหม`
   )
   if (!ok) return
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch('/api/admin/settings/advance-days', { advance_days: advanceDays.value })
+    const { data } = await api.patch('/api/admin/settings/advance-days', {
+      advance_days: advanceDays.value,
+      extend_enabled: advanceExtendEnabled.value,
+    })
     advanceDays.value = data.advance_days ?? advanceDays.value
     bookUntilDate.value = data.book_until_date || ''
-    message.value = `บันทึกแล้ว: เปิดจองถึง ${formatBookUntilLabel(bookUntilDate.value)} (ล็อกวันสิ้นสุดแล้ว)`
+    advanceExtendEnabled.value = data.extend_enabled !== false
+    message.value = advanceExtendEnabled.value
+      ? `บันทึกแล้ว: เปิดจองถึง ${formatBookUntilLabel(bookUntilDate.value)} (ขยายตามวันนี้)`
+      : `บันทึกแล้ว: เปิดจองถึง ${formatBookUntilLabel(bookUntilDate.value)} (ล็อกวันสิ้นสุดแล้ว)`
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
   }
@@ -6616,7 +6643,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <div v-show="activeBlocksSection === 'advance'" id="blocks-advance-days" class="admin-settings-section">
               <div class="admin-section-head">
                 <h3>จองล่วงหน้า</h3>
-                <p class="muted">กำหนดจำนวนวันล่วงหน้าแล้วกดบันทึก — ระบบจะล็อกวันสิ้นสุดจากวันที่กดบันทึก (ไม่เลื่อนตามวันนี้)</p>
+                <p class="muted">
+                  กำหนดจำนวนวันล่วงหน้า — เปิด「ขยายวันจองล่วงหน้า」แล้ววันสิ้นสุดจะเลื่อนตามวันนี้
+                  · ปิดแล้วจะล็อกวันสิ้นสุดจากวันที่กดบันทึก
+                </p>
+              </div>
+              <div class="admin-switch-group">
+                <div class="admin-switch-stack">
+                  <AdminSwitch
+                    v-model="advanceExtendEnabled"
+                    label="ขยายวันจองล่วงหน้า"
+                    hint="เปิด = ลูกค้าจองได้ล่วงหน้ากี่วันนับจากวันนี้เสมอ · ปิด = ล็อกวันสิ้นสุดไว้"
+                    :disabled="settingToggleSaving === 'advance-days:extend'"
+                    @update:model-value="saveAdvanceExtendToggle"
+                  />
+                </div>
               </div>
               <div class="admin-form-row">
                 <label class="admin-label-grow">
@@ -6628,7 +6669,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <div class="shop-hours-preview">
                 <i class="ti ti-calendar-event" style="font-size:16px;color:var(--color-primary)"></i>
                 เปิดจองถึง <strong>{{ formatBookUntilLabel(bookUntilDate) }}</strong>
-                <span v-if="bookUntilDate" class="muted">({{ advanceDays }} วัน นับจากวันที่กดบันทึกล่าสุด)</span>
+                <span v-if="bookUntilDate" class="muted">
+                  ({{ advanceDays }} วัน
+                  {{ advanceExtendEnabled ? 'นับจากวันนี้ · ขยายอัตโนมัติ' : 'นับจากวันที่กดบันทึกล่าสุด · ล็อกแล้ว' }})
+                </span>
               </div>
             </div>
 

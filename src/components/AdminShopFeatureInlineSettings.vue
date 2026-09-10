@@ -44,6 +44,7 @@ const chatNotify = ref({
 const unpaid = ref({ enabled: true, expire_hours: 24 })
 const shopHours = ref({ open_hour: 9, last_booking_hour: 18 })
 const advanceDays = ref(30)
+const advanceExtendEnabled = ref(true)
 const slotDisplay = ref({
   slot_hours: 2,
   display_mode: 'normal',
@@ -222,6 +223,7 @@ async function loadEditor() {
     } else if (kind === 'advance-days') {
       const { data } = await shopAdminApi.get(props.shopSlug, '/api/admin/settings/advance-days')
       advanceDays.value = Number(data?.advance_days) || 30
+      advanceExtendEnabled.value = data?.extend_enabled !== false
     } else if (kind === 'slot-display') {
       const [displayRes, slotRes, extendRes, minGapRes] = await Promise.all([
         shopAdminApi.get(props.shopSlug, '/api/admin/settings/booking-display'),
@@ -311,6 +313,7 @@ async function saveEditor() {
     } else if (kind === 'advance-days') {
       await shopAdminApi.patch(props.shopSlug, '/api/admin/settings/advance-days', {
         advance_days: Number(advanceDays.value),
+        extend_enabled: advanceExtendEnabled.value,
       })
     } else if (kind === 'slot-display') {
       await Promise.all([
@@ -558,6 +561,11 @@ watch(
     </div>
 
     <div v-else-if="editor.kind === 'advance-days'" class="inline-settings-form">
+      <AdminSwitch
+        v-model="advanceExtendEnabled"
+        label="ขยายวันจองล่วงหน้า"
+        hint="เปิด = นับจากวันนี้เสมอ · ปิด = ล็อกวันสิ้นสุดจากวันที่กดบันทึก"
+      />
       <label>
         จองล่วงหน้าได้ (วัน)
         <input v-model.number="advanceDays" type="number" min="1" max="365" class="admin-input" />

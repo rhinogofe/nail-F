@@ -45,6 +45,7 @@ export const useBookingStore = defineStore('booking', {
     bookingMinGapMinutes: 60,
     advanceDays: 30,
     bookUntilDate: '',
+    advanceExtendEnabled: true,
     bookingDisplayMode: 'slots_2h',
     unpaidAutoCancelEnabled: true,
     unpaidExpireHours: 24,
@@ -201,6 +202,7 @@ export const useBookingStore = defineStore('booking', {
         const { data } = await api.get('/api/bookings/advance-days')
         this.advanceDays = data.advance_days ?? 30
         this.bookUntilDate = data.book_until_date || ''
+        this.advanceExtendEnabled = data.extend_enabled !== false
       } catch {
         // ใช้ค่า default ถ้าโหลดไม่ได้
       }
