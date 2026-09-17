@@ -12,6 +12,7 @@ import { formatUiText } from '../utils/formatUiText'
 import { dismissBlockingOverlays, scheduleOverlayCleanup } from '../utils/dismissBlockingOverlays'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { compressImage } from '../utils/compressChatImage'
+import { bookingRowToSlot, formatHmLabel, slotLabel } from '../utils/bookingSlots'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,8 +21,33 @@ const ui = useUiSettingsStore()
 
 const bookingId = computed(() => route.params.bookingId)
 const bookingDate = computed(() => route.query.date || '-')
-const startHour = computed(() => route.query.start || '-')
-const endHour = computed(() => route.query.end || '-')
+const paymentBooking = ref(null)
+
+function slotFromQuery() {
+  const startH = Number(route.query.start)
+  const endH = Number(route.query.end)
+  if (!Number.isFinite(startH) || !Number.isFinite(endH)) return null
+  return bookingRowToSlot({
+    start_hour: startH,
+    start_minute: Number(route.query.startMin ?? 0),
+    end_hour: endH,
+    end_minute: Number(route.query.endMin ?? 0),
+  })
+}
+
+const paymentSlot = computed(() => {
+  if (paymentBooking.value?.start_hour != null) {
+    return bookingRowToSlot(paymentBooking.value)
+  }
+  return slotFromQuery()
+})
+const slotRangeLabel = computed(() => (paymentSlot.value ? slotLabel(paymentSlot.value) : '-'))
+const slotStartLabel = computed(() => (
+  paymentSlot.value ? formatHmLabel(paymentSlot.value.startHour, paymentSlot.value.startMinute) : '-'
+))
+const slotEndLabel = computed(() => (
+  paymentSlot.value ? formatHmLabel(paymentSlot.value.endHour, paymentSlot.value.endMinute) : '-'
+))
 const showBookedNotice = computed(() => route.query.booked === '1')
 const bookedNoticeText = computed(() => ui.get(
   'ui_booking_success_text',
@@ -214,8 +240,8 @@ const lineMessage = computed(() => {
   const text = formatUiText(ui.get('ui_line_message_template'), {
     bookingId: bookingId.value,
     date: bookingDate.value,
-    start: `${startHour.value}:00`,
-    end: `${endHour.value}:00`,
+    start: slotStartLabel.value,
+    end: slotEndLabel.value,
     amount: depositAmount.value,
   })
   return encodeURIComponent(text)
@@ -344,6 +370,7 @@ async function refreshPaymentLive() {
       depositAmount.value = Number(depositRes.data.deposit_amount)
     }
     const info = infoRes.data
+    if (info?.booking) paymentBooking.value = info.booking
     bookingStatus.value = info?.booking?.status || ''
     if (info?.booking?.created_at) bookingCreatedAt.value = info.booking.created_at
     locationName.value = info?.location_name || locationName.value
@@ -404,6 +431,7 @@ onMounted(async () => {
       depositAmount.value = Number(depositRes.data.deposit_amount)
     }
     const info = infoRes.data
+    if (info?.booking) paymentBooking.value = info.booking
     bookingStatus.value = info?.booking?.status || ''
     bookingCreatedAt.value = info?.booking?.created_at || ''
     locationName.value = info?.location_name || ''
@@ -484,7 +512,7 @@ onUnmounted(() => {
         </div>
         <div class="summary-row">
           <span class="summary-label"><i class="ti ti-clock" aria-hidden="true"></i> เวลา</span>
-          <span class="summary-val">{{ startHour }}:00 – {{ endHour }}:00</span>
+          <span class="summary-val">{{ slotRangeLabel }}</span>
         </div>
         <div v-if="locationName" class="summary-row">
           <span class="summary-label"><i class="ti ti-map-pin" aria-hidden="true"></i> สถานที่</span>

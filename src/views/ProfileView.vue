@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useBookingStore } from '../stores/booking'
 import api from '../api/axios'
-import { bookingEndHour } from '../utils/bookingSlots'
+import { bookingRowToSlot, slotLabel } from '../utils/bookingSlots'
 import BottomNav from '../components/BottomNav.vue'
 import { useCoupons } from '../composables/useCoupons'
 import { useUiSettingsStore } from '../stores/uiSettings'
@@ -50,6 +50,10 @@ function formatDateLabel(iso) {
   const key = String(iso).slice(0, 10)
   const [y, m, d] = key.split('-').map(Number)
   return `${d} ${thMonths[m - 1]} ${y + 543}`
+}
+
+function formatHistoryTime(item) {
+  return slotLabel(bookingRowToSlot(item, bookingStore.bookingSlotHours))
 }
 
 function formatCreatedAt(value) {
@@ -277,7 +281,7 @@ onMounted(async () => {
             <div class="history-head">
               <strong>{{ formatDateLabel(item.booking_date) }}</strong>
               <span class="history-time">
-                {{ item.start_hour }}:00 - {{ item.end_hour ?? bookingEndHour(Number(item.start_hour), bookingStore.bookingSlotHours) }}:00
+                {{ formatHistoryTime(item) }}
               </span>
             </div>
             <span class="status-pill" :class="statusClass(item.status)">
