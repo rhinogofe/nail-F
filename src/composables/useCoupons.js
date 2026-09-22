@@ -7,6 +7,7 @@ const DEFAULT_COUPON = {
   discountPercent: 20,
   requiredPoints: 100,
   completionPoints: 10,
+  manualCompletionPoints: false,
 }
 
 export function useCoupons() {
@@ -26,6 +27,7 @@ export function useCoupons() {
         discountPercent: Number(data?.discount_percent) || DEFAULT_COUPON.discountPercent,
         requiredPoints: Number(data?.required_points) || DEFAULT_COUPON.requiredPoints,
         completionPoints: Number(data?.completion_points ?? DEFAULT_COUPON.completionPoints),
+        manualCompletionPoints: Boolean(data?.manual_completion_points),
       }
       settingsLoaded.value = true
     } catch {

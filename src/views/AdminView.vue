@@ -209,11 +209,13 @@ const bulkBlockNote = ref('')
 const bulkStartDate = ref(todayYmd())
 const bulkDays = ref(7)
 const depositAmount = ref(300)
+const depositFullPaymentEnabled = ref(false)
 const registerShopPin = ref('')
 const registerShopPinConfigured = ref(false)
 const couponDiscountPercent = ref(20)
 const couponRequiredPoints = ref(100)
 const couponCompletionPoints = ref(10)
+const couponManualCompletionPoints = ref(false)
 const linePushEnabled = ref(false)
 const lineCanEditEnabled = ref(false)
 const linePushToId = ref('')
@@ -354,6 +356,7 @@ const bookingAddUserQuery = ref('')
 const bookingAddSlotKey = ref('')
 const bookingAddStatus = ref('pending')
 const bookingAddTotal = ref('')
+const bookingAddCompletionPoints = ref(0)
 const bookingAddOptions = ref([])
 const bookingAddSelectedIds = ref([])
 const bookingAddLoading = ref(false)
@@ -1128,6 +1131,7 @@ function resetAdminShopLocalState() {
   usersTotal.value = 0
   usersHasMore.value = false
   usersLoaded.value = false
+  userBookedScope.value = 'all'
 }
 
 async function reloadAdminShopContext() {
@@ -1776,6 +1780,10 @@ const usersLoaded = ref(false)
 const usersListRef = ref(null)
 const usersSentinelRef = ref(null)
 const userSearch = ref('')
+const userBookedScope = ref('all')
+const showSuperAdminUserScopeFilter = computed(
+  () => isSuperAdmin.value && shopSlug.value === 'default'
+)
 const userEditOpen = ref(false)
 const userEditItem = ref(null)
 const userEditName = ref('')
@@ -1864,6 +1872,9 @@ async function loadUsers({ reset = false } = {}) {
     const q = userSearch.value.trim()
     const params = { limit: USER_PAGE_SIZE, offset }
     if (q) params.q = q
+    if (showSuperAdminUserScopeFilter.value && userBookedScope.value === 'default_shop') {
+      params.booked_scope = 'default_shop'
+    }
 
     const { data } = await api.get('/api/admin/users', { params })
     const rows = Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : [])
@@ -2607,6 +2618,7 @@ async function loadDepositSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/deposit')
     depositAmount.value = Number(data?.deposit_amount || 300)
+    depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดค่ายอดมัดจำไม่สำเร็จ'
   }
@@ -2660,6 +2672,7 @@ async function loadCouponSetting() {
     couponDiscountPercent.value = Number(data?.discount_percent) || 20
     couponRequiredPoints.value = Number(data?.required_points) || 100
     couponCompletionPoints.value = Number(data?.completion_points ?? 10)
+    couponManualCompletionPoints.value = Boolean(data?.manual_completion_points)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าคูปองไม่สำเร็จ'
   }
@@ -2681,9 +2694,12 @@ async function saveCouponSetting() {
     errorMessage.value = 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
     return
   }
+  const completionHint = couponManualCompletionPoints.value
+    ? 'กรอกแต้มเองเมื่อทำคิวเสร็จ'
+    : `ทำเสร็จ +${completion.toLocaleString('th-TH')} แต้ม`
   const ok = await confirmAdminSave(
     'ยืนยันบันทึกคูปอง',
-    `ลด ${discount}% ใช้ ${points.toLocaleString('th-TH')} แต้ม · ทำเสร็จ +${completion.toLocaleString('th-TH')} แต้ม ใช่ไหม`
+    `ลด ${discount}% ใช้ ${points.toLocaleString('th-TH')} แต้ม · ${completionHint} ใช่ไหม`
   )
   if (!ok) return
   message.value = ''
@@ -2693,11 +2709,15 @@ async function saveCouponSetting() {
       discount_percent: discount,
       required_points: points,
       completion_points: completion,
+      manual_completion_points: couponManualCompletionPoints.value,
     })
     couponDiscountPercent.value = Number(data.discount_percent) || discount
     couponRequiredPoints.value = Number(data.required_points) || points
     couponCompletionPoints.value = Number(data.completion_points ?? completion)
-    message.value = `บันทึกแล้ว: ลด ${couponDiscountPercent.value}% · แลก ${couponRequiredPoints.value} แต้ม · ทำเสร็จ +${couponCompletionPoints.value} แต้ม`
+    couponManualCompletionPoints.value = Boolean(data.manual_completion_points)
+    message.value = couponManualCompletionPoints.value
+      ? `บันทึกแล้ว: ลด ${couponDiscountPercent.value}% · แลก ${couponRequiredPoints.value} แต้ม · กรอกแต้มเองเมื่อทำเสร็จ`
+      : `บันทึกแล้ว: ลด ${couponDiscountPercent.value}% · แลก ${couponRequiredPoints.value} แต้ม · ทำเสร็จ +${couponCompletionPoints.value} แต้ม`
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกตั้งค่าคูปองไม่สำเร็จ'
   }
@@ -3045,19 +3065,28 @@ async function saveUnpaidAutoCancelSetting() {
 }
 
 async function saveDepositSetting() {
+  const fullHint = depositFullPaymentEnabled.value
+    ? 'ลูกค้าชำระเต็มจำนวนตามราคาบริการ'
+    : `มัดจำ ${depositAmount.value} บาท`
   const ok = await confirmAdminSave(
-    'ยืนยันบันทึกยอดมัดจำ',
-    `ตั้งยอดมัดจำเป็น ${depositAmount.value} บาท ใช่ไหม`
+    'ยืนยันบันทึกการชำระ',
+    `${fullHint} ใช่ไหม`
   )
   if (!ok) return
 
   message.value = ''
   errorMessage.value = ''
   try {
-    const payload = { deposit_amount: Number(depositAmount.value) }
+    const payload = {
+      deposit_amount: Number(depositAmount.value),
+      full_payment_enabled: depositFullPaymentEnabled.value,
+    }
     const { data } = await api.patch('/api/admin/settings/deposit', payload)
     depositAmount.value = Number(data?.deposit_amount || depositAmount.value)
-    message.value = 'บันทึกยอดมัดจำแล้ว'
+    depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
+    message.value = depositFullPaymentEnabled.value
+      ? 'บันทึกแล้ว: ลูกค้าชำระเต็มจำนวนตามราคาบริการ'
+      : 'บันทึกยอดมัดจำแล้ว'
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'บันทึกยอดมัดจำไม่สำเร็จ'
   }
@@ -3288,6 +3317,13 @@ function bookingNetAfterDeposit(booking) {
   return Math.max(0, totalPrice - deposit)
 }
 
+function suggestedMarkDoneTotal(booking) {
+  const totalPrice = sumBookingOptionPrices(booking)
+  if (totalPrice == null) return null
+  if (depositFullPaymentEnabled.value) return totalPrice
+  return bookingNetAfterDeposit(booking)
+}
+
 function buildMarkDoneSummaryHtml(booking) {
   const opts = booking?.nail_options || []
   const services = opts.length
@@ -3300,12 +3336,21 @@ function buildMarkDoneSummaryHtml(booking) {
   const totalPrice = sumBookingOptionPrices(booking)
   const deposit = Number(depositAmount.value) || 0
   const netTotal = bookingNetAfterDeposit(booking)
-  return `
-    <div style="text-align:left;font-size:14px;line-height:1.55;margin-bottom:12px">
-      <p style="margin:0 0 10px"><strong>บริการที่ทำ</strong><br>${services}</p>
+  const fullPayment = depositFullPaymentEnabled.value
+  const priceBlock = fullPayment
+    ? `
+      <p style="margin:0 0 6px"><strong>ราคา</strong> ${totalPrice != null ? `${totalPrice.toLocaleString('th-TH')} บาท` : '-'}</p>
+      <p style="margin:0;font-size:13px;color:#9A8E89">ลูกค้าชำระเต็มจำนวนตอนจองแล้ว</p>
+    `
+    : `
       <p style="margin:0 0 6px"><strong>ราคา</strong> ${totalPrice != null ? `${totalPrice.toLocaleString('th-TH')} บาท` : '-'}</p>
       <p style="margin:0 0 6px"><strong>มัดจำ</strong> ${deposit.toLocaleString('th-TH')} บาท</p>
       <p style="margin:0"><strong>ราคารวมหักมัดจำแล้ว</strong> ${netTotal != null ? `${netTotal.toLocaleString('th-TH')} บาท` : '-'}</p>
+    `
+  return `
+    <div style="text-align:left;font-size:14px;line-height:1.55;margin-bottom:12px">
+      <p style="margin:0 0 10px"><strong>บริการที่ทำ</strong><br>${services}</p>
+      ${priceBlock}
     </div>
   `
 }
@@ -3313,33 +3358,76 @@ function buildMarkDoneSummaryHtml(booking) {
 async function markDone(booking) {
   const item = booking && typeof booking === 'object' ? booking : bookings.value.find((row) => row.id === booking)
   if (!item?.id) return
+  const manualPoints = couponManualCompletionPoints.value
   const pts = Number(couponCompletionPoints.value) || 0
-  const pointsHint = pts > 0 ? `ลูกค้าจะได้รับ +${pts.toLocaleString('th-TH')} แต้ม` : 'ไม่มีการให้แต้ม'
-  const suggestedTotal = bookingNetAfterDeposit(item)
-  const result = await adminSwal.fire({
-    title: 'ทำคิวเสร็จ',
-    html: `${buildMarkDoneSummaryHtml(item)}<p style="margin:12px 0 0;font-size:13px;color:#9A8E89">กรอกยอดเงินแล้วยืนยัน — ${pointsHint}</p>`,
-    input: 'number',
-    inputLabel: 'ยอดเงิน (บาท)',
-    inputValue: suggestedTotal != null ? String(suggestedTotal) : '',
-    inputAttributes: { min: 0, step: 1 },
-    showCancelButton: true,
-    confirmButtonText: 'บันทึก',
-    cancelButtonText: 'ยกเลิก',
-    inputValidator: (value) => {
-      const n = Number(value)
-      if (value === '' || !Number.isFinite(n) || n < 0) return 'กรุณากรอกยอดเงินที่ถูกต้อง'
-      return undefined
-    },
-  })
-  if (!result.isConfirmed) return
+  const pointsHint = manualPoints
+    ? 'กรอกแต้มที่จะให้ลูกค้า (ค่าเริ่มต้น 0)'
+    : (pts > 0 ? `ลูกค้าจะได้รับ +${pts.toLocaleString('th-TH')} แต้ม` : 'ไม่มีการให้แต้ม')
+  const suggestedTotal = suggestedMarkDoneTotal(item)
+  let completePayload = null
+
+  if (manualPoints) {
+    const result = await adminSwal.fire({
+      title: 'ทำคิวเสร็จ',
+      html: `
+        ${buildMarkDoneSummaryHtml(item)}
+        <p style="margin:12px 0 0;font-size:13px;color:#9A8E89">กรอกยอดเงินและแต้มแล้วยืนยัน — ${pointsHint}</p>
+        <label style="display:block;margin-top:16px;text-align:left;font-size:14px;color:#3D3530">
+          ยอดเงิน (บาท)
+          <input id="swal-mark-done-total" type="number" min="0" step="1" class="swal2-input" style="margin:8px 0 0;width:100%;box-sizing:border-box" value="${suggestedTotal != null ? suggestedTotal : ''}">
+        </label>
+        <label style="display:block;margin-top:12px;text-align:left;font-size:14px;color:#3D3530">
+          แต้มที่ให้ลูกค้า
+          <input id="swal-mark-done-points" type="number" min="0" step="1" class="swal2-input" style="margin:8px 0 0;width:100%;box-sizing:border-box" value="0">
+        </label>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'บันทึก',
+      cancelButtonText: 'ยกเลิก',
+      preConfirm: () => {
+        const totalVal = document.getElementById('swal-mark-done-total')?.value
+        const pointsVal = document.getElementById('swal-mark-done-points')?.value
+        const total = Number(totalVal)
+        const completionPoints = Number(pointsVal)
+        if (totalVal === '' || !Number.isFinite(total) || total < 0) {
+          adminSwal.showValidationMessage('กรุณากรอกยอดเงินที่ถูกต้อง')
+          return false
+        }
+        if (pointsVal === '' || !Number.isInteger(completionPoints) || completionPoints < 0) {
+          adminSwal.showValidationMessage('แต้มต้องเป็นจำนวนเต็มที่ไม่ติดลบ')
+          return false
+        }
+        return { total, completion_points: completionPoints }
+      },
+    })
+    if (!result.isConfirmed) return
+    completePayload = result.value
+  } else {
+    const result = await adminSwal.fire({
+      title: 'ทำคิวเสร็จ',
+      html: `${buildMarkDoneSummaryHtml(item)}<p style="margin:12px 0 0;font-size:13px;color:#9A8E89">กรอกยอดเงินแล้วยืนยัน — ${pointsHint}</p>`,
+      input: 'number',
+      inputLabel: 'ยอดเงิน (บาท)',
+      inputValue: suggestedTotal != null ? String(suggestedTotal) : '',
+      inputAttributes: { min: 0, step: 1 },
+      showCancelButton: true,
+      confirmButtonText: 'บันทึก',
+      cancelButtonText: 'ยกเลิก',
+      inputValidator: (value) => {
+        const n = Number(value)
+        if (value === '' || !Number.isFinite(n) || n < 0) return 'กรุณากรอกยอดเงินที่ถูกต้อง'
+        return undefined
+      },
+    })
+    if (!result.isConfirmed) return
+    completePayload = { total: Number(result.value) }
+  }
 
   message.value = ''
   errorMessage.value = ''
   try {
-    const { data } = await api.patch(`/api/admin/bookings/${item.id}/complete`, {
-      total: Number(result.value),
-    })
+    const { data } = await api.patch(`/api/admin/bookings/${item.id}/complete`, completePayload)
     message.value = data?.message || 'อัปเดตสำเร็จ'
     await Promise.all([reloadBookingViews(), auth.fetchMe().catch(() => null)])
   } catch (error) {
@@ -3797,6 +3885,7 @@ async function openBookingAdd() {
   bookingAddSlotKey.value = ''
   bookingAddStatus.value = selectedBookingDate.value < todayYmd() ? 'done' : 'pending'
   bookingAddTotal.value = ''
+  bookingAddCompletionPoints.value = 0
   bookingAddSelectedIds.value = []
   bookingAddOptions.value = []
   bookingAddCategories.value = []
@@ -3831,6 +3920,13 @@ async function saveBookingAdd() {
       bookingAddError.value = 'สถานะทำเสร็จแล้วต้องระบุยอดเงิน'
       return
     }
+    if (couponManualCompletionPoints.value) {
+      const completionPoints = Number(bookingAddCompletionPoints.value)
+      if (!Number.isInteger(completionPoints) || completionPoints < 0) {
+        bookingAddError.value = 'แต้มต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
+        return
+      }
+    }
   }
 
   bookingAddSaving.value = true
@@ -3854,6 +3950,9 @@ async function saveBookingAdd() {
     }
     if (bookingAddTotal.value !== '') {
       payload.total = Number(bookingAddTotal.value)
+    }
+    if (bookingAddStatus.value === 'done' && couponManualCompletionPoints.value) {
+      payload.completion_points = Number(bookingAddCompletionPoints.value) || 0
     }
     const { data } = await api.post('/api/admin/bookings', payload)
     message.value = data?.message || 'เพิ่มคิวแล้ว'
@@ -4969,7 +5068,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             class="btn primary"
               @click="markDone(item)"
           >
-              ทำเสร็จ{{ couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
+              ทำเสร็จ{{ !couponManualCompletionPoints && couponCompletionPoints > 0 ? ` +${couponCompletionPoints} แต้ม` : '' }}
           </button>
           <button
             v-if="item.status === 'pending'"
@@ -5580,12 +5679,37 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <h3>มัดจำ</h3>
         <p class="muted">ค่านี้จะถูกนำไปแสดงในหน้าชำระของลูกค้าทันที</p>
       </div>
+      <AdminSwitch
+        v-model="depositFullPaymentEnabled"
+        label="ชำระเต็มจำนวนตามราคาบริการ"
+      />
+      <p v-if="depositFullPaymentEnabled" class="muted admin-settings-hint">
+        เปิดแล้วลูกค้าต้องโอนตามราคารวมของบริการที่เลือก (ไม่ใช่มัดจำคงที่)
+      </p>
       <div class="admin-form-row">
-        <label class="admin-label-grow">
+        <label class="admin-label-grow" :class="{ muted: depositFullPaymentEnabled }">
           ยอดมัดจำ (บาท)
-          <input v-model.number="depositAmount" type="number" min="1" step="1" class="admin-input" />
+          <input
+            v-model.number="depositAmount"
+            type="number"
+            min="1"
+            step="1"
+            class="admin-input"
+            :disabled="depositFullPaymentEnabled"
+          />
         </label>
-        <button class="btn primary admin-action-btn" @click="saveDepositSetting">บันทึกยอดมัดจำ</button>
+        <button type="button" class="btn primary admin-action-btn" @click="saveDepositSetting">
+          บันทึกการชำระ
+        </button>
+      </div>
+      <div class="shop-hours-preview">
+        <i class="ti ti-cash" style="font-size:16px;color:var(--color-primary)"></i>
+        <template v-if="depositFullPaymentEnabled">
+          ลูกค้าชำระ <strong>เต็มจำนวน</strong> ตามราคาบริการในคิว
+        </template>
+        <template v-else>
+          ลูกค้าชำระมัดจำ <strong>{{ depositAmount.toLocaleString('th-TH') }}</strong> บาท
+        </template>
       </div>
       </div>
 
@@ -5594,6 +5718,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <h3>คูปองแลกแต้ม</h3>
         <p class="muted">ลูกค้าใช้แต้มแลกคูปองส่วนลด — ค่านี้แยกตามร้าน</p>
       </div>
+      <AdminSwitch
+        v-model="couponManualCompletionPoints"
+        label="กรอกแต้มเองเมื่อทำคิวเสร็จ"
+      />
+      <p v-if="couponManualCompletionPoints" class="muted admin-settings-hint">
+        เปิดแล้วจะถามแต้มตอนกดทำเสร็จ (ค่าเริ่มต้น 0) แทนการให้แต้มอัตโนมัติ
+      </p>
       <div class="admin-form-row" style="flex-wrap:wrap">
         <label class="admin-label-grow">
           ส่วนลด (%)
@@ -5603,9 +5734,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           แต้มที่ใช้แลก
           <input v-model.number="couponRequiredPoints" type="number" min="1" step="1" class="admin-input" />
         </label>
-        <label class="admin-label-grow">
-          แต้มเมื่อทำเสร็จ
-          <input v-model.number="couponCompletionPoints" type="number" min="0" step="1" class="admin-input" />
+        <label class="admin-label-grow" :class="{ muted: couponManualCompletionPoints }">
+          แต้มเมื่อทำเสร็จ (อัตโนมัติ)
+          <input
+            v-model.number="couponCompletionPoints"
+            type="number"
+            min="0"
+            step="1"
+            class="admin-input"
+            :disabled="couponManualCompletionPoints"
+          />
         </label>
         <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveCouponSetting">
           บันทึกคูปอง
@@ -5614,7 +5752,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <div class="shop-hours-preview">
         <i class="ti ti-ticket" style="font-size:16px;color:var(--color-primary)"></i>
         ลูกค้าจะเห็น: แลกคูปองลด <strong>{{ couponDiscountPercent }}%</strong> ใช้ <strong>{{ couponRequiredPoints.toLocaleString('th-TH') }}</strong> แต้ม
-        · ทำเสร็จได้ <strong>+{{ couponCompletionPoints.toLocaleString('th-TH') }}</strong> แต้ม
+        <template v-if="couponManualCompletionPoints">
+          · แต้มหลังทำเสร็จให้โดยแอดมินกรอกเอง
+        </template>
+        <template v-else>
+          · ทำเสร็จได้ <strong>+{{ couponCompletionPoints.toLocaleString('th-TH') }}</strong> แต้ม
+        </template>
       </div>
       </div>
 
@@ -7001,10 +7144,24 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     <section v-show="activeTab === 'users'" class="admin-section">
       <div class="admin-section-head">
         <h3>รายชื่อผู้ใช้</h3>
-        <p v-if="shopSlug === 'default'" class="muted">ผู้ใช้ทั้งหมดในระบบ</p>
+        <p v-if="showSuperAdminUserScopeFilter && userBookedScope === 'default_shop'" class="muted">
+          เฉพาะผู้ใช้ที่เคยจองสาขา default
+        </p>
+        <p v-else-if="shopSlug === 'default'" class="muted">ผู้ใช้ทั้งหมดในระบบ</p>
         <p v-else class="muted">ลูกค้าที่เคยจองสาขา /{{ shopSlug }}</p>
       </div>
       <div class="admin-form-row" style="margin-bottom:14px;flex-wrap:wrap">
+        <label v-if="showSuperAdminUserScopeFilter" class="admin-label-grow">
+          แสดงรายชื่อ
+          <select
+            v-model="userBookedScope"
+            class="admin-input"
+            @change="loadUsers({ reset: true })"
+          >
+            <option value="all">ผู้ใช้ทั้งหมดในระบบ</option>
+            <option value="default_shop">ลูกค้าที่จองสาขา default</option>
+          </select>
+        </label>
         <label class="admin-label-grow">
           ค้นหา
           <input
@@ -7505,6 +7662,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               step="1"
               class="admin-input"
               :placeholder="bookingAddStatus === 'done' ? 'จำเป็นสำหรับสถานะทำเสร็จแล้ว' : 'ไม่บังคับ'"
+              @input="bookingAddError = ''"
+            />
+          </label>
+
+          <label
+            v-if="bookingAddStatus === 'done' && couponManualCompletionPoints"
+            class="booking-edit-field"
+          >
+            แต้มที่ให้ลูกค้า
+            <input
+              v-model.number="bookingAddCompletionPoints"
+              type="number"
+              min="0"
+              step="1"
+              class="admin-input"
               @input="bookingAddError = ''"
             />
           </label>

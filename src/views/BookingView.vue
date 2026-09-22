@@ -69,6 +69,8 @@ const selectedOptionIds = ref([])
 const selectedCategoryId = ref('')
 const serviceError = ref('')
 const selectedServicesExpanded = ref(false)
+/** กัน ghost click บนมือถือหลังเปลี่ยนหมวด (นิ้วปล่อยทับรายการแรกของหมวดใหม่) */
+const categorySwitchGuardUntil = ref(0)
 
 const isSlots2hMode = computed(() => bookingStore.bookingDisplayMode === 'slots_2h')
 
@@ -296,7 +298,18 @@ function onCategoryStripPointerUp(e) {
   if (!categoryStripDragState.value.active || e.pointerId !== categoryStripDragState.value.pointerId) return
   const { moved, targetCategoryId } = categoryStripDragState.value
   resetCategoryStripDragState()
-  if (!moved && targetCategoryId != null) selectBookingCategory(targetCategoryId)
+  if (!moved && targetCategoryId != null) {
+    e.preventDefault()
+    e.stopPropagation()
+    selectBookingCategory(targetCategoryId)
+  }
+}
+
+function blockGhostClickAfterCategorySwitch(e) {
+  if (Date.now() < categorySwitchGuardUntil.value) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
 }
 
 function onCategoryStripWheel(e) {
@@ -856,8 +869,10 @@ async function goToServiceStep() {
 }
 
 function selectBookingCategory(categoryId) {
+  if (selectedCategoryId.value === categoryId) return
   selectedCategoryId.value = categoryId
   serviceError.value = ''
+  categorySwitchGuardUntil.value = Date.now() + 500
 }
 
 function backFromServicesStep() {
@@ -1004,12 +1019,18 @@ const pointsLabel = computed(() => {
 })
 const canRedeemCoupon = canRedeem
 
-const pointsBannerHtml = computed(() =>
-  formatUiText(
+const pointsBannerHtml = computed(() => {
+  if (couponSettings.value.manualCompletionPoints) {
+    return ui.get(
+      'ui_points_banner_manual',
+      'เมื่อช่างทำเสร็จ ร้านจะบันทึกแต้มให้คุณ'
+    )
+  }
+  return formatUiText(
     ui.get('ui_points_banner', 'เมื่อช่างทำเสร็จ คุณจะได้รับ <strong>+{points} แต้ม</strong>'),
     { points: (couponSettings.value.completionPoints ?? 10).toLocaleString('th-TH') }
   )
-)
+})
 
 watch(unpaidCountdown.nowMs, () => {
   if (!bookingStore.unpaidAutoCancelEnabled || busy.value || expiryRefreshPending) return
@@ -1403,7 +1424,11 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="option-list">
+                <div
+                  class="option-list"
+                  @click.capture="blockGhostClickAfterCategorySwitch"
+                  @pointerdown.capture="blockGhostClickAfterCategorySwitch"
+                >
                   <label
                     v-for="opt in requiredOptions"
                     :key="`req-${opt.id}`"

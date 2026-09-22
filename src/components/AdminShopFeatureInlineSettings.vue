@@ -28,7 +28,13 @@ const editor = computed(() => resolveInlineEditor(props.setup, props.childKey))
 const uiFields = computed(() => uiFieldsForEditor(editor.value))
 
 const depositAmount = ref(300)
-const coupon = ref({ discount_percent: 20, required_points: 100, completion_points: 10 })
+const depositFullPaymentEnabled = ref(false)
+const coupon = ref({
+  discount_percent: 20,
+  required_points: 100,
+  completion_points: 10,
+  manual_completion_points: false,
+})
 const line = ref({ enabled: false, push_to_id: '', can_edit_enabled: false })
 const chatNotify = ref({
   new_booking_enabled: true,
@@ -181,12 +187,14 @@ async function loadEditor() {
     if (kind === 'deposit') {
       const { data } = await shopAdminApi.get(props.shopSlug, '/api/admin/settings/deposit')
       depositAmount.value = Number(data?.deposit_amount) || 300
+      depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
     } else if (kind === 'coupon') {
       const { data } = await shopAdminApi.get(props.shopSlug, '/api/admin/settings/coupon')
       coupon.value = {
         discount_percent: Number(data?.discount_percent) || 20,
         required_points: Number(data?.required_points) || 100,
         completion_points: Number(data?.completion_points ?? 10),
+        manual_completion_points: Boolean(data?.manual_completion_points),
       }
     } else if (kind === 'line') {
       const { data } = await shopAdminApi.get(props.shopSlug, '/api/admin/settings/line-push')
@@ -275,13 +283,16 @@ async function saveEditor() {
     if (kind === 'deposit') {
       const { data } = await shopAdminApi.patch(props.shopSlug, '/api/admin/settings/deposit', {
         deposit_amount: Number(depositAmount.value),
+        full_payment_enabled: depositFullPaymentEnabled.value,
       })
       depositAmount.value = Number(data?.deposit_amount) || depositAmount.value
+      depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
     } else if (kind === 'coupon') {
       await shopAdminApi.patch(props.shopSlug, '/api/admin/settings/coupon', {
         discount_percent: Number(coupon.value.discount_percent),
         required_points: Number(coupon.value.required_points),
         completion_points: Number(coupon.value.completion_points),
+        manual_completion_points: Boolean(coupon.value.manual_completion_points),
       })
     } else if (kind === 'line') {
       await shopAdminApi.patch(props.shopSlug, '/api/admin/settings/line-push', {
@@ -481,13 +492,29 @@ watch(
     </div>
 
     <div v-else-if="editor.kind === 'deposit'" class="inline-settings-form admin-form-grid">
-      <label>
+      <AdminSwitch
+        v-model="depositFullPaymentEnabled"
+        label="ชำระเต็มจำนวนตามราคาบริการ"
+        style="grid-column:1/-1"
+      />
+      <label :class="{ muted: depositFullPaymentEnabled }">
         ยอดมัดจำ (บาท)
-        <input v-model.number="depositAmount" type="number" min="1" class="admin-input" />
+        <input
+          v-model.number="depositAmount"
+          type="number"
+          min="1"
+          class="admin-input"
+          :disabled="depositFullPaymentEnabled"
+        />
       </label>
     </div>
 
     <div v-else-if="editor.kind === 'coupon'" class="inline-settings-form admin-form-grid">
+      <AdminSwitch
+        v-model="coupon.manual_completion_points"
+        label="กรอกแต้มเองเมื่อทำคิวเสร็จ"
+        style="grid-column:1/-1"
+      />
       <label>
         ส่วนลด (%)
         <input v-model.number="coupon.discount_percent" type="number" min="1" max="100" class="admin-input" />
@@ -496,9 +523,15 @@ watch(
         แต้มที่ใช้แลก
         <input v-model.number="coupon.required_points" type="number" min="1" class="admin-input" />
       </label>
-      <label>
-        แต้มเมื่อทำเสร็จ
-        <input v-model.number="coupon.completion_points" type="number" min="0" class="admin-input" />
+      <label :class="{ muted: coupon.manual_completion_points }">
+        แต้มเมื่อทำเสร็จ (อัตโนมัติ)
+        <input
+          v-model.number="coupon.completion_points"
+          type="number"
+          min="0"
+          class="admin-input"
+          :disabled="coupon.manual_completion_points"
+        />
       </label>
     </div>
 

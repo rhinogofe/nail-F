@@ -59,6 +59,7 @@ const bankName = computed(() => ui.get('ui_bank_name', 'ธนาคารกส
 const bankAccountName = computed(() => ui.get('ui_bank_account_name', 'Nail Studio'))
 const bankAccountNo = computed(() => ui.get('ui_bank_account_no', ''))
 const depositAmount = ref(300)
+const fullPaymentEnabled = ref(false)
 const promptpayId = computed(() => ui.get('ui_promptpay_id', ''))
 const validPromptpayId = computed(() => {
   const digits = String(promptpayId.value || '').replace(/\D/g, '')
@@ -69,8 +70,19 @@ const kshopQrUrl = computed(() => {
   return raw ? resolveUiImageUrl(raw, shopSlug.value) : ''
 })
 const useKshopQr = computed(() => !!kshopQrUrl.value)
-const thaiQrLabel = computed(() => ui.get('ui_thai_qr_label', 'สแกน Thai QR เพื่อชำระมัดจำ'))
-const paymentPageTitle = computed(() => ui.get('ui_payment_page_title', 'ชำระเงินมัดจำ'))
+const thaiQrLabel = computed(() => (
+  fullPaymentEnabled.value
+    ? ui.get('ui_thai_qr_label_full', 'สแกน Thai QR เพื่อชำระค่าบริการ')
+    : ui.get('ui_thai_qr_label', 'สแกน Thai QR เพื่อชำระมัดจำ')
+))
+const paymentPageTitle = computed(() => (
+  fullPaymentEnabled.value
+    ? ui.get('ui_payment_page_title_full', 'ชำระค่าบริการ')
+    : ui.get('ui_payment_page_title', 'ชำระเงินมัดจำ')
+))
+const paymentAmountLabel = computed(() => (
+  fullPaymentEnabled.value ? 'ยอดชำระ' : 'ยอดมัดจำ'
+))
 const lineButtonLabel = computed(() => ui.get('ui_line_button_label', 'ส่งสลิปทาง LINE'))
 const paymentHint = computed(() => ui.get('ui_payment_hint', ''))
 const copyAccountHint = computed(() => ui.get('ui_copy_account_hint', 'แตะเพื่อคัดลอก'))
@@ -359,6 +371,19 @@ async function generateThaiQr() {
 
 let expiryTimer = null
 
+function applyPaymentAmount(depositRes, info) {
+  fullPaymentEnabled.value = Boolean(
+    info?.full_payment_enabled ?? depositRes?.data?.full_payment_enabled
+  )
+  if (info && info.payment_amount != null && Number.isFinite(Number(info.payment_amount))) {
+    depositAmount.value = Math.max(0, Number(info.payment_amount))
+    return
+  }
+  if (Number.isFinite(Number(depositRes?.data?.deposit_amount)) && Number(depositRes.data.deposit_amount) > 0) {
+    depositAmount.value = Number(depositRes.data.deposit_amount)
+  }
+}
+
 async function refreshPaymentLive() {
   if (document.hidden || paymentLoading.value) return
   try {
@@ -366,10 +391,8 @@ async function refreshPaymentLive() {
       api.get('/api/bookings/deposit-setting'),
       api.get(`/api/bookings/${bookingId.value}/payment-info`),
     ])
-    if (Number.isFinite(Number(depositRes.data?.deposit_amount)) && Number(depositRes.data.deposit_amount) > 0) {
-      depositAmount.value = Number(depositRes.data.deposit_amount)
-    }
     const info = infoRes.data
+    applyPaymentAmount(depositRes, info)
     if (info?.booking) paymentBooking.value = info.booking
     bookingStatus.value = info?.booking?.status || ''
     if (info?.booking?.created_at) bookingCreatedAt.value = info.booking.created_at
@@ -427,10 +450,8 @@ onMounted(async () => {
       api.get('/api/bookings/deposit-setting'),
       api.get(`/api/bookings/${bookingId.value}/payment-info`),
     ])
-    if (Number.isFinite(Number(depositRes.data?.deposit_amount)) && Number(depositRes.data.deposit_amount) > 0) {
-      depositAmount.value = Number(depositRes.data.deposit_amount)
-    }
     const info = infoRes.data
+    applyPaymentAmount(depositRes, info)
     if (info?.booking) paymentBooking.value = info.booking
     bookingStatus.value = info?.booking?.status || ''
     bookingCreatedAt.value = info?.booking?.created_at || ''
@@ -535,7 +556,7 @@ onUnmounted(() => {
           <span class="summary-val booking-id">{{ bookingId }}</span>
         </div>
         <div class="summary-deposit">
-          <span class="deposit-label">ยอดมัดจำ</span>
+          <span class="deposit-label">{{ paymentAmountLabel }}</span>
           <span class="deposit-amount tabular-nums">{{ depositAmount.toLocaleString('th-TH') }} บาท</span>
         </div>
         <p v-if="countdownText" class="countdown-badge payment-countdown">
@@ -547,7 +568,7 @@ onUnmounted(() => {
       <section v-if="qrCodeImage" class="qr-panel">
         <p class="qr-label">{{ thaiQrLabel }}</p>
         <div class="qr-card">
-          <img :src="qrCodeImage" alt="QR ชำระมัดจำ" class="qr-image" />
+          <img :src="qrCodeImage" :alt="fullPaymentEnabled ? 'QR ชำระค่าบริการ' : 'QR ชำระมัดจำ'" class="qr-image" />
         </div>
       </section>
 
