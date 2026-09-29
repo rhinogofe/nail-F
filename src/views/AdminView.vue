@@ -5011,6 +5011,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <span class="status-pill" :class="`status-pill--${item.status}`">{{ statusLabel(item.status) }}</span>
             </div>
           <p class="muted">{{ item.user_name }}</p>
+          <p v-if="item.user_phone" class="muted">{{ item.user_phone }}</p>
+          <p v-if="item.user_gmail" class="muted">{{ item.user_gmail }}</p>
           <p class="muted">
             {{
               item.nail_options?.length

@@ -17,6 +17,7 @@ const { showMyCoupons, loadMyCoupons, redeemCoupon, myCoupons, couponSettings, c
 
 const profileName = ref('')
 const profilePhone = ref('')
+const profileGmail = ref('')
 const saving = ref(false)
 const loadingHistory = ref(false)
 const message = ref('')
@@ -96,6 +97,7 @@ function statusClass(status) {
 function syncFormFromUser() {
   profileName.value = auth.user?.name || ''
   profilePhone.value = isPhoneAccount.value ? (auth.user?.provider_id || '') : ''
+  profileGmail.value = auth.user?.gmail || ''
 }
 
 async function loadHistory() {
@@ -120,7 +122,7 @@ async function saveProfile() {
     return
   }
 
-  const payload = { name }
+  const payload = { name, gmail: profileGmail.value.trim() }
   if (isPhoneAccount.value) {
     const phone = profilePhone.value.trim()
     if (!phone) {
@@ -238,6 +240,23 @@ onMounted(async () => {
                 <i class="ti ti-lock field-input-icon" aria-hidden="true"></i>
                 <input :value="loginLabel" type="text" class="input readonly" readonly />
               </div>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Gmail</span>
+              <div class="field-input-wrap">
+                <i class="ti ti-mail field-input-icon" aria-hidden="true"></i>
+                <input
+                  v-model="profileGmail"
+                  type="email"
+                  class="input"
+                  inputmode="email"
+                  autocomplete="email"
+                  placeholder="name@gmail.com"
+                  @input="errorMessage = ''"
+                />
+              </div>
+              <span class="profile-field-hint">ไม่บังคับ — ถ้าระบุ ร้านจะเห็นในรายการจอง</span>
             </label>
 
             <p v-if="message" class="alert-banner success">{{ message }}</p>
@@ -443,6 +462,12 @@ onMounted(async () => {
   font-size: var(--text-caption);
   font-weight: 500;
   color: var(--color-text-secondary);
+}
+
+.profile-field-hint {
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
+  line-height: 1.4;
 }
 
 .field-input-wrap {
