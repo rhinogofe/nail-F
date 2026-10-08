@@ -20,6 +20,7 @@ const errorMessage = ref('')
 const registerShopEnabled = ref(false)
 const {
   pageRef: loginPageRef,
+  inAppBrowser,
   keyboardOpen,
   scrollFieldIntoView,
   mountViewportBindings,
@@ -98,14 +99,17 @@ async function loginWithPhone() {
   <main
     ref="loginPageRef"
     class="login-page app-page app-page--standalone"
-    :class="{ 'login-page--keyboard': keyboardOpen }"
+    :class="{
+      'login-page--in-app': inAppBrowser,
+      'login-page--keyboard': keyboardOpen,
+    }"
   >
     <section class="card login-card login-pretty">
-      <div class="login-hero-wrap">
+      <div v-if="!inAppBrowser" class="login-hero-wrap">
         <img :src="heroSrc" :alt="`ภาพปก ${displayName}`" class="login-hero-image" />
       </div>
       <div class="login-body">
-        <div class="brand-row">
+        <div class="brand-row" :class="{ 'brand-row--in-app': inAppBrowser }">
           <div class="brand-icon">
             <img :src="logoSrc" :alt="`โลโก้ ${displayName}`" class="brand-logo-image" />
           </div>
@@ -142,7 +146,11 @@ async function loginWithPhone() {
               aria-label="เบอร์โทร"
             />
           </label>
-          <p class="login-hint">ชื่อและเบอร์ตรงกับที่เคยใช้ = เข้าบัญชีเดิม · ไม่ตรง = บัญชีใหม่</p>
+          <p class="login-hint">
+            {{ inAppBrowser
+              ? 'ชื่อ+เบอร์เดิม = บัญชีเดิม · ต่างกัน = บัญชีใหม่'
+              : 'ชื่อและเบอร์ตรงกับที่เคยใช้ = เข้าบัญชีเดิม · ไม่ตรง = บัญชีใหม่' }}
+          </p>
           <p v-if="errorMessage" class="alert-banner error" role="alert">{{ errorMessage }}</p>
           <button
             type="submit"
@@ -231,6 +239,43 @@ async function loginWithPhone() {
 
 .login-page--keyboard :deep(.login-card) {
   flex-shrink: 0;
+}
+
+/* โหมด LINE / IG / FB — ฟอร์มอยู่บนสุด ไม่มีแบนเนอร์ */
+.login-page--in-app {
+  padding-top: max(var(--space-3), env(safe-area-inset-top, 0px));
+}
+
+.login-page--in-app :deep(.login-body) {
+  padding: var(--space-4) var(--space-4) var(--space-5);
+  gap: var(--space-3);
+}
+
+.login-page--in-app :deep(.brand-row--in-app) {
+  margin-top: 0;
+}
+
+.login-page--in-app :deep(.brand-icon) {
+  width: 48px;
+  height: 48px;
+}
+
+.login-page--in-app :deep(.login-brand-title) {
+  font-size: 22px;
+}
+
+.login-page--in-app :deep(.login-tagline) {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.login-page--in-app :deep(.login-privacy) {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.login-page--in-app :deep(.login-register-text small) {
+  display: none;
 }
 
 .login-divider {

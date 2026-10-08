@@ -1,6 +1,7 @@
 import { nextTick, onUnmounted, ref } from 'vue'
 
 const ROOT_KEYBOARD_CLASS = 'mobile-keyboard-layout'
+const ROOT_IN_APP_CLASS = 'in-app-browser'
 
 export function isInAppBrowser() {
   const ua = navigator.userAgent || ''
@@ -21,6 +22,7 @@ function clearRootKeyboardLayout() {
 /** ปรับความสูง root (#app) + padding ตามคีย์บอร์ด (LINE / Safari in-app) */
 export function useMobileKeyboardViewport() {
   const pageRef = ref(null)
+  const inAppBrowser = ref(isInAppBrowser())
   const keyboardOpen = ref(false)
   let teardown = null
 
@@ -95,6 +97,9 @@ export function useMobileKeyboardViewport() {
 
   async function mountViewportBindings() {
     await nextTick()
+    if (inAppBrowser.value) {
+      document.documentElement.classList.add(ROOT_IN_APP_CLASS)
+    }
     teardown?.()
     teardown = bindPageEl(pageRef.value)
   }
@@ -103,10 +108,12 @@ export function useMobileKeyboardViewport() {
     teardown?.()
     teardown = null
     clearRootKeyboardLayout()
+    document.documentElement.classList.remove(ROOT_IN_APP_CLASS)
   })
 
   return {
     pageRef,
+    inAppBrowser,
     keyboardOpen,
     scrollFieldIntoView,
     mountViewportBindings,

@@ -229,6 +229,27 @@ html.mobile-keyboard-layout .app-page.app-page--standalone {
   overflow: visible !important;
 }
 
+/* ล็อกอิน / สมัครจาก LINE · IG · Facebook — เลื่อนทั้งหน้า ไม่ล็อกในกล่องสูงเต็มจอ */
+html.in-app-browser #app {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+html.in-app-browser .app-shell {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+html.in-app-browser .app-page.app-page--standalone {
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
 img,
 video {
   max-width: 100%;

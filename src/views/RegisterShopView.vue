@@ -55,6 +55,7 @@ const advanceDays = ref(30)
 
 const {
   pageRef: registerPageRef,
+  inAppBrowser,
   keyboardOpen,
   scrollFieldIntoView,
   mountViewportBindings,
@@ -588,10 +589,23 @@ onUnmounted(() => {
   <main
     ref="registerPageRef"
     class="register-page app-page app-page--standalone"
-    :class="{ 'register-page--keyboard': keyboardOpen }"
+    :class="{
+      'register-page--in-app': inAppBrowser,
+      'register-page--keyboard': keyboardOpen,
+    }"
   >
     <section class="card register-card">
-      <div class="register-hero">
+      <header v-if="inAppBrowser" class="register-in-app-head">
+        <button type="button" class="register-back register-back--inline" @click="goBack">
+          <i class="ti ti-arrow-left" aria-hidden="true"></i>
+        </button>
+        <div class="register-in-app-head-text">
+          <h1>สมัครร้านค้า</h1>
+          <p>{{ stepTitle }} · ขั้นที่ {{ step }}/{{ totalSteps }}</p>
+        </div>
+      </header>
+
+      <div v-else class="register-hero">
         <img :src="defaultShopImage" alt="" class="register-hero-img" />
         <div class="register-hero-overlay">
           <button type="button" class="register-back" @click="goBack">
@@ -1024,6 +1038,63 @@ onUnmounted(() => {
 
 .register-page--keyboard .register-card {
   flex-shrink: 0;
+}
+
+.register-page--in-app {
+  padding-top: max(var(--space-3), env(safe-area-inset-top, 0px));
+}
+
+.register-page--in-app .register-card {
+  max-height: none;
+  overflow: visible;
+}
+
+.register-page--in-app .register-body {
+  overflow: visible;
+  flex: none;
+}
+
+.register-in-app-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+}
+
+.register-in-app-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.register-in-app-head-text h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.register-in-app-head-text p {
+  margin: 4px 0 0;
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.register-back--inline {
+  position: static;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  box-shadow: none;
+}
+
+.register-page--in-app .register-progress-label {
+  text-align: left;
 }
 
 .register-hero {
