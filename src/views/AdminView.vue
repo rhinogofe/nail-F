@@ -5791,7 +5791,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
       <div v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="shop-hours-preview" style="margin-bottom:12px">
         <i class="ti ti-link" style="font-size:16px;color:var(--color-primary)"></i>
-        slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทกลางด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
+        slug ร้านนี้: <strong>/{{ shopSlug }}</strong> — ทักบอทกลาง @570nnufq ด้วย <code>{{ shopSlug }}</code> หรือ <code>/{{ shopSlug }}/bookings</code>
       </div>
       <div v-if="lineCanEditUseOwnBot" class="admin-switch-group">
         <div class="admin-switch-stack">
