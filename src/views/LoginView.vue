@@ -6,6 +6,7 @@ import { useShopStore } from '../stores/shop'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import api from '../api/axios'
 import defaultShopImage from '../assets/S__22888451.jpg'
+import { useMobileKeyboardViewport } from '../composables/useMobileKeyboardViewport'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +18,12 @@ const phone = ref('')
 const submitting = ref(false)
 const errorMessage = ref('')
 const registerShopEnabled = ref(false)
+const {
+  pageRef: loginPageRef,
+  keyboardOpen,
+  scrollFieldIntoView,
+  mountViewportBindings,
+} = useMobileKeyboardViewport()
 
 const shopSlug = computed(() => route.params.shopSlug || shopStore.slug || 'default')
 const logoSrc = computed(() => ui.logoUrl || defaultShopImage)
@@ -40,6 +47,8 @@ function loginPath() {
 }
 
 onMounted(async () => {
+  await mountViewportBindings()
+
   try {
     const { data } = await api.get('/api/auth/register-shop/config')
     registerShopEnabled.value = Boolean(data?.enabled)
@@ -86,7 +95,11 @@ async function loginWithPhone() {
 </script>
 
 <template>
-  <main class="login-page app-page app-page--standalone center">
+  <main
+    ref="loginPageRef"
+    class="login-page app-page app-page--standalone"
+    :class="{ 'login-page--keyboard': keyboardOpen }"
+  >
     <section class="card login-card login-pretty">
       <div class="login-hero-wrap">
         <img :src="heroSrc" :alt="`ภาพปก ${displayName}`" class="login-hero-image" />
@@ -105,7 +118,7 @@ async function loginWithPhone() {
         </div>
 
         <p v-if="shopExpired" class="alert-banner error" role="alert">{{ shopExpiryMessage }}</p>
-        <form v-else class="login-form" @submit.prevent="loginWithPhone">
+        <form v-else class="login-form" @submit.prevent="loginWithPhone" @focusin="scrollFieldIntoView">
           <label class="field">
             <i class="ti ti-user field-icon" aria-hidden="true"></i>
             <input
@@ -166,10 +179,49 @@ async function loginWithPhone() {
 
 <style scoped>
 .login-page {
-  display: grid;
-  place-content: center;
-  padding: var(--page-padding-x);
+  /* LINE / in-app browser: อย่า center ใน 100dvh ตายตัว — คีย์บอร์ดเปิดแล้วจะโดนบีบ */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  height: auto !important;
+  min-height: var(--page-vv-height, 100dvh);
+  max-height: var(--page-vv-height, none);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: max(var(--space-4), env(safe-area-inset-top, 0px)) var(--page-padding-x)
+    max(var(--space-6), env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(
+    var(--space-6),
+    env(safe-area-inset-bottom, 0px),
+    var(--page-keyboard-gap, 0px)
+  );
   background: transparent;
+  box-sizing: border-box;
+}
+
+.login-page--keyboard :deep(.login-hero-wrap) {
+  aspect-ratio: 2.4 / 1;
+  max-height: 100px;
+}
+
+.login-page--keyboard :deep(.brand-row) {
+  margin-top: calc(-1 * var(--space-5));
+}
+
+.login-page--keyboard :deep(.brand-icon) {
+  width: 52px;
+  height: 52px;
+}
+
+.login-page--keyboard :deep(.login-brand-title) {
+  font-size: 22px;
+}
+
+.login-page--keyboard :deep(.login-body) {
+  padding-top: var(--space-3);
+  gap: var(--space-3);
 }
 
 .login-divider {

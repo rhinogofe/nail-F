@@ -334,6 +334,26 @@ function parseYmdLocal(ymd) {
   return new Date(y, m - 1, d)
 }
 
+function todayYmd() {
+  return toLocalYmd(todayDate)
+}
+
+function maxBookYmd() {
+  return toLocalYmd(maxBookDate.value)
+}
+
+/** วันนี้อยู่ในช่วงจองล่วงหน้าและไม่ถูกปิดทั้งวัน */
+function isDateBookable(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false
+  const today = todayYmd()
+  const max = maxBookYmd()
+  if (iso < today || iso > max) return false
+  if (isClosedDay(iso)) return false
+  return true
+}
+
+const canShowBookingSlots = computed(() => isDateBookable(selectedDate.value))
+
 const stripDays = computed(() => {
   const items = []
   let cursor = new Date(todayDate)
@@ -536,13 +556,16 @@ function canBook(slot) {
   })
 }
 
-const visibleSlots = computed(() => buildVisibleBookingSlots({
-  ...slotBuildParams.value,
-  dayWindows: dayHoursForDate.value,
-  blocks: blockedSlots.value,
-  bookings: bookings.value,
-  extendByServices: bookingStore.extendBookingByServices,
-}))
+const visibleSlots = computed(() => {
+  if (!canShowBookingSlots.value) return []
+  return buildVisibleBookingSlots({
+    ...slotBuildParams.value,
+    dayWindows: dayHoursForDate.value,
+    blocks: blockedSlots.value,
+    bookings: bookings.value,
+    extendByServices: bookingStore.extendBookingByServices,
+  })
+})
 function hasBookingOnDay(iso) {
   return (bookingStore.bookingsByDate[iso] || []).length > 0
 }
@@ -615,11 +638,6 @@ async function syncBookingSettings({ refreshLayout = true } = {}) {
   const after = bookingSettingsSnapshot()
   if (!refreshLayout || !hasBookingSettingsChanged(before, after)) return false
 
-  const picked = parseYmdLocal(selectedDate.value)
-  if (picked > maxBookDate.value) {
-    selectedDate.value = toLocalYmd(maxBookDate.value)
-    alignWindowToDate(selectedDate.value)
-  }
   await refreshBlocksAndEnsureSelection(true)
   await loadDate()
   return true
@@ -962,11 +980,11 @@ async function refreshBlocksAndEnsureSelection(ensureSelection = false) {
 
   const first = findFirstOpenDate(todayDate)
   if (!first) {
-    errorMessage.value = ui.get('ui_no_open_days', 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง')
+    errorMessage.value = ''
     return
   }
-  const picked = parseYmdLocal(selectedDate.value)
-  if (picked > maxBookDate.value || isClosedDay(selectedDate.value)) {
+  const iso = selectedDate.value
+  if (!isDateBookable(iso)) {
     selectedDate.value = first
     scrollActiveDayIntoView('auto')
   }
@@ -1076,6 +1094,11 @@ onMounted(() => {
 
 async function bootstrapBookingPage() {
   try {
+    await Promise.all([
+      bookingStore.fetchBookingSettings().catch(() => null),
+      bookingStore.fetchAllNailOptions().catch(() => null),
+    ])
+    await refreshBlocksAndEnsureSelection(true)
     await loadDate()
     await nextTick()
     updateStripScroll()
@@ -1085,12 +1108,10 @@ async function bootstrapBookingPage() {
   }
 
   void Promise.all([
-    bookingStore.fetchBookingSettings().catch(() => null),
-    bookingStore.fetchAllNailOptions().catch(() => null),
     bookingStore.fetchMyBookings().catch(() => null),
     loadMyCoupons().catch(() => null),
     loadCouponSettings().catch(() => null),
-  ]).then(() => refreshBlocksAndEnsureSelection(true).catch(() => null))
+  ])
 }
 
 onUnmounted(() => {
@@ -1181,6 +1202,20 @@ onUnmounted(() => {
 
     <!-- ── BODY ── -->
     <main class="body">
+      <div
+        v-if="!canShowBookingSlots"
+        class="state-card empty-state"
+      >
+        <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">
+          {{ stripDays.length === 0
+            ? ui.get('ui_no_open_days', 'ไม่มีวันเปิดรับคิวในช่วงที่เปิดจอง')
+            : ui.get('ui_closed_day_error', 'ช่วงนี้ร้านปิดรับคิวทั้งวัน กรุณาเลือกวันอื่น') }}
+        </p>
+        <p v-if="stripDays.length > 0" class="muted">เลือกวันอื่นจากแถบด้านบนได้เลย</p>
+      </div>
+
+      <template v-else>
       <div class="date-heading">
         <span class="section-label">
           {{ selectedDateLabel }}<template v-if="requiredLocationLabel"> สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
@@ -1294,6 +1329,7 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
+      </template>
       </template>
     </main>
 

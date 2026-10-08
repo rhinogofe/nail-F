@@ -17,6 +17,7 @@ import {
   normalizeShopOpenHour,
 } from '../utils/bookingSlots'
 import defaultShopImage from '../assets/S__22888451.jpg'
+import { useMobileKeyboardViewport } from '../composables/useMobileKeyboardViewport'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,6 +52,13 @@ const shopOpenHour = ref(9)
 const shopLastBookingHour = ref(18)
 const bookingSlotHours = ref(2)
 const advanceDays = ref(30)
+
+const {
+  pageRef: registerPageRef,
+  keyboardOpen,
+  scrollFieldIntoView,
+  mountViewportBindings,
+} = useMobileKeyboardViewport()
 
 const uiFieldGroups = REGISTER_UI_FIELD_GROUPS
 const scheduleStep = 3 + uiFieldGroups.length + 1
@@ -546,6 +554,7 @@ watch(pageTitle, (title) => {
 onMounted(async () => {
   savedDocumentTitle = document.title
   document.title = pageTitle.value
+  await mountViewportBindings()
 
   try {
     const { data } = await api.get('/api/auth/register-shop/config')
@@ -576,7 +585,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="register-page app-page app-page--standalone">
+  <main
+    ref="registerPageRef"
+    class="register-page app-page app-page--standalone"
+    :class="{ 'register-page--keyboard': keyboardOpen }"
+  >
     <section class="card register-card">
       <div class="register-hero">
         <img :src="defaultShopImage" alt="" class="register-hero-img" />
@@ -595,7 +608,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="register-body">
+      <div class="register-body" @focusin="scrollFieldIntoView">
         <div class="register-progress-wrap">
           <div class="register-progress-track" aria-hidden="true">
             <div class="register-progress-fill" :style="{ width: `${progressPct}%` }"></div>
@@ -962,12 +975,23 @@ onUnmounted(() => {
 
 <style scoped>
 .register-page {
-  display: grid;
-  place-content: start center;
-  padding: var(--page-padding-x);
-  padding-top: var(--space-4);
-  padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
-  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  height: auto !important;
+  min-height: var(--page-vv-height, 100dvh);
+  max-height: var(--page-vv-height, none);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: max(var(--space-4), env(safe-area-inset-top, 0px)) var(--page-padding-x)
+    max(var(--space-8), env(safe-area-inset-bottom, 0px));
+  padding-bottom: max(
+    var(--space-8),
+    env(safe-area-inset-bottom, 0px),
+    var(--page-keyboard-gap, 0px)
+  );
   box-sizing: border-box;
 }
 
@@ -978,12 +1002,36 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   max-height: calc(
-    100dvh - var(--space-4) - var(--space-8) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+    var(--page-vv-height, 100dvh) - var(--space-4) - var(--space-8) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
   );
   overflow: hidden;
   border-radius: var(--radius-login);
   box-shadow: var(--shadow-card);
   border: 1px solid var(--color-border);
+}
+
+.register-page--keyboard .register-card {
+  max-height: none;
+  overflow: visible;
+}
+
+.register-page--keyboard .register-body {
+  overflow: visible;
+  flex: none;
+}
+
+.register-page--keyboard .register-hero {
+  aspect-ratio: auto;
+  height: 88px;
+  max-height: 88px;
+}
+
+.register-page--keyboard .register-hero-text h1 {
+  font-size: 1.25rem;
+}
+
+.register-page--keyboard .register-hero-text p {
+  display: none;
 }
 
 .register-hero {
