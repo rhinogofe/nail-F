@@ -5770,7 +5770,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         ใช้ LINE Messaging API — ตั้ง Webhook ที่ LINE เป็น
         <code>{{ lineWebhookUrlHint }}</code>
         <template v-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot">
-          แล้วให้ร้านทักบอทกลางพร้อม slug ร้านเพื่อผูกรับแจ้งเตือนอัตโนมัติ
+          แล้วให้ร้านทักบอทกลาง @570nnufq พร้อม slug ร้านเพื่อผูกรับแจ้งเตือนอัตโนมัติ
         </template>
         <template v-else>
           แล้วทักบอทของสาขานี้เพื่อผูก User/Group ID อัตโนมัติ (ไม่ต้องพิมพ์ slug)
