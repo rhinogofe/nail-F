@@ -185,11 +185,9 @@ async function loginWithPhone() {
   align-items: center;
   justify-content: flex-start;
   height: auto !important;
-  min-height: var(--page-vv-height, 100dvh);
-  max-height: var(--page-vv-height, none);
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-height: 100dvh;
+  max-height: none;
+  overflow: visible;
   padding: max(var(--space-4), env(safe-area-inset-top, 0px)) var(--page-padding-x)
     max(var(--space-6), env(safe-area-inset-bottom, 0px));
   padding-bottom: max(
@@ -201,27 +199,38 @@ async function loginWithPhone() {
   box-sizing: border-box;
 }
 
-.login-page--keyboard :deep(.login-hero-wrap) {
-  aspect-ratio: 2.4 / 1;
-  max-height: 100px;
+.login-page--keyboard :deep(.login-hero-wrap),
+.login-page--keyboard :deep(.login-divider),
+.login-page--keyboard :deep(.login-register-btn),
+.login-page--keyboard :deep(.login-privacy),
+.login-page--keyboard :deep(.login-hint) {
+  display: none;
 }
 
 .login-page--keyboard :deep(.brand-row) {
-  margin-top: calc(-1 * var(--space-5));
+  margin-top: 0;
 }
 
 .login-page--keyboard :deep(.brand-icon) {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
 }
 
 .login-page--keyboard :deep(.login-brand-title) {
-  font-size: 22px;
+  font-size: 20px;
+}
+
+.login-page--keyboard :deep(.login-tagline) {
+  display: none;
 }
 
 .login-page--keyboard :deep(.login-body) {
   padding-top: var(--space-3);
   gap: var(--space-3);
+}
+
+.login-page--keyboard :deep(.login-card) {
+  flex-shrink: 0;
 }
 
 .login-divider {

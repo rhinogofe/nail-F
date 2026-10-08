@@ -980,11 +980,9 @@ onUnmounted(() => {
   align-items: center;
   justify-content: flex-start;
   height: auto !important;
-  min-height: var(--page-vv-height, 100dvh);
-  max-height: var(--page-vv-height, none);
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-height: 100dvh;
+  max-height: none;
+  overflow: visible;
   padding: max(var(--space-4), env(safe-area-inset-top, 0px)) var(--page-padding-x)
     max(var(--space-8), env(safe-area-inset-bottom, 0px));
   padding-bottom: max(
@@ -1002,7 +1000,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   max-height: calc(
-    var(--page-vv-height, 100dvh) - var(--space-4) - var(--space-8) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+    100dvh - var(--space-4) - var(--space-8) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
   );
   overflow: hidden;
   border-radius: var(--radius-login);
@@ -1021,17 +1019,11 @@ onUnmounted(() => {
 }
 
 .register-page--keyboard .register-hero {
-  aspect-ratio: auto;
-  height: 88px;
-  max-height: 88px;
-}
-
-.register-page--keyboard .register-hero-text h1 {
-  font-size: 1.25rem;
-}
-
-.register-page--keyboard .register-hero-text p {
   display: none;
+}
+
+.register-page--keyboard .register-card {
+  flex-shrink: 0;
 }
 
 .register-hero {
