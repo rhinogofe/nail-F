@@ -594,10 +594,18 @@ function canBook(slot) {
   })
 }
 
+const selectedStaffDayClosed = computed(() => Boolean(bookingStore.dayClosedByDate[selectedDate.value]))
+
+const closedDayMessage = computed(() => {
+  if (hasStaff.value && selectedStaffId.value) return 'ช่างคนนี้ไม่รับคิววันนี้'
+  return 'วันนี้ร้านไม่รับคิว'
+})
+
 const visibleSlots = computed(() => {
   if (!canShowBookingSlots.value) return []
   // ถ้าร้านมีช่างแต่ยังไม่เลือก → ไม่แสดง slot
   if (hasStaff.value && !selectedStaffId.value) return []
+  if (selectedStaffDayClosed.value) return []
   return buildVisibleBookingSlots({
     ...slotBuildParams.value,
     dayWindows: dayHoursForDate.value,
@@ -718,6 +726,11 @@ async function ensureSlotStillAvailable(slot, optionIds = []) {
     refreshSlotData(),
     refreshDayHours(),
   ])
+
+  if (selectedStaffDayClosed.value) {
+    serviceError.value = closedDayMessage.value
+    return false
+  }
 
   if (shouldUseDynamicCustomDaySlots({
     dayWindows: dayHoursForDate.value,
@@ -1301,7 +1314,7 @@ onUnmounted(() => {
         </a>
       </div>
 
-      <p v-if="usesCustomDayHours" class="custom-hours-note">
+      <p v-if="usesCustomDayHours && !selectedStaffDayClosed" class="custom-hours-note">
         <i class="ti ti-clock" aria-hidden="true"></i>
         วันนี้เปิดรับตามเวลาที่ตั้งเฉพาะวัน
       </p>
@@ -1316,7 +1329,12 @@ onUnmounted(() => {
       </p>
 
       <!-- Slots -->
-      <div v-if="visibleSlots.length === 0" class="state-card empty-state">
+      <div v-if="selectedStaffDayClosed" class="state-card empty-state">
+        <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">{{ closedDayMessage }}</p>
+        <p class="muted">{{ hasStaff ? 'เลือกช่างคนอื่น หรือเลือกวันอื่นจากแถบด้านบน' : 'เลือกวันอื่นจากแถบด้านบนได้เลย' }}</p>
+      </div>
+      <div v-else-if="visibleSlots.length === 0" class="state-card empty-state">
         <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
         <p class="state-card-title">วันนี้ไม่มีช่วงเวลาเปิดรับคิว</p>
         <p class="muted">เลือกวันอื่นจากแถบด้านบนได้เลย</p>

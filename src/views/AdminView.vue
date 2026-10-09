@@ -433,6 +433,7 @@ const bookingRestoreStatus = ref('')
 const bookingRestoreConflictHint = ref('')
 const bookingEditExtraHours = ref([])
 const bookingEditDayHours = ref([])
+const bookingEditDayClosed = ref(false)
 const bookingEditSlotBookings = ref([])
 const bookingEditSlotBlocks = ref([])
 
@@ -451,6 +452,7 @@ const bookingAddSaving = ref(false)
 const bookingAddError = ref('')
 const bookingAddExtraHours = ref([])
 const bookingAddDayHours = ref([])
+const bookingAddDayClosed = ref(false)
 const bookingAddSlotBookings = ref([])
 const bookingAddSlotBlocks = ref([])
 const bookingAddCategories = ref([])
@@ -509,6 +511,7 @@ const bookingAddBookingsForSlot = computed(() => {
 })
 
 const bookingAddHourOptions = computed(() => {
+  if (bookingAddDayClosed.value) return []
   if (bookingAddHasStaff.value && !bookingAddStaffId.value) return []
   return buildBookingSlotSelectOptions({
     openHour: shopOpenHour.value,
@@ -580,6 +583,7 @@ const bookingEditBookingsForSlot = computed(() => {
 })
 
 const bookingEditHourOptions = computed(() => {
+  if (bookingEditDayClosed.value) return []
   const sameDay = bookingEditDate.value === bookingEditOriginalDate.value
   return buildBookingSlotSelectOptions({
     openHour: shopOpenHour.value,
@@ -1057,6 +1061,8 @@ const dayHoursMonth = ref(todayYm())
 const dayHoursStaffId = ref('')
 const selectedDayHoursDate = ref('')
 const dayHoursMonthList = ref([])
+const dayClosuresMonthList = ref([])
+const dayClosureSaving = ref(false)
 const dayHoursForSelectedDate = ref([])
 const dayHourFormOpen = ref(false)
 const dayHourEditingId = ref(null)
@@ -1687,7 +1693,24 @@ const dayHoursStaffList = computed(() =>
   (adminStaffList.value || []).filter((staff) => staff.is_active !== false)
 )
 
+function closureOnDate(iso, { staffOnly = false, shopOnly = false } = {}) {
+  return dayClosuresMonthList.value.some((item) => {
+    if (formatDateKey(item.schedule_date) !== iso) return false
+    if (shopOnly) return !item.staff_id
+    if (staffOnly) return item.staff_id === dayHoursStaffId.value
+    return !item.staff_id || item.staff_id === dayHoursStaffId.value
+  })
+}
+
+const selectedDayShopClosed = computed(() => closureOnDate(selectedDayHoursDate.value, { shopOnly: true }))
+const selectedDayStaffClosed = computed(() => (
+  Boolean(dayHoursStaffId.value) && closureOnDate(selectedDayHoursDate.value, { staffOnly: true })
+))
+const selectedDayClosed = computed(() => selectedDayShopClosed.value || selectedDayStaffClosed.value)
+
 const dayHoursEmptyHint = computed(() => {
+  if (selectedDayShopClosed.value) return 'วันนี้ทั้งร้านไม่รับคิว'
+  if (selectedDayStaffClosed.value) return 'ช่างคนนี้ไม่รับคิววันนี้'
   if (!dayHoursStaffId.value) return 'วันนี้ใช้เวลาเปิด-ปิดปกติ'
   const name = dayHoursStaffList.value.find((staff) => staff.id === dayHoursStaffId.value)?.name
   return name
@@ -1705,6 +1728,10 @@ function dayHoursDayHasEntries(iso) {
   return dayHoursMonthList.value.some((item) => formatDateKey(item.schedule_date) === iso)
 }
 
+function dayHoursDayClosed(iso) {
+  return closureOnDate(iso)
+}
+
 function dayHoursDayCount(iso) {
   return dayHoursMonthList.value.filter((item) => formatDateKey(item.schedule_date) === iso).length
 }
@@ -1712,12 +1739,49 @@ function dayHoursDayCount(iso) {
 async function loadDayHoursMonth() {
   try {
     if (!adminStaffList.value.length) await loadAdminStaff()
-    const { data } = await api.get('/api/admin/day-hours', {
-      params: dayHoursRequestParams({ month: dayHoursMonth.value }),
-    })
-    dayHoursMonthList.value = data || []
+    const params = dayHoursRequestParams({ month: dayHoursMonth.value })
+    const [hoursRes, closedRes] = await Promise.all([
+      api.get('/api/admin/day-hours', { params }),
+      api.get('/api/admin/day-closures', { params }),
+    ])
+    dayHoursMonthList.value = hoursRes.data || []
+    dayClosuresMonthList.value = closedRes.data || []
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดปฏิทินเวลาจองไม่สำเร็จ'
+  }
+}
+
+async function toggleSelectedDayClosure() {
+  if (!selectedDayHoursDate.value || dayClosureSaving.value) return
+  if (dayHoursStaffId.value && selectedDayShopClosed.value && !selectedDayStaffClosed.value) return
+  const closing = !selectedDayClosed.value
+  const who = dayHoursStaffId.value ? 'ช่างคนนี้' : 'ทั้งร้าน'
+  const ok = await adminSwal.fire({
+    title: closing ? `ปิดไม่รับคิว${who}?` : `เปิดรับคิว${who}อีกครั้ง?`,
+    text: closing
+      ? 'วันนี้จะไม่ให้จอง ช่วงเวลาที่ตั้งไว้ยังอยู่ พอเปิดรับอีกครั้งจะกลับมาใช้ได้'
+      : 'วันนี้จะเปิดรับคิวตามช่วงเวลาที่ตั้งไว้',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: closing ? 'ปิดไม่รับคิว' : 'เปิดรับคิว',
+    cancelButtonText: 'ยกเลิก',
+  })
+  if (!ok.isConfirmed) return
+  dayClosureSaving.value = true
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.post('/api/admin/day-closures', {
+      schedule_date: selectedDayHoursDate.value,
+      closed: closing,
+      ...dayHoursRequestParams(),
+    })
+    message.value = closing ? `ปิดไม่รับคิว${who}แล้ว` : `เปิดรับคิว${who}แล้ว`
+    await loadDayHoursMonth()
+  } catch (err) {
+    errorMessage.value = err?.response?.data?.error || 'บันทึกสถานะรับคิวไม่สำเร็จ'
+  } finally {
+    dayClosureSaving.value = false
   }
 }
 
@@ -3594,18 +3658,19 @@ async function loadBookingEditDayData(date, { preserveForm = false } = {}) {
     bookingEditError.value = ''
   }
   try {
-    const [optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
+    const editDayParams = bookingEditItem.value?.staff_id
+      ? { date, staff_id: bookingEditItem.value.staff_id }
+      : { date }
+    const [optionsRes, extraRes, dayHoursRes, dayRes, closedRes] = await Promise.all([
       api.get('/api/bookings/options', { params: { date } }),
       api.get('/api/bookings/extra-hours', { params: { from: date, to: date } }),
-      api.get('/api/bookings/day-hours', {
-        params: bookingEditItem.value?.staff_id
-          ? { date, staff_id: bookingEditItem.value.staff_id }
-          : { date },
-      }),
+      api.get('/api/bookings/day-hours', { params: editDayParams }),
       api.get('/api/bookings', { params: { date } }),
+      api.get('/api/bookings/day-closure', { params: editDayParams }),
     ])
     bookingEditExtraHours.value = extraRes.data || []
     bookingEditDayHours.value = dayHoursRes.data || []
+    bookingEditDayClosed.value = Boolean(closedRes.data?.closed)
     bookingEditSlotBookings.value = dayRes.data?.bookings || []
     bookingEditSlotBlocks.value = dayRes.data?.blocks || []
     const normalized = normalizeBookingOptionsResponse(optionsRes.data)
@@ -3655,6 +3720,7 @@ async function editBooking(item) {
   bookingEditMoveToSlotKey.value = ''
   bookingEditExtraHours.value = []
   bookingEditDayHours.value = []
+  bookingEditDayClosed.value = false
   bookingEditSlotBookings.value = []
   bookingEditSlotBlocks.value = []
   bookingEditSelectedIds.value = (item.nail_options || []).map((o) => String(o.id))
@@ -3976,14 +4042,14 @@ async function loadBookingAddDayData({ preserveForm = false } = {}) {
   if (!preserveForm) bookingAddLoading.value = true
   try {
     const date = selectedBookingDate.value
-    const [hoursRes, optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
+    const addDayParams = bookingAddStaffId.value ? { date, staff_id: bookingAddStaffId.value } : { date }
+    const [hoursRes, optionsRes, extraRes, dayHoursRes, dayRes, closedRes] = await Promise.all([
       api.get('/api/bookings/shop-hours'),
       api.get('/api/bookings/options', { params: { date } }),
       api.get('/api/bookings/extra-hours', { params: { from: date, to: date } }),
-      api.get('/api/bookings/day-hours', {
-        params: bookingAddStaffId.value ? { date, staff_id: bookingAddStaffId.value } : { date },
-      }),
+      api.get('/api/bookings/day-hours', { params: addDayParams }),
       api.get('/api/bookings', { params: { date } }),
+      api.get('/api/bookings/day-closure', { params: addDayParams }),
     ])
     shopOpenHour.value = normalizeShopOpenHour(hoursRes.data?.open_hour)
     shopLastBookingHour.value = normalizeShopLastBookingHour(
@@ -3993,6 +4059,7 @@ async function loadBookingAddDayData({ preserveForm = false } = {}) {
     )
     bookingAddExtraHours.value = extraRes.data || []
     bookingAddDayHours.value = dayHoursRes.data || []
+    bookingAddDayClosed.value = Boolean(closedRes.data?.closed)
     bookingAddSlotBookings.value = dayRes.data?.bookings || []
     bookingAddSlotBlocks.value = dayRes.data?.blocks || []
     const hourOpts = bookingAddHourOptions.value
@@ -4040,6 +4107,7 @@ async function openBookingAdd() {
   bookingAddSelectedCategoryId.value = ''
   bookingAddExtraHours.value = []
   bookingAddDayHours.value = []
+  bookingAddDayClosed.value = false
   bookingAddSlotBookings.value = []
   bookingAddSlotBlocks.value = []
   bookingAddError.value = ''
@@ -6855,13 +6923,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                       :class="{
                         empty: !cell,
                         today: cell?.isToday,
-                        'has-hours': cell && dayHoursDayHasEntries(cell.iso),
+                        'has-hours': cell && dayHoursDayHasEntries(cell.iso) && !dayHoursDayClosed(cell.iso),
+                        'is-closed': cell && dayHoursDayClosed(cell.iso),
                       }"
                       :disabled="!cell"
                       @click="cell && openDayHoursDate(cell.iso)"
                     >
                       <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
-                      <span v-if="cell && dayHoursDayCount(cell.iso)" class="day-hours-cal-badge">{{ dayHoursDayCount(cell.iso) }}</span>
+                      <span v-if="cell && dayHoursDayClosed(cell.iso)" class="day-hours-cal-badge closed">ปิด</span>
+                      <span v-else-if="cell && dayHoursDayCount(cell.iso)" class="day-hours-cal-badge">{{ dayHoursDayCount(cell.iso) }}</span>
                     </button>
                   </div>
                 </div>
@@ -6880,7 +6950,17 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   </div>
                 </div>
 
-                <div v-if="dayHoursForSelectedDate.length === 0" class="state-card">
+                <div v-if="selectedDayShopClosed && dayHoursStaffId" class="state-card">
+                  <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+                  <p class="state-card-title">ทั้งร้านปิดไม่รับคิววันนี้</p>
+                  <p class="muted">สลับไปที่ทั้งร้าน แล้วกดเปิดรับคิว ถ้าต้องการให้วันนี้รับคิวอีกครั้ง</p>
+                </div>
+                <div v-else-if="selectedDayClosed" class="state-card">
+                  <i class="ti ti-calendar-off state-card-icon" aria-hidden="true"></i>
+                  <p class="state-card-title">{{ dayHoursStaffId ? 'ช่างคนนี้ไม่รับคิววันนี้' : 'ทั้งร้านไม่รับคิววันนี้' }}</p>
+                  <p class="muted">ช่วงเวลาที่ตั้งไว้ยังอยู่ พอกดเปิดรับคิวจะกลับมาใช้ได้</p>
+                </div>
+                <div v-else-if="dayHoursForSelectedDate.length === 0" class="state-card">
                   <i class="ti ti-clock state-card-icon" aria-hidden="true"></i>
                   <p class="state-card-title">ยังไม่ตั้งเวลาเฉพาะวัน</p>
                   <p class="muted">{{ dayHoursEmptyHint }}</p>
@@ -6941,6 +7021,17 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
                 <div v-if="!dayHourFormOpen || dayHourEditingId" class="day-hour-actions">
                   <button
+                    v-if="!dayHoursStaffId || !selectedDayShopClosed"
+                    type="button"
+                    class="btn danger day-hour-add-btn"
+                    :disabled="dayClosureSaving"
+                    @click="toggleSelectedDayClosure"
+                  >
+                    <i class="ti ti-calendar-off" aria-hidden="true"></i>
+                    {{ dayClosureSaving ? 'กำลังบันทึก...' : (selectedDayClosed ? 'เปิดรับคิวอีกครั้ง' : 'ปิดไม่รับคิววันนี้') }}
+                  </button>
+                  <button
+                    v-if="!selectedDayClosed"
                     type="button"
                     class="btn primary day-hour-add-btn"
                     :disabled="dayHourGenerating"
@@ -6950,7 +7041,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     {{ dayHourGenerating ? 'กำลังสร้าง...' : 'เพิ่มเวลาทั้งวัน' }}
                   </button>
                   <button
-                    v-if="dayHourCanAddMore"
+                    v-if="dayHourCanAddMore && !selectedDayClosed"
                     type="button"
                     class="btn primary day-hour-add-btn day-hour-add-btn-secondary"
                     @click="openDayHourForm"
@@ -7947,6 +8038,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               @change="bookingAddError = ''"
             >
               <option v-if="bookingAddHasStaff && !bookingAddStaffId" value="" disabled>เลือกช่างก่อน</option>
+              <option v-else-if="bookingAddDayClosed" value="" disabled>วันนี้ไม่รับคิว</option>
               <option v-else-if="!bookingAddHourOptions.length" value="" disabled>ไม่มีช่วงเวลาว่าง</option>
               <option v-for="opt in bookingAddHourOptions" :key="opt.key" :value="opt.key">
                 {{ opt.label }}
@@ -8158,7 +8250,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               @change="bookingEditError = ''"
             >
               <option value="">{{ isBookingRestoreMode ? '— เลือกเวลาว่าง —' : '— คงเวลาเดิม —' }}</option>
-              <option v-if="!bookingEditHourOptions.length" value="" disabled>
+              <option v-if="bookingEditDayClosed" value="" disabled>วันนี้ไม่รับคิว</option>
+              <option v-else-if="!bookingEditHourOptions.length" value="" disabled>
                 {{ isBookingRestoreMode ? 'วันนี้ไม่มีช่วงว่าง' : 'ไม่มีช่วงว่างอื่น' }}
               </option>
               <option v-for="opt in bookingEditHourOptions" :key="opt.key" :value="opt.key">
@@ -9406,12 +9499,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   background: var(--color-primary-light);
 }
 
+.day-hours-cal-day.is-closed {
+  background: color-mix(in srgb, var(--color-danger, #b42318) 10%, var(--color-surface-elevated));
+  border-color: color-mix(in srgb, var(--color-danger, #b42318) 35%, var(--color-border));
+}
+
 .day-hours-cal-badge {
   display: block;
   margin-top: 2px;
   font-size: 11px;
   font-weight: 700;
   color: var(--color-primary-dark);
+}
+
+.day-hours-cal-badge.closed {
+  color: var(--color-danger, #b42318);
 }
 
 .day-hour-form {

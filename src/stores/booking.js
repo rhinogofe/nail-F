@@ -30,6 +30,7 @@ export const useBookingStore = defineStore('booking', {
     blocksByDate: {},
     extraHoursByDate: {},
     dayHoursByDate: {},
+    dayClosedByDate: {},
     nailOptions: [],
     allNailOptions: [],
     serviceCategories: [],
@@ -99,7 +100,11 @@ export const useBookingStore = defineStore('booking', {
       try {
         const params = { date }
         if (staffId) params.staff_id = staffId
-        const { data } = await api.get('/api/bookings/day-hours', { params })
+        const [hoursRes, closedRes] = await Promise.all([
+          api.get('/api/bookings/day-hours', { params }),
+          api.get('/api/bookings/day-closure', { params }),
+        ])
+        const data = hoursRes.data
         const rows = (data || []).map((row) => ({
           ...row,
           start_hour: Number(row.start_hour),
@@ -108,9 +113,11 @@ export const useBookingStore = defineStore('booking', {
           end_minute: Number(row.end_minute ?? 0),
         }))
         this.dayHoursByDate = { ...this.dayHoursByDate, [date]: rows }
+        this.dayClosedByDate = { ...this.dayClosedByDate, [date]: Boolean(closedRes.data?.closed) }
         return rows
       } catch {
         this.dayHoursByDate = { ...this.dayHoursByDate, [date]: [] }
+        this.dayClosedByDate = { ...this.dayClosedByDate, [date]: false }
         return []
       }
     },
