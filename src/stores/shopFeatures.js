@@ -32,6 +32,7 @@ const FALLBACK_FEATURES = {
   feat_coupon_points: true,
   feat_extend_booking: true,
   feat_outside_push: true,
+  feat_staff: true,
 }
 
 export const useShopFeaturesStore = defineStore('shopFeatures', {
@@ -45,6 +46,7 @@ export const useShopFeaturesStore = defineStore('shopFeatures', {
     navChat: (state) => state.features.nav_chat !== false,
     navLocation: (state) => state.features.nav_location !== false,
     outsidePush: (state) => state.features.feat_outside_push !== false,
+    staffEnabled: (state) => state.features.feat_staff !== false,
     tabEnabled: (state) => (tabKey) => {
       const map = {
         bookings: 'tab_bookings',

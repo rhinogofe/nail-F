@@ -34,6 +34,7 @@ import { useUnpaidCountdown } from '../composables/useUnpaidCountdown'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useShopRealtime } from '../composables/useShopRealtime'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { useShopFeaturesStore } from '../stores/shopFeatures'
 import { formatUiText } from '../utils/formatUiText'
 import BrandMark from '../components/BrandMark.vue'
 import {
@@ -47,6 +48,7 @@ const router = useRouter()
 const route = useRoute()
 const { shopPath, shopSlug } = useShopRoute()
 const ui = useUiSettingsStore()
+const shopFeatures = useShopFeaturesStore()
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
 const unpaidCountdown = useUnpaidCountdown(() => ({
@@ -71,7 +73,7 @@ const selectedCategoryId = ref('')
 // ─── Staff ───────────────────────────────────────────────────────────────────
 const selectedStaffId = ref(null)
 const staffList = computed(() => bookingStore.staff || [])
-const hasStaff = computed(() => staffList.value.length > 0)
+const hasStaff = computed(() => shopFeatures.staffEnabled && staffList.value.length > 0)
 
 // bookings ที่กรองตามช่าง → ใช้คำนวณ slot availability
 const bookingsForSlot = computed(() => {

@@ -499,7 +499,7 @@ const bookingAddDate = computed(() => selectedBookingDate.value || '')
 const bookingAddStaffList = computed(() =>
   (adminStaffList.value || []).filter((staff) => staff.is_active !== false)
 )
-const bookingAddHasStaff = computed(() => bookingAddStaffList.value.length > 0)
+const bookingAddHasStaff = computed(() => shopFeaturesStore.staffEnabled && bookingAddStaffList.value.length > 0)
 const bookingAddStaffOptionIds = computed(() => {
   if (!bookingAddHasStaff.value || !bookingAddStaffId.value) return null
   const staff = bookingAddStaffList.value.find((item) => item.id === bookingAddStaffId.value)
@@ -722,6 +722,7 @@ const visibleAdminTabs = computed(() =>
     }
     if (tab.key === 'renewal' && !showRenewalTab.value) return false
     if (tab.key === 'features') return isSuperAdmin.value && shopSlug.value === 'default'
+    if (tab.key === 'staff' && !shopFeaturesStore.staffEnabled) return false
     return shopFeaturesStore.tabEnabled(tab.key)
   })
 )
@@ -4967,6 +4968,22 @@ async function shareShopLink() {
   }
 }
 
+watch(() => shopFeaturesStore.staffEnabled, (enabled) => {
+  if (enabled) return
+  const hadQueueFilter = Boolean(bookingQueueStaffId.value)
+  const hadRevenueFilter = Boolean(revenueStaffId.value)
+  bookingQueueStaffId.value = ''
+  revenueStaffId.value = ''
+  dayHoursStaffId.value = ''
+  bookingAddStaffId.value = ''
+  if (hadQueueFilter) onBookingQueueStaffChange()
+  if (hadRevenueFilter && activeTab.value === 'revenue') loadRevenueSummary()
+  if (activeBlocksSection.value === 'day-hours') {
+    loadDayHoursMonth()
+    if (selectedDayHoursDate.value) loadDayHoursForDate(selectedDayHoursDate.value)
+  }
+})
+
 watch(visibleAdminTabs, (tabs) => {
   if (!tabs.some((t) => t.key === activeTab.value)) {
     activeTab.value = tabs[0]?.key || 'bookings'
@@ -5148,7 +5165,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </div>
 
     <section v-show="activeTab === 'bookings'" class="admin-section">
-      <label v-if="adminStaffList.length" class="admin-label-grow queue-staff-filter">
+      <label v-if="shopFeaturesStore.staffEnabled && adminStaffList.length" class="admin-label-grow queue-staff-filter">
         ดูคิวของ
         <select v-model="bookingQueueStaffId" class="admin-input" @change="onBookingQueueStaffChange">
           <option value="">ทั้งร้าน</option>
@@ -5381,7 +5398,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <p class="muted">ยอดมัดจำและยอดบริการตามวันในเดือนที่เลือก</p>
       </div>
 
-      <label v-if="adminStaffList.length" class="admin-label-grow queue-staff-filter">
+      <label v-if="shopFeaturesStore.staffEnabled && adminStaffList.length" class="admin-label-grow queue-staff-filter">
         ดูยอดของ
         <select v-model="revenueStaffId" class="admin-input" @change="loadRevenueSummary">
           <option value="">ทั้งร้าน</option>
@@ -6910,7 +6927,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
 
             <div v-show="activeBlocksSection === 'day-hours'" id="blocks-day-hours" class="admin-settings-section">
-              <label v-if="dayHoursStaffList.length" class="admin-label-grow" style="display:block;max-width:280px;margin-bottom:12px">
+              <label v-if="shopFeaturesStore.staffEnabled && dayHoursStaffList.length" class="admin-label-grow" style="display:block;max-width:280px;margin-bottom:12px">
                 ตั้งเวลาให้
                 <select v-model="dayHoursStaffId" class="admin-input" @change="onDayHoursStaffChange">
                   <option value="">ทั้งร้าน</option>
@@ -6922,7 +6939,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               <template v-if="!selectedDayHoursDate">
                 <div class="admin-section-head">
                   <h3>เวลาเปิด-ปิดเฉพาะวัน</h3>
-                  <p v-if="dayHoursStaffList.length" class="muted">
+                  <p v-if="shopFeaturesStore.staffEnabled && dayHoursStaffList.length" class="muted">
                     เลือกทั้งร้านหรือช่าง แล้วกดวันในปฏิทิน · ช่างที่ยังไม่ตั้งเวลาเองจะใช้เวลาของทั้งร้าน ·
                     วันที่ไม่ตั้งจะใช้แท็บ <strong>เวลาเปิด-ปิดปกติ</strong>
                   </p>
