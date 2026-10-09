@@ -174,6 +174,8 @@ const date = ref(todayYmd())
 const status = ref('')
 const bookings = ref([])
 const bookingMonth = ref(todayYm())
+const bookingQueueStaffId = ref('')
+const revenueStaffId = ref('')
 const selectedBookingDate = ref('')
 const bookingDaySummary = ref({})
 const bookingMonthPaidTotal = ref(0)
@@ -1246,6 +1248,9 @@ function resetAdminShopLocalState() {
   showcaseClips.value = []
   blocks.value = []
   extraHours.value = []
+  bookingQueueStaffId.value = ''
+  revenueStaffId.value = ''
+  adminStaffList.value = []
   bookingDaySummary.value = {}
   bookingMonthPaidTotal.value = 0
   bookingMonthUnpaidTotal.value = 0
@@ -2395,6 +2400,9 @@ function switchTab(tab) {
   activeTab.value = tab
   message.value = ''
   errorMessage.value = ''
+  if (tab === 'bookings' || tab === 'revenue') {
+    if (!adminStaffList.value.length) loadAdminStaff()
+  }
   if (tab === 'revenue') loadRevenueSummary()
   if (tab === 'reviews') loadShowcaseClips()
   if (tab === 'users' && !usersLoaded.value) loadUsers({ reset: true })
@@ -2448,11 +2456,16 @@ function shiftBookingMonth(delta) {
   loadBookingCalendarSummary()
 }
 
+function onBookingQueueStaffChange() {
+  loadBookingCalendarSummary()
+  if (selectedBookingDate.value) loadBookings()
+}
+
 async function loadBookingCalendarSummary() {
   try {
-    const { data } = await api.get('/api/admin/bookings/calendar-summary', {
-      params: { month: bookingMonth.value },
-    })
+    const params = { month: bookingMonth.value }
+    if (bookingQueueStaffId.value) params.staff_id = bookingQueueStaffId.value
+    const { data } = await api.get('/api/admin/bookings/calendar-summary', { params })
     const map = {}
     for (const row of data?.days || data || []) map[row.date] = row
     bookingDaySummary.value = map
@@ -2630,9 +2643,9 @@ const revenueTotalChange = computed(() =>
 async function loadRevenueSummary() {
   revenueLoading.value = true
   try {
-    const { data } = await api.get('/api/admin/revenue/summary', {
-      params: { month: revenueMonth.value },
-    })
+    const params = { month: revenueMonth.value }
+    if (revenueStaffId.value) params.staff_id = revenueStaffId.value
+    const { data } = await api.get('/api/admin/revenue/summary', { params })
     const map = {}
     for (const row of data?.days || []) map[row.date] = row
     revenueDaySummary.value = map
@@ -2747,6 +2760,7 @@ async function loadBookings({ silent = false } = {}) {
     const params = {}
     if (date.value) params.date = date.value
     if (status.value) params.status = status.value
+    if (bookingQueueStaffId.value) params.staff_id = bookingQueueStaffId.value
     const { data } = await api.get('/api/admin/bookings', { params })
     bookings.value = data
   } catch (error) {
@@ -5134,6 +5148,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </div>
 
     <section v-show="activeTab === 'bookings'" class="admin-section">
+      <label v-if="adminStaffList.length" class="admin-label-grow queue-staff-filter">
+        ดูคิวของ
+        <select v-model="bookingQueueStaffId" class="admin-input" @change="onBookingQueueStaffChange">
+          <option value="">ทั้งร้าน</option>
+          <option v-for="staff in adminStaffList" :key="staff.id" :value="staff.id">
+            {{ staff.name }}{{ staff.is_active === false ? ' (ปิดรับคิว)' : '' }}
+          </option>
+        </select>
+      </label>
       <template v-if="!selectedBookingDate">
         <div class="admin-section-head">
           <h3>จัดการคิวตามวัน</h3>
@@ -5357,6 +5380,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <h3>สรุปยอดรายเดือน</h3>
         <p class="muted">ยอดมัดจำและยอดบริการตามวันในเดือนที่เลือก</p>
       </div>
+
+      <label v-if="adminStaffList.length" class="admin-label-grow queue-staff-filter">
+        ดูยอดของ
+        <select v-model="revenueStaffId" class="admin-input" @change="loadRevenueSummary">
+          <option value="">ทั้งร้าน</option>
+          <option v-for="staff in adminStaffList" :key="`rev-${staff.id}`" :value="staff.id">
+            {{ staff.name }}{{ staff.is_active === false ? ' (ปิดรับคิว)' : '' }}
+          </option>
+        </select>
+      </label>
 
       <div class="service-cal-nav">
         <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(-1)" aria-label="เดือนก่อน">
@@ -9514,6 +9547,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .day-hours-cal-badge.closed {
   color: var(--color-danger, #b42318);
+}
+
+.queue-staff-filter {
+  display: block;
+  max-width: 280px;
+  margin-bottom: 14px;
 }
 
 .day-hour-form {
