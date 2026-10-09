@@ -87,10 +87,17 @@ const staffFilteredOptionIds = computed(() => {
   return s ? new Set(s.nailoption_ids) : null
 })
 
+function refreshDayHours() {
+  const staffId = hasStaff.value ? selectedStaffId.value || undefined : undefined
+  return bookingStore.fetchDayHoursForDate(selectedDate.value, staffId)
+}
+
 function selectStaff(staffId) {
-  selectedStaffId.value = selectedStaffId.value === staffId ? staffId : staffId
+  if (selectedStaffId.value === staffId) return
+  selectedStaffId.value = staffId
   selectedOptionIds.value = []
   selectedCategoryId.value = ''
+  refreshDayHours().catch(() => null)
 }
 // ─────────────────────────────────────────────────────────────────────────────
 const serviceError = ref('')
@@ -611,7 +618,7 @@ async function loadDate() {
     await Promise.all([
       bookingStore.fetchByDate(selectedDate.value),
       bookingStore.fetchNailOptions(selectedDate.value).catch(() => []),
-      bookingStore.fetchDayHoursForDate(selectedDate.value),
+      refreshDayHours(),
     ])
     if (isClosedDay(beforeDate)) {
       await refreshBlocksAndEnsureSelection(true)
@@ -692,7 +699,7 @@ async function pollCurrentDate() {
       refreshSlotData(),
       bookingStore.fetchNailOptions(selectedDate.value).catch(() => null),
       bookingStore.fetchAllNailOptions().catch(() => null),
-      bookingStore.fetchDayHoursForDate(selectedDate.value),
+      refreshDayHours(),
       refreshBlocksAndEnsureSelection(false),
     ])
   }
@@ -709,7 +716,7 @@ useShopRealtime({
 async function ensureSlotStillAvailable(slot, optionIds = []) {
   await Promise.all([
     refreshSlotData(),
-    bookingStore.fetchDayHoursForDate(selectedDate.value),
+    refreshDayHours(),
   ])
 
   if (shouldUseDynamicCustomDaySlots({

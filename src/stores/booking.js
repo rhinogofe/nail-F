@@ -94,10 +94,12 @@ export const useBookingStore = defineStore('booking', {
       }
       return data
     },
-    async fetchDayHoursForDate(date) {
+    async fetchDayHoursForDate(date, staffId) {
       if (!date) return []
       try {
-        const { data } = await api.get('/api/bookings/day-hours', { params: { date } })
+        const params = { date }
+        if (staffId) params.staff_id = staffId
+        const { data } = await api.get('/api/bookings/day-hours', { params })
         const rows = (data || []).map((row) => ({
           ...row,
           start_hour: Number(row.start_hour),

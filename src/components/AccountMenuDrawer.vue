@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useShopRoute } from '../composables/useShopRoute'
 import { useUiSettingsStore } from '../stores/uiSettings'
+import { useShopFeaturesStore } from '../stores/shopFeatures'
 import PushNotificationToggle from './PushNotificationToggle.vue'
 import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock'
 
@@ -11,6 +12,7 @@ const auth = useAuthStore()
 const router = useRouter()
 const { shopPath } = useShopRoute()
 const ui = useUiSettingsStore()
+const shopFeatures = useShopFeaturesStore()
 
 const menuOpen = ref(false)
 
@@ -130,7 +132,7 @@ defineExpose({
           </button>
         </div>
 
-        <div v-if="auth.isLoggedIn" class="account-menu-push">
+        <div v-if="auth.isLoggedIn && shopFeatures.outsidePush" class="account-menu-push">
           <PushNotificationToggle />
         </div>
 

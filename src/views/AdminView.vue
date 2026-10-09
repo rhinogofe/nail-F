@@ -55,6 +55,7 @@ const {
 } = usePushNotifications()
 
 const showPushOffBanner = computed(() => {
+  if (!shopFeaturesStore.outsidePush) return false
   if (pushEnabled.value) return false
   if (pushConfigured.value) return true
   // iOS Safari (ยังไม่ Add to Home) รายงาน supported=false แต่ยังควรเตือนให้ตั้งค่า
@@ -284,6 +285,7 @@ const staffEditTarget = ref(null) // null = add, object = edit
 const staffFormName = ref('')
 const staffFormOptionIds = ref([])
 const staffFormActive = ref(true)
+const staffFormError = ref('')
 const staffSaving = ref(false)
 const staffDeleteConfirm = ref(null)
 
@@ -301,11 +303,20 @@ function openStaffForm(target = null) {
   staffFormName.value = target ? target.name : ''
   staffFormOptionIds.value = target ? [...(target.nailoptions?.map(o => o.id) || [])] : []
   staffFormActive.value = target ? target.is_active : true
+  staffFormError.value = ''
   staffFormVisible.value = true
 }
 function closeStaffForm() { staffFormVisible.value = false; staffEditTarget.value = null }
 async function saveStaffForm() {
-  if (!staffFormName.value.trim()) return
+  staffFormError.value = ''
+  if (!staffFormName.value.trim()) {
+    staffFormError.value = 'กรุณาระบุชื่อช่าง'
+    return
+  }
+  if (!staffFormOptionIds.value.length) {
+    staffFormError.value = 'กรุณาเลือกบริการอย่างน้อย 1 รายการ'
+    return
+  }
   staffSaving.value = true
   try {
     const payload = { name: staffFormName.value.trim(), nailoption_ids: staffFormOptionIds.value, is_active: staffFormActive.value }
@@ -341,6 +352,7 @@ async function deleteStaff(staffItem) {
   }
 }
 function toggleStaffOptionId(id) {
+  staffFormError.value = ''
   const idx = staffFormOptionIds.value.indexOf(id)
   if (idx >= 0) staffFormOptionIds.value.splice(idx, 1)
   else staffFormOptionIds.value.push(id)
@@ -560,6 +572,13 @@ const bookingEditCategoryOptions = computed(() => {
   return optionsForCategory(bookable, bookingEditSelectedCategoryId.value)
 })
 
+const bookingEditBookingsForSlot = computed(() => {
+  const rows = bookingEditSlotBookings.value || []
+  const staffId = bookingEditItem.value?.staff_id
+  if (!staffId) return rows
+  return rows.filter((row) => row.staff_id === staffId)
+})
+
 const bookingEditHourOptions = computed(() => {
   const sameDay = bookingEditDate.value === bookingEditOriginalDate.value
   return buildBookingSlotSelectOptions({
@@ -568,7 +587,7 @@ const bookingEditHourOptions = computed(() => {
     extras: bookingEditExtraHours.value,
     dayWindows: bookingEditDayHours.value,
     blocks: bookingEditSlotBlocks.value,
-    bookings: bookingEditSlotBookings.value,
+    bookings: bookingEditBookingsForSlot.value,
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
     extendByServices: extendBookingByServices.value,
@@ -1035,6 +1054,7 @@ const hourOptions = Array.from({ length: 24 }, (_, i) => i)
 const minuteOptions = Array.from({ length: 60 }, (_, i) => i)
 
 const dayHoursMonth = ref(todayYm())
+const dayHoursStaffId = ref('')
 const selectedDayHoursDate = ref('')
 const dayHoursMonthList = ref([])
 const dayHoursForSelectedDate = ref([])
@@ -1663,6 +1683,24 @@ function clampDayHourEndAfterStart() {
   }
 }
 
+const dayHoursStaffList = computed(() =>
+  (adminStaffList.value || []).filter((staff) => staff.is_active !== false)
+)
+
+const dayHoursEmptyHint = computed(() => {
+  if (!dayHoursStaffId.value) return 'วันนี้ใช้เวลาเปิด-ปิดปกติ'
+  const name = dayHoursStaffList.value.find((staff) => staff.id === dayHoursStaffId.value)?.name
+  return name
+    ? `วันนี้ยังใช้เวลาของทั้งร้าน จนกว่าจะตั้งเวลาของ${name}`
+    : 'วันนี้ยังใช้เวลาของทั้งร้าน'
+})
+
+function dayHoursRequestParams(extra = {}) {
+  const params = { ...extra }
+  if (dayHoursStaffId.value) params.staff_id = dayHoursStaffId.value
+  return params
+}
+
 function dayHoursDayHasEntries(iso) {
   return dayHoursMonthList.value.some((item) => formatDateKey(item.schedule_date) === iso)
 }
@@ -1673,17 +1711,28 @@ function dayHoursDayCount(iso) {
 
 async function loadDayHoursMonth() {
   try {
-    const { data } = await api.get('/api/admin/day-hours', { params: { month: dayHoursMonth.value } })
+    if (!adminStaffList.value.length) await loadAdminStaff()
+    const { data } = await api.get('/api/admin/day-hours', {
+      params: dayHoursRequestParams({ month: dayHoursMonth.value }),
+    })
     dayHoursMonthList.value = data || []
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดปฏิทินเวลาจองไม่สำเร็จ'
   }
 }
 
+async function onDayHoursStaffChange() {
+  closeDayHourForm()
+  await loadDayHoursMonth()
+  if (selectedDayHoursDate.value) await loadDayHoursForDate(selectedDayHoursDate.value)
+}
+
 async function loadDayHoursForDate(date) {
   if (!date) return
   try {
-    const { data } = await api.get(`/api/admin/day-hours/${date}`)
+    const { data } = await api.get(`/api/admin/day-hours/${date}`, {
+      params: dayHoursRequestParams(),
+    })
     dayHoursForSelectedDate.value = (data || []).map((row) => ({
       ...row,
       start_hour: Number(row.start_hour),
@@ -1770,6 +1819,7 @@ async function generateFullDayHours() {
     const { data } = await api.post('/api/admin/day-hours/generate-full-day', {
       schedule_date: selectedDayHoursDate.value,
       replace,
+      ...dayHoursRequestParams(),
     })
     message.value = `สร้างช่วงเวลาทั้งวัน ${data.count} รายการแล้ว`
     closeDayHourForm()
@@ -1815,6 +1865,7 @@ async function saveDayHourEntry() {
         start_minute: dayHourStartM.value,
         end_hour: dayHourEndH.value,
         end_minute: dayHourEndM.value,
+        ...dayHoursRequestParams(),
       })
       message.value = 'บันทึกช่วงเวลาจองแล้ว'
     }
@@ -3546,7 +3597,11 @@ async function loadBookingEditDayData(date, { preserveForm = false } = {}) {
     const [optionsRes, extraRes, dayHoursRes, dayRes] = await Promise.all([
       api.get('/api/bookings/options', { params: { date } }),
       api.get('/api/bookings/extra-hours', { params: { from: date, to: date } }),
-      api.get('/api/bookings/day-hours', { params: { date } }),
+      api.get('/api/bookings/day-hours', {
+        params: bookingEditItem.value?.staff_id
+          ? { date, staff_id: bookingEditItem.value.staff_id }
+          : { date },
+      }),
       api.get('/api/bookings', { params: { date } }),
     ])
     bookingEditExtraHours.value = extraRes.data || []
@@ -3925,7 +3980,9 @@ async function loadBookingAddDayData({ preserveForm = false } = {}) {
       api.get('/api/bookings/shop-hours'),
       api.get('/api/bookings/options', { params: { date } }),
       api.get('/api/bookings/extra-hours', { params: { from: date, to: date } }),
-      api.get('/api/bookings/day-hours', { params: { date } }),
+      api.get('/api/bookings/day-hours', {
+        params: bookingAddStaffId.value ? { date, staff_id: bookingAddStaffId.value } : { date },
+      }),
       api.get('/api/bookings', { params: { date } }),
     ])
     shopOpenHour.value = normalizeShopOpenHour(hoursRes.data?.open_hour)
@@ -4007,6 +4064,7 @@ function onBookingAddStaffChange() {
   if (!hourOpts.some((opt) => opt.key === bookingAddSlotKey.value)) {
     bookingAddSlotKey.value = hourOpts[0]?.key || ''
   }
+  loadBookingAddDayData({ preserveForm: true })
 }
 
 function closeBookingAdd() {
@@ -5801,7 +5859,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <div class="booking-edit-services">
             <p class="booking-edit-label">บริการที่ทำได้</p>
-            <p class="muted booking-edit-hint">เลือกได้หลายรายการ ลูกค้าจะเห็นเฉพาะบริการของช่างคนนี้</p>
+            <p class="muted booking-edit-hint">เลือกอย่างน้อย 1 รายการ ลูกค้าจะเห็นเฉพาะบริการของช่างคนนี้</p>
             <div class="staff-form-options">
               <button
                 v-for="opt in nailOptions.filter(o => !o.is_required)"
@@ -5821,9 +5879,16 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <AdminSwitch v-model="staffFormActive" label="เปิดรับคิว" hint="ปิดแล้วลูกค้าจะไม่เห็นช่างคนนี้" />
 
+          <p v-if="staffFormError" class="alert error">{{ staffFormError }}</p>
+
           <div class="booking-edit-actions">
             <button type="button" class="btn" :disabled="staffSaving" @click="closeStaffForm">ยกเลิก</button>
-            <button type="button" class="btn primary" :disabled="staffSaving || !staffFormName.trim()" @click="saveStaffForm">
+            <button
+              type="button"
+              class="btn primary"
+              :disabled="staffSaving || !staffFormName.trim() || !staffFormOptionIds.length"
+              @click="saveStaffForm"
+            >
               {{ staffSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
             </button>
           </div>
@@ -6744,10 +6809,23 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
 
             <div v-show="activeBlocksSection === 'day-hours'" id="blocks-day-hours" class="admin-settings-section">
+              <label v-if="dayHoursStaffList.length" class="admin-label-grow" style="display:block;max-width:280px;margin-bottom:12px">
+                ตั้งเวลาให้
+                <select v-model="dayHoursStaffId" class="admin-input" @change="onDayHoursStaffChange">
+                  <option value="">ทั้งร้าน</option>
+                  <option v-for="staff in dayHoursStaffList" :key="staff.id" :value="staff.id">
+                    {{ staff.name }}
+                  </option>
+                </select>
+              </label>
               <template v-if="!selectedDayHoursDate">
                 <div class="admin-section-head">
                   <h3>เวลาเปิด-ปิดเฉพาะวัน</h3>
-                  <p class="muted">
+                  <p v-if="dayHoursStaffList.length" class="muted">
+                    เลือกทั้งร้านหรือช่าง แล้วกดวันในปฏิทิน · ช่างที่ยังไม่ตั้งเวลาเองจะใช้เวลาของทั้งร้าน ·
+                    วันที่ไม่ตั้งจะใช้แท็บ <strong>เวลาเปิด-ปิดปกติ</strong>
+                  </p>
+                  <p v-else class="muted">
                     สำหรับวันที่อยากเปิด-ปิดไม่ตามปกติ · กดวันในปฏิทินแล้วเพิ่มช่วงเวลา ·
                     วันที่ไม่ตั้งจะใช้แท็บ <strong>เวลาเปิด-ปิดปกติ</strong>
                   </p>
@@ -6797,14 +6875,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   </button>
                   <div>
                     <h3>เวลาเปิด-ปิดวันที่ {{ formatServiceDateLabel(selectedDayHoursDate) }}</h3>
-                    <p class="muted">ช่วงที่ตั้งวันนี้จะใช้แทนเวลาเปิด-ปิดปกติ · เพิ่มได้หลายรายการจนถึง 23:59</p>
+                    <p v-if="dayHoursStaffId" class="muted">ช่วงที่ตั้งวันนี้ใช้กับช่างคนนี้เท่านั้น · ถ้ายังไม่ตั้ง ลูกค้าจะเห็นเวลาของทั้งร้าน</p>
+                    <p v-else class="muted">ช่วงที่ตั้งวันนี้จะใช้แทนเวลาเปิด-ปิดปกติ · เพิ่มได้หลายรายการจนถึง 23:59</p>
                   </div>
                 </div>
 
                 <div v-if="dayHoursForSelectedDate.length === 0" class="state-card">
                   <i class="ti ti-clock state-card-icon" aria-hidden="true"></i>
                   <p class="state-card-title">ยังไม่ตั้งเวลาเฉพาะวัน</p>
-                  <p class="muted">วันนี้ใช้เวลาเปิด-ปิดปกติ</p>
+                  <p class="muted">{{ dayHoursEmptyHint }}</p>
                 </div>
                 <div v-for="item in dayHoursForSelectedDate" :key="item.id" class="admin-item">
                   <div>
