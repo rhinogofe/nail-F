@@ -67,6 +67,32 @@ const sheetStep = ref('confirm')
 const pendingSlot = ref(null)
 const selectedOptionIds = ref([])
 const selectedCategoryId = ref('')
+
+// ─── Staff ───────────────────────────────────────────────────────────────────
+const selectedStaffId = ref(null)
+const staffList = computed(() => bookingStore.staff || [])
+const hasStaff = computed(() => staffList.value.length > 0)
+
+// bookings ที่กรองตามช่าง → ใช้คำนวณ slot availability
+const bookingsForSlot = computed(() => {
+  const all = bookings.value
+  if (!hasStaff.value || !selectedStaffId.value) return all
+  return all.filter((b) => b.staff_id === selectedStaffId.value)
+})
+
+// ตัวกรองบริการตามช่าง (ถ้าร้านมีช่าง และเลือกช่างแล้ว)
+const staffFilteredOptionIds = computed(() => {
+  if (!hasStaff.value || !selectedStaffId.value) return null
+  const s = staffList.value.find((s) => s.id === selectedStaffId.value)
+  return s ? new Set(s.nailoption_ids) : null
+})
+
+function selectStaff(staffId) {
+  selectedStaffId.value = selectedStaffId.value === staffId ? staffId : staffId
+  selectedOptionIds.value = []
+  selectedCategoryId.value = ''
+}
+// ─────────────────────────────────────────────────────────────────────────────
 const serviceError = ref('')
 const selectedServicesExpanded = ref(false)
 /** กัน ghost click บนมือถือหลังเปลี่ยนหมวด (นิ้วปล่อยทับรายการแรกของหมวดใหม่) */
@@ -79,7 +105,12 @@ const blockedSlots = computed(() => bookingStore.blocksByDate[selectedDate.value
 const extraHoursForDate = computed(() => bookingStore.extraHoursByDate[selectedDate.value] || [])
 const dayHoursForDate = computed(() => bookingStore.dayHoursByDate[selectedDate.value] || [])
 const usesCustomDayHours = computed(() => dayHoursForDate.value.length > 0)
-const nailOptions = computed(() => bookingStore.nailOptions || [])
+// ถ้าร้านมีช่างและเลือกช่างแล้ว → กรองเฉพาะบริการที่ช่างนั้นทำได้
+const nailOptions = computed(() => {
+  const all = bookingStore.nailOptions || []
+  if (!staffFilteredOptionIds.value) return all
+  return all.filter((opt) => opt.is_required || staffFilteredOptionIds.value.has(opt.id))
+})
 const serviceCategories = computed(() => bookingStore.serviceCategories || [])
 const bookableCategories = computed(() =>
   buildBookableCategories(serviceCategories.value, nailOptions.value)
@@ -380,7 +411,7 @@ const slotBuildParams = computed(() => ({
   extras: extraHoursForDate.value,
   dayWindows: dayHoursForDate.value,
   blocks: blockedSlots.value,
-  bookings: bookings.value,
+  bookings: bookingsForSlot.value,
   displayMode: bookingStore.bookingDisplayMode,
   slotHours: bookingStore.bookingSlotHours,
   extendByServices: bookingStore.extendBookingByServices,
@@ -535,7 +566,7 @@ function alignWindowToDate(iso) {
   scrollActiveDayIntoView()
 }
 function activeBookings() {
-  return bookings.value.filter(b => b.status !== 'cancelled')
+  return bookingsForSlot.value.filter(b => b.status !== 'cancelled')
 }
 function bookingForSlot(slot) {
   const key = slotKey(slot)
@@ -551,18 +582,20 @@ function canBook(slot) {
     ...slotBuildParams.value,
     dayWindows: dayHoursForDate.value,
     blocks: blockedSlots.value,
-    bookings: bookings.value,
+    bookings: bookingsForSlot.value,
     extendByServices: bookingStore.extendBookingByServices,
   })
 }
 
 const visibleSlots = computed(() => {
   if (!canShowBookingSlots.value) return []
+  // ถ้าร้านมีช่างแต่ยังไม่เลือก → ไม่แสดง slot
+  if (hasStaff.value && !selectedStaffId.value) return []
   return buildVisibleBookingSlots({
     ...slotBuildParams.value,
     dayWindows: dayHoursForDate.value,
     blocks: blockedSlots.value,
-    bookings: bookings.value,
+    bookings: bookingsForSlot.value,
     extendByServices: bookingStore.extendBookingByServices,
   })
 })
@@ -682,7 +715,7 @@ async function ensureSlotStillAvailable(slot, optionIds = []) {
   if (shouldUseDynamicCustomDaySlots({
     dayWindows: dayHoursForDate.value,
     extendByServices: bookingStore.extendBookingByServices,
-    bookings: bookings.value,
+    bookings: bookingsForSlot.value,
   })) {
     const params = dynamicSlotParams()
     if (!isDynamicSlotAvailable(slot, params)) {
@@ -930,6 +963,7 @@ async function submitBooking() {
       selectedDate.value,
       submitSlot,
       selectedOptionIds.value.map(String),
+      selectedStaffId.value || undefined,
     )
     closeBookSheet()
     dismissBlockingOverlays()
@@ -1097,6 +1131,7 @@ async function bootstrapBookingPage() {
     await Promise.all([
       bookingStore.fetchBookingSettings().catch(() => null),
       bookingStore.fetchAllNailOptions().catch(() => null),
+      bookingStore.fetchStaff().catch(() => null),
     ])
     await refreshBlocksAndEnsureSelection(true)
     await loadDate()
@@ -1216,6 +1251,33 @@ onUnmounted(() => {
       </div>
 
       <template v-else>
+
+      <!-- ── Staff Selector (แสดงถ้าร้านมีช่าง) ── -->
+      <div v-if="hasStaff" class="staff-selector-panel">
+        <p class="staff-selector-label">เลือกช่าง</p>
+        <div class="staff-selector-chips">
+          <button
+            v-for="s in staffList"
+            :key="s.id"
+            type="button"
+            class="staff-selector-chip"
+            :class="{ 'is-active': selectedStaffId === s.id }"
+            @click="selectStaff(s.id)"
+          >
+            <span class="staff-chip-avatar">{{ s.name.charAt(0) }}</span>
+            {{ s.name }}
+          </button>
+        </div>
+      </div>
+
+      <!-- ── ยังไม่เลือกช่าง ── -->
+      <div v-if="hasStaff && !selectedStaffId" class="state-card empty-state staff-pick-hint">
+        <i class="ti ti-user-search state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">เลือกช่างก่อนเพื่อดูช่วงเวลาว่าง</p>
+        <p class="muted">แต่ละช่างมีตารางเวลาของตัวเอง</p>
+      </div>
+
+      <template v-else>
       <div class="date-heading">
         <span class="section-label">
           {{ selectedDateLabel }}<template v-if="requiredLocationLabel"> สถานที่ให้บริการ {{ requiredLocationLabel }}</template>
@@ -1330,7 +1392,8 @@ onUnmounted(() => {
           </div>
         </div>
       </template>
-      </template>
+      </template> <!-- end v-else (staff selected or no staff) -->
+      </template> <!-- end v-else (canShowBookingSlots) -->
     </main>
 
     <!-- ── BOTTOM SHEET MODAL ── -->
@@ -1381,11 +1444,22 @@ onUnmounted(() => {
               <span v-html="pointsBannerHtml"></span>
             </div>
 
+            <!-- แสดงช่างที่เลือกไว้ (ถ้าร้านมีช่าง) -->
+            <div v-if="hasStaff && selectedStaffId" class="sheet-staff-selected">
+              <i class="ti ti-user" aria-hidden="true"></i>
+              ช่าง {{ staffList.find(s => s.id === selectedStaffId)?.name }}
+            </div>
+
             <p v-if="serviceError" class="sheet-error">{{ serviceError }}</p>
 
             <div class="sheet-actions">
               <button type="button" class="btn-cancel" @click="closeBookSheet">ยกเลิก</button>
-              <button type="button" class="btn-confirm" :disabled="busy" @click="goToServiceStep">
+              <button
+                type="button"
+                class="btn-confirm"
+                :disabled="busy"
+                @click="goToServiceStep"
+              >
                 เลือกบริการ
                 <i class="ti ti-arrow-right" aria-hidden="true"></i>
               </button>
@@ -1421,6 +1495,10 @@ onUnmounted(() => {
                   <div class="info-row">
                     <span class="info-label"><i class="ti ti-clock info-ic" aria-hidden="true"></i>เวลา</span>
                     <span class="info-val">{{ pendingTimeLabel }}</span>
+                  </div>
+                  <div v-if="selectedStaffId && staffList.find(s => s.id === selectedStaffId)" class="info-row">
+                    <span class="info-label"><i class="ti ti-user info-ic" aria-hidden="true"></i>ช่าง</span>
+                    <span class="info-val">{{ staffList.find(s => s.id === selectedStaffId)?.name }}</span>
                   </div>
                   <div v-if="serviceDurationExtendHint" class="info-row">
                     <span class="info-label"><i class="ti ti-hourglass info-ic" aria-hidden="true"></i>ระยะเวลา</span>
@@ -2373,6 +2451,66 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .sheet-actions { display: flex; gap: 10px; }
+
+/* ─── Staff Selector (main page) ─── */
+.staff-selector-panel {
+  width: 100%;
+  padding: 14px 0 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+}
+.staff-selector-label {
+  font-size: 12px; color: var(--color-text-secondary, #888);
+  font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.staff-selector-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.staff-selector-chip {
+  flex: 1 1 160px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 2px solid var(--color-border, #e0e0e0);
+  background: var(--color-surface-elevated, #fafafa);
+  color: var(--color-text, #222);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.staff-selector-chip.is-active {
+  border-color: var(--color-primary, #e91e8c);
+  background: var(--color-primary, #e91e8c);
+  color: #fff;
+}
+.staff-chip-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; line-height: 1;
+}
+.staff-selector-chip:not(.is-active) .staff-chip-avatar {
+  background: var(--color-primary, #e91e8c);
+  color: #fff;
+}
+.staff-pick-hint { margin-top: 24px; }
+
+/* ─── Staff badge in sheet ─── */
+.sheet-staff-selected {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 999px;
+  background: #fce4f3; color: var(--color-primary, #e91e8c);
+  font-size: 13px; font-weight: 600; margin: 4px 0 8px;
+}
 .btn-cancel {
   flex: 1; padding: 14px; border-radius: 12px;
   border: 1px solid var(--color-border); background: var(--color-surface);
@@ -2412,7 +2550,8 @@ onUnmounted(() => {
   .date-heading,
   .custom-hours-note,
   .msg,
-  .empty-state {
+  .empty-state,
+  .staff-selector-panel {
     grid-column: 1 / -1;
   }
 

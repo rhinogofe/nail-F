@@ -68,7 +68,7 @@ export const UI_FORM_DEFAULTS = {
   ui_reviews_empty_hint: 'รอแอดมินเพิ่มลิงก์ TikTok หรือ Instagram',
   ui_shop_picker_title: 'เลือกร้าน',
   ui_shop_picker_subtitle: 'เลือกสาขาที่ต้องการจองคิว',
-  ui_admin_add_staff_btn: 'เพิ่มช่าง',
+  ui_admin_add_staff_btn: 'เพิ่มแอดมิน',
   ui_color_primary: '#C4847A',
   ui_color_primary_dark: '#A66B62',
   ui_color_primary_light: '#F5E8E6',
@@ -229,7 +229,7 @@ export const UI_FIELD_GROUPS = [
     title: 'แอดมิน',
     skipInRegister: true,
     fields: [
-      { key: 'ui_admin_add_staff_btn', label: 'ปุ่มเพิ่มช่าง (หน้าแอดมิน > ผู้ใช้)', placeholder: 'เพิ่มช่าง' },
+      { key: 'ui_admin_add_staff_btn', label: 'ปุ่มเพิ่มแอดมิน (หน้าแอดมิน > ผู้ใช้)', placeholder: 'เพิ่มแอดมิน' },
     ],
   },
   {

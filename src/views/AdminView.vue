@@ -262,7 +262,10 @@ const lineWebhookUrlHint = computed(() => {
 })
 const isSuperAdmin = computed(() => auth.isSuperAdmin)
 const canManageShopAdmins = computed(() => isSuperAdmin.value || shopSlug.value !== 'default')
-const staffAddBtnLabel = computed(() => uiSettingsStore.get('ui_admin_add_staff_btn', 'เพิ่มช่าง'))
+const staffAddBtnLabel = computed(() => {
+  const label = uiSettingsStore.get('ui_admin_add_staff_btn', 'เพิ่มแอดมิน')
+  return label === 'เพิ่มช่าง' ? 'เพิ่มแอดมิน' : label
+})
 const unpaidAutoCancelEnabled = ref(true)
 const unpaidExpireHours = ref(24)
 // Auto-saving the enable switch must not persist an unsaved edit in the hours
@@ -272,6 +275,77 @@ const settingToggleSaving = ref('')
 const useCouponCode = ref('')
 const nailOptions = ref([])
 const nailOptionsLoaded = ref(false)
+
+// ─── Staff (ช่าง) admin state ─────────────────────────────────
+const adminStaffList = ref([])
+const staffLoading = ref(false)
+const staffFormVisible = ref(false)
+const staffEditTarget = ref(null) // null = add, object = edit
+const staffFormName = ref('')
+const staffFormOptionIds = ref([])
+const staffFormActive = ref(true)
+const staffSaving = ref(false)
+const staffDeleteConfirm = ref(null)
+
+async function loadAdminStaff() {
+  staffLoading.value = true
+  try {
+    const { data } = await api.get('/api/admin/staff')
+    adminStaffList.value = Array.isArray(data) ? data : []
+  } catch { /* ignore */ } finally {
+    staffLoading.value = false
+  }
+}
+function openStaffForm(target = null) {
+  staffEditTarget.value = target
+  staffFormName.value = target ? target.name : ''
+  staffFormOptionIds.value = target ? [...(target.nailoptions?.map(o => o.id) || [])] : []
+  staffFormActive.value = target ? target.is_active : true
+  staffFormVisible.value = true
+}
+function closeStaffForm() { staffFormVisible.value = false; staffEditTarget.value = null }
+async function saveStaffForm() {
+  if (!staffFormName.value.trim()) return
+  staffSaving.value = true
+  try {
+    const payload = { name: staffFormName.value.trim(), nailoption_ids: staffFormOptionIds.value, is_active: staffFormActive.value }
+    if (staffEditTarget.value) {
+      await api.patch(`/api/admin/staff/${staffEditTarget.value.id}`, payload)
+    } else {
+      await api.post('/api/admin/staff', payload)
+    }
+    await loadAdminStaff()
+    closeStaffForm()
+  } catch (err) {
+    const msg = err?.response?.data?.error || 'บันทึกไม่สำเร็จ'
+    await Swal.fire({ title: 'บันทึกไม่สำเร็จ', text: msg, icon: 'error' })
+  } finally {
+    staffSaving.value = false
+  }
+}
+async function deleteStaff(staffItem) {
+  const confirm = await Swal.fire({
+    title: 'ลบช่างนี้?',
+    text: `"${staffItem.name}" จะถูกลบออก`,
+    icon: 'warning', showCancelButton: true,
+    confirmButtonText: 'ลบ', cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#e53935',
+  })
+  if (!confirm.isConfirmed) return
+  try {
+    await api.delete(`/api/admin/staff/${staffItem.id}`)
+    await loadAdminStaff()
+  } catch (err) {
+    const msg = err?.response?.data?.error || 'ลบไม่สำเร็จ'
+    await Swal.fire({ title: 'ลบไม่สำเร็จ', text: msg, icon: 'error' })
+  }
+}
+function toggleStaffOptionId(id) {
+  const idx = staffFormOptionIds.value.indexOf(id)
+  if (idx >= 0) staffFormOptionIds.value.splice(idx, 1)
+  else staffFormOptionIds.value.push(id)
+}
+// ──────────────────────────────────────────────────────────────
 const serviceMonth = ref(todayYm())
 const selectedServiceDate = ref('')
 const showEveryDayForm = ref(false)
@@ -353,6 +427,7 @@ const bookingEditSlotBlocks = ref([])
 const bookingAddOpen = ref(false)
 const bookingAddUserId = ref('')
 const bookingAddUserQuery = ref('')
+const bookingAddStaffId = ref('')
 const bookingAddSlotKey = ref('')
 const bookingAddStatus = ref('pending')
 const bookingAddTotal = ref('')
@@ -405,34 +480,59 @@ const bookingEditOrphaned = computed(() => {
 
 const bookingAddDate = computed(() => selectedBookingDate.value || '')
 
-const bookingAddHourOptions = computed(() =>
-  buildBookingSlotSelectOptions({
+const bookingAddStaffList = computed(() =>
+  (adminStaffList.value || []).filter((staff) => staff.is_active !== false)
+)
+const bookingAddHasStaff = computed(() => bookingAddStaffList.value.length > 0)
+const bookingAddStaffOptionIds = computed(() => {
+  if (!bookingAddHasStaff.value || !bookingAddStaffId.value) return null
+  const staff = bookingAddStaffList.value.find((item) => item.id === bookingAddStaffId.value)
+  if (!staff) return null
+  return new Set((staff.nailoptions || []).map((opt) => String(opt.id)))
+})
+const bookingAddBookingsForSlot = computed(() => {
+  const rows = bookingAddSlotBookings.value || []
+  if (!bookingAddStaffId.value) return rows
+  return rows.filter((row) => row.staff_id === bookingAddStaffId.value)
+})
+
+const bookingAddHourOptions = computed(() => {
+  if (bookingAddHasStaff.value && !bookingAddStaffId.value) return []
+  return buildBookingSlotSelectOptions({
     openHour: shopOpenHour.value,
     lastBookingHour: shopLastBookingHour.value,
     extras: bookingAddExtraHours.value,
     dayWindows: bookingAddDayHours.value,
     blocks: bookingAddSlotBlocks.value,
-    bookings: bookingAddSlotBookings.value,
+    bookings: bookingAddBookingsForSlot.value,
     displayMode: bookingDisplayMode.value,
     slotHours: bookingSlotHours.value,
     extendByServices: extendBookingByServices.value,
     minGapMinutes: effectiveMinGapMinutes.value,
   })
-)
+})
+
+function bookingAddVisibleOptions() {
+  const bookable = bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value)
+  const allowed = bookingAddStaffOptionIds.value
+  if (!allowed) return bookable
+  return bookable.filter((opt) => opt.is_required || allowed.has(String(opt.id)))
+}
 
 const bookingAddBookableCategories = computed(() =>
   buildBookableCategories(
     bookingAddCategories.value,
-    bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value)
+    bookingAddVisibleOptions()
   )
 )
 
 const bookingAddRequiredOptions = computed(() =>
-  bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value).filter((opt) => opt.is_required)
+  bookingAddVisibleOptions().filter((opt) => opt.is_required)
 )
 
 const bookingAddCategoryOptions = computed(() => {
-  const bookable = bookableOptionsOnDate(bookingAddOptions.value, bookingAddDate.value)
+  if (bookingAddHasStaff.value && !bookingAddStaffId.value) return []
+  const bookable = bookingAddVisibleOptions()
   if (!bookingAddBookableCategories.value.length) {
     return bookable.filter((opt) => !opt.is_required)
   }
@@ -575,6 +675,7 @@ const adminTabs = [
   { key: 'bookings', label: 'จัดการคิว', icon: 'ti-calendar' },
   { key: 'revenue', label: 'สรุปยอด', icon: 'ti-report-money' },
   { key: 'services', label: 'บริการ', icon: 'ti-list-check' },
+  { key: 'staff', label: 'ช่าง', icon: 'ti-users' },
   { key: 'settings', label: 'ตั้งค่า', icon: 'ti-settings' },
   { key: 'ui', label: 'UI', icon: 'ti-palette' },
   { key: 'blocks', label: 'เวลา', icon: 'ti-calendar-off' },
@@ -1976,7 +2077,7 @@ async function saveStaffAdd() {
     })
     message.value = `${staffAddBtnLabel.value} "${name}" (${phone}) แล้ว`
   } catch (err) {
-    staffAddError.value = err?.response?.data?.error || 'เพิ่มช่างไม่สำเร็จ'
+    staffAddError.value = err?.response?.data?.error || 'เพิ่มแอดมินไม่สำเร็จ'
   } finally {
     staffAddSaving.value = false
   }
@@ -3837,18 +3938,7 @@ async function loadBookingAddDayData({ preserveForm = false } = {}) {
     bookingAddDayHours.value = dayHoursRes.data || []
     bookingAddSlotBookings.value = dayRes.data?.bookings || []
     bookingAddSlotBlocks.value = dayRes.data?.blocks || []
-    const hourOpts = buildBookingSlotSelectOptions({
-      openHour: shopOpenHour.value,
-      lastBookingHour: shopLastBookingHour.value,
-      extras: bookingAddExtraHours.value,
-      dayWindows: bookingAddDayHours.value,
-      blocks: bookingAddSlotBlocks.value,
-      bookings: bookingAddSlotBookings.value,
-      displayMode: bookingDisplayMode.value,
-      slotHours: bookingSlotHours.value,
-      extendByServices: extendBookingByServices.value,
-      minGapMinutes: effectiveMinGapMinutes.value,
-    })
+    const hourOpts = bookingAddHourOptions.value
     if (!preserveForm || !hourOpts.some((opt) => opt.key === bookingAddSlotKey.value)) {
       bookingAddSlotKey.value = hourOpts[0]?.key || ''
     }
@@ -3882,6 +3972,7 @@ async function openBookingAdd() {
   if (!selectedBookingDate.value) return
   bookingAddUserId.value = ''
   bookingAddUserQuery.value = ''
+  bookingAddStaffId.value = ''
   bookingAddSlotKey.value = ''
   bookingAddStatus.value = selectedBookingDate.value < todayYmd() ? 'done' : 'pending'
   bookingAddTotal.value = ''
@@ -3896,8 +3987,26 @@ async function openBookingAdd() {
   bookingAddSlotBlocks.value = []
   bookingAddError.value = ''
   bookingAddOpen.value = true
-  await ensureUsersLoaded()
+  await Promise.all([
+    ensureUsersLoaded(),
+    loadAdminStaff(),
+  ])
   await loadBookingAddDayData()
+}
+
+function onBookingAddStaffChange() {
+  bookingAddError.value = ''
+  const allowed = bookingAddStaffOptionIds.value
+  if (allowed) {
+    bookingAddSelectedIds.value = bookingAddSelectedIds.value.filter((id) => {
+      const opt = bookingAddOptions.value.find((item) => String(item.id) === String(id))
+      return Boolean(opt?.is_required) || allowed.has(String(id))
+    })
+  }
+  const hourOpts = bookingAddHourOptions.value
+  if (!hourOpts.some((opt) => opt.key === bookingAddSlotKey.value)) {
+    bookingAddSlotKey.value = hourOpts[0]?.key || ''
+  }
 }
 
 function closeBookingAdd() {
@@ -3908,6 +4017,10 @@ async function saveBookingAdd() {
   if (!selectedBookingDate.value) return
   if (!bookingAddUserId.value) {
     bookingAddError.value = 'กรุณาเลือกลูกค้า'
+    return
+  }
+  if (bookingAddHasStaff.value && !bookingAddStaffId.value) {
+    bookingAddError.value = 'กรุณาเลือกช่าง'
     return
   }
   if (!bookingAddSelectedIds.value.length) {
@@ -3948,6 +4061,7 @@ async function saveBookingAdd() {
       nailoption_ids: bookingAddSelectedIds.value,
       status: bookingAddStatus.value,
     }
+    if (bookingAddStaffId.value) payload.staff_id = bookingAddStaffId.value
     if (bookingAddTotal.value !== '') {
       payload.total = Number(bookingAddTotal.value)
     }
@@ -4786,6 +4900,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   if (activeTab.value === 'users') {
     nextTick(setupUsersInfiniteScroll)
   }
+  if (activeTab.value === 'staff') {
+    if (!nailOptionsLoaded.value) loadNailOptions()
+    loadAdminStaff()
+  }
 })
 </script>
 
@@ -5013,6 +5131,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <p class="muted">{{ item.user_name }}</p>
           <p v-if="item.user_phone" class="muted">{{ item.user_phone }}</p>
           <p v-if="item.user_gmail" class="muted">{{ item.user_gmail }}</p>
+          <p v-if="item.staff_name" class="muted booking-staff-tag"><i class="ti ti-user" aria-hidden="true"></i> {{ item.staff_name }}</p>
           <p class="muted">
             {{
               item.nail_options?.length
@@ -5617,6 +5736,100 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
       </template>
     </section>
+
+    <!-- ── STAFF TAB ── -->
+    <section v-show="activeTab === 'staff'" class="admin-section">
+      <div class="service-everyday-head admin-section-head">
+        <div>
+          <h3>จัดการช่าง</h3>
+          <p class="muted">แต่ละช่างมีตารางคิวและบริการของตัวเอง</p>
+        </div>
+        <button type="button" class="btn primary" @click="openStaffForm(null)">
+          <i class="ti ti-plus" aria-hidden="true"></i>
+          เพิ่มช่าง
+        </button>
+      </div>
+
+      <div v-if="staffLoading" class="state-card">
+        <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
+        <span class="state-card-title">กำลังโหลดช่าง</span>
+      </div>
+
+      <div v-else-if="adminStaffList.length === 0" class="state-card">
+        <i class="ti ti-users state-card-icon" aria-hidden="true"></i>
+        <p class="state-card-title">ยังไม่มีช่าง</p>
+        <p class="muted">กดเพิ่มช่างเพื่อให้ลูกค้าเลือกคนให้บริการได้</p>
+      </div>
+
+      <div v-for="s in adminStaffList" :key="s.id" class="admin-item">
+        <div>
+          <div class="admin-item-title-row">
+            <strong>{{ s.name }}</strong>
+            <span :class="s.is_active ? 'badge-active' : 'badge-inactive'">
+              {{ s.is_active ? 'เปิดรับคิว' : 'ปิดรับคิว' }}
+            </span>
+          </div>
+          <p class="muted">
+            {{ s.nailoptions?.length ? s.nailoptions.map(o => o.option_name).join(', ') : 'ยังไม่ได้กำหนดบริการ' }}
+          </p>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" @click="openStaffForm(s)">แก้ไข</button>
+          <button type="button" class="btn danger" @click="deleteStaff(s)">ลบ</button>
+        </div>
+      </div>
+    </section>
+
+    <Teleport to="body">
+      <div
+        v-if="staffFormVisible"
+        class="booking-edit-backdrop"
+        @click.self="closeStaffForm"
+      >
+        <div class="booking-edit-modal card" role="dialog" aria-modal="true" aria-labelledby="staff-form-title">
+          <div class="booking-edit-header">
+            <h3 id="staff-form-title">{{ staffEditTarget ? 'แก้ไขช่าง' : 'เพิ่มช่าง' }}</h3>
+            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeStaffForm">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <label class="booking-edit-field">
+            ชื่อช่าง
+            <input v-model="staffFormName" class="admin-input" placeholder="เช่น นุ่น, ปลา" maxlength="60" />
+          </label>
+
+          <div class="booking-edit-services">
+            <p class="booking-edit-label">บริการที่ทำได้</p>
+            <p class="muted booking-edit-hint">เลือกได้หลายรายการ ลูกค้าจะเห็นเฉพาะบริการของช่างคนนี้</p>
+            <div class="staff-form-options">
+              <button
+                v-for="opt in nailOptions.filter(o => !o.is_required)"
+                :key="opt.id"
+                type="button"
+                class="staff-opt-chip"
+                :class="{ selected: staffFormOptionIds.includes(opt.id) }"
+                @click="toggleStaffOptionId(opt.id)"
+              >
+                {{ opt.option_name }}
+              </button>
+              <p v-if="!nailOptions.filter(o => !o.is_required).length" class="muted">
+                ยังไม่มีบริการ — ไปเพิ่มในแท็บบริการก่อน
+              </p>
+            </div>
+          </div>
+
+          <AdminSwitch v-model="staffFormActive" label="เปิดรับคิว" hint="ปิดแล้วลูกค้าจะไม่เห็นช่างคนนี้" />
+
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" :disabled="staffSaving" @click="closeStaffForm">ยกเลิก</button>
+            <button type="button" class="btn primary" :disabled="staffSaving || !staffFormName.trim()" @click="saveStaffForm">
+              {{ staffSaving ? 'กำลังบันทึก...' : 'บันทึก' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <section v-show="activeTab === 'settings'" class="admin-section admin-drawer-section">
       <div class="admin-drawer-shell">
@@ -7404,7 +7617,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       >
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="staff-add-title">
           <div class="booking-edit-header">
-            <h3 id="staff-add-title">{{ staffAddBtnLabel }} (แอดมิน)</h3>
+            <h3 id="staff-add-title">{{ staffAddBtnLabel }}</h3>
             <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeStaffAdd">×</button>
           </div>
           <p v-if="isSuperAdmin" class="muted booking-edit-meta">
@@ -7636,10 +7849,26 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </select>
           </label>
 
+          <label v-if="bookingAddHasStaff" class="booking-edit-field">
+            ช่าง
+            <select v-model="bookingAddStaffId" class="admin-input" @change="onBookingAddStaffChange">
+              <option value="">-- เลือกช่าง --</option>
+              <option v-for="staff in bookingAddStaffList" :key="staff.id" :value="staff.id">
+                {{ staff.name }}
+              </option>
+            </select>
+          </label>
+
           <label class="booking-edit-field">
             เวลาเริ่ม
-            <select v-model="bookingAddSlotKey" class="admin-input" @change="bookingAddError = ''">
-              <option v-if="!bookingAddHourOptions.length" value="" disabled>ไม่มีช่วงเวลาว่าง</option>
+            <select
+              v-model="bookingAddSlotKey"
+              class="admin-input"
+              :disabled="bookingAddHasStaff && !bookingAddStaffId"
+              @change="bookingAddError = ''"
+            >
+              <option v-if="bookingAddHasStaff && !bookingAddStaffId" value="" disabled>เลือกช่างก่อน</option>
+              <option v-else-if="!bookingAddHourOptions.length" value="" disabled>ไม่มีช่วงเวลาว่าง</option>
               <option v-for="opt in bookingAddHourOptions" :key="opt.key" :value="opt.key">
                 {{ opt.label }}
               </option>
@@ -7685,7 +7914,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
           <div class="booking-edit-services">
             <p class="booking-edit-label">บริการ</p>
-            <p class="muted booking-edit-hint">เลือกหมวดหมู่ก่อน แล้วเลือกบริการ · แสดงเฉพาะวันจองนี้</p>
+            <p class="muted booking-edit-hint">
+              {{ bookingAddHasStaff && !bookingAddStaffId
+                ? 'เลือกช่างก่อน แล้วเลือกบริการของช่างคนนั้น'
+                : 'เลือกหมวดหมู่ก่อน แล้วเลือกบริการ · แสดงเฉพาะวันจองนี้' }}
+            </p>
             <p v-if="bookingAddLoading" class="muted">กำลังโหลดรายการบริการ...</p>
             <template v-else>
               <div v-if="bookingAddRequiredOptions.length" class="booking-edit-option-list booking-edit-required-list">
@@ -11048,6 +11281,34 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.booking-staff-tag { color: var(--color-primary) !important; font-size: 12px; }
+.booking-staff-tag i { font-size: 11px; }
+
+.staff-form-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.staff-opt-chip {
+  padding: 8px 14px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.staff-opt-chip.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.staff-opt-chip:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .admin-booking-actions .btn {

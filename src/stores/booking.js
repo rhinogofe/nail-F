@@ -34,6 +34,7 @@ export const useBookingStore = defineStore('booking', {
     allNailOptions: [],
     serviceCategories: [],
     serviceLocations: [],
+    staff: [],
     myBookings: [],
     loading: false,
     shopOpenHour: 9,
@@ -129,7 +130,12 @@ export const useBookingStore = defineStore('booking', {
       }
       return data
     },
-    async bookSlot(booking_date, slotOrHour, option_ids) {
+    async fetchStaff() {
+      const { data } = await api.get('/api/bookings/staff')
+      this.staff = Array.isArray(data) ? data : []
+      return this.staff
+    },
+    async bookSlot(booking_date, slotOrHour, option_ids, staff_id) {
       const payload = typeof slotOrHour === 'object' && slotOrHour != null
         ? {
           booking_date,
@@ -144,6 +150,7 @@ export const useBookingStore = defineStore('booking', {
           start_hour: slotOrHour,
           option_ids: option_ids || [],
         }
+      if (staff_id) payload.staff_id = staff_id
       const { data } = await api.post('/api/bookings', payload)
       await this.fetchByDate(booking_date)
       await this.fetchMyBookings()
