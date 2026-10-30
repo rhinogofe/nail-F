@@ -222,6 +222,18 @@ test.describe('Admin page', () => {
     await expect(field).toHaveValue(original)
   })
 
+  test('tab strip fades only on the side with hidden tabs (mobile)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const wrap = page.locator('.admin-tab-wrap')
+    const nav = page.getByRole('navigation', { name: 'เมนูแอดมิน' })
+    await expect(wrap).toHaveClass(/admin-tab-wrap--fade-right/)
+    await expect(wrap).not.toHaveClass(/admin-tab-wrap--fade-left/)
+
+    await nav.evaluate((el) => { el.scrollLeft = el.scrollWidth })
+    await expect(wrap).toHaveClass(/admin-tab-wrap--fade-left/)
+    await expect(wrap).not.toHaveClass(/admin-tab-wrap--fade-right/)
+  })
+
   test('error toast stays until dismissed', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
     await page.route('**/api/admin/bookings/calendar-summary**', (route) => route.fulfill({

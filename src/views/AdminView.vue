@@ -464,6 +464,37 @@ watch(errorMessage, (val) => {
   if (val) showAdminToast('error', val)
 })
 const activeTab = ref('bookings')
+const adminNavRef = ref(null)
+const adminNavOverflow = ref({ left: false, right: false })
+
+function updateAdminNavOverflow() {
+  const el = adminNavRef.value
+  if (!el) {
+    adminNavOverflow.value = { left: false, right: false }
+    return
+  }
+  adminNavOverflow.value = {
+    left: el.scrollLeft > 4,
+    right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+  }
+}
+
+function scrollActiveAdminTabIntoView({ smooth = true } = {}) {
+  nextTick(() => {
+    const nav = adminNavRef.value
+    const btn = nav?.querySelector('.admin-nav-item.active')
+    if (!nav || !btn) {
+      updateAdminNavOverflow()
+      return
+    }
+    const navRect = nav.getBoundingClientRect()
+    const btnRect = btn.getBoundingClientRect()
+    const left = nav.scrollLeft + (btnRect.left - navRect.left) - (nav.clientWidth - btnRect.width) / 2
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    nav.scrollTo({ left: Math.max(0, left), behavior: smooth && !reduceMotion ? 'smooth' : 'auto' })
+    updateAdminNavOverflow()
+  })
+}
 
 const bookingEditOpen = ref(false)
 const bookingEditItem = ref(null)
@@ -5230,10 +5261,15 @@ watch(() => shopFeaturesStore.staffEnabled, (enabled) => {
   }
 })
 
+watch(activeTab, () => {
+  scrollActiveAdminTabIntoView()
+})
+
 watch(visibleAdminTabs, (tabs) => {
   if (!tabs.some((t) => t.key === activeTab.value)) {
     activeTab.value = tabs[0]?.key || 'bookings'
   }
+  scrollActiveAdminTabIntoView({ smooth: false })
 })
 
 watch(visibleSettingsSections, (sections) => {
@@ -5278,6 +5314,8 @@ onMounted(() => {
   startBranchUsagePolling()
   window.addEventListener('focus', onAdminWindowFocus)
   window.addEventListener('beforeunload', onAdminBeforeUnload)
+  window.addEventListener('resize', updateAdminNavOverflow)
+  scrollActiveAdminTabIntoView({ smooth: false })
 })
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
@@ -5285,6 +5323,7 @@ onUnmounted(() => {
   stopBranchUsagePolling()
   window.removeEventListener('focus', onAdminWindowFocus)
   window.removeEventListener('beforeunload', onAdminBeforeUnload)
+  window.removeEventListener('resize', updateAdminNavOverflow)
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
   if (adminToastTimer) clearTimeout(adminToastTimer)
@@ -5369,8 +5408,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       เพื่อดูวิธีเปิด
     </button>
 
-    <div class="admin-tab-wrap">
-    <nav class="admin-nav" aria-label="เมนูแอดมิน">
+    <div
+      class="admin-tab-wrap"
+      :class="{
+        'admin-tab-wrap--fade-left': adminNavOverflow.left,
+        'admin-tab-wrap--fade-right': adminNavOverflow.right,
+      }"
+    >
+    <nav
+      ref="adminNavRef"
+      class="admin-nav"
+      aria-label="เมนูแอดมิน"
+      @scroll.passive="updateAdminNavOverflow"
+    >
       <button
         v-for="tab in visibleAdminTabs"
         :key="tab.key"
@@ -9237,19 +9287,26 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 20px;
+  width: 32px;
   z-index: 2;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
 }
 
 .admin-tab-wrap::before {
   left: 0;
-  background: linear-gradient(to right, var(--color-surface), transparent);
+  background: linear-gradient(to right, var(--color-background), transparent);
 }
 
 .admin-tab-wrap::after {
   right: 0;
-  background: linear-gradient(to left, var(--color-surface), transparent);
+  background: linear-gradient(to left, var(--color-background), transparent);
+}
+
+.admin-tab-wrap--fade-left::before,
+.admin-tab-wrap--fade-right::after {
+  opacity: 1;
 }
 
 .admin-nav {
