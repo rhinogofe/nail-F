@@ -38,10 +38,9 @@ function embedUrl(clip, autoplay = false) {
 
   const videoId = clip.video_id
   if (!videoId) return ''
-  const params = new URLSearchParams()
+  const params = new URLSearchParams({ music_info: '1', description: '1', rel: '0' })
   if (autoplay) params.set('autoplay', '1')
-  const qs = params.toString()
-  return `https://www.tiktok.com/embed/v2/${videoId}${qs ? `?${qs}` : ''}`
+  return `https://www.tiktok.com/player/v1/${videoId}?${params.toString()}`
 }
 
 function clipSourceLabel(clip) {

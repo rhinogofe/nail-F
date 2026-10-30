@@ -5,6 +5,7 @@ import { getContent, saveContent, upload, listImages, img } from '../bookingSite
 import { defaultTheme, sizePlaceholders, normalizeThemeSizes, applyTheme } from '../bookingSite/theme.js'
 import { THEME_PRESETS, FONT_STACKS, matchingPresetId, applyPresetTheme, defaultPreset } from '../bookingSite/themePresets.js'
 import { defaultNav, navSectionOptions } from '../bookingSite/sections.js'
+import { SERVICE_ICONS, MORE_SERVICE_ICONS, isMoreIcon, serviceIcon } from '../bookingSite/serviceIcons.js'
 import '../bookingSite/style.css'
 
 const { shopSlug, shopPath } = useShopRoute()
@@ -25,7 +26,7 @@ const S = {
         id: 'presets',
         shortTitle: 'ธีมสำเร็จรูป',
         title: 'ธีมสำเร็จรูป',
-        hint: 'กดใช้ธีมนี้แล้วตัวอย่างด้านบนจะเปลี่ยนทันที — กดบันทึกทั้งหมดเพื่อใช้บนหน้าเว็บจริง',
+        hint: 'กดใช้ธีมนี้แล้วระบบบันทึกให้ทันที — หน้าเว็บจริงเปลี่ยนตามเลย ไม่ต้องกดบันทึกซ้ำ',
         fields: []
       },
       {
@@ -94,7 +95,7 @@ const S = {
   },
   hero: { label: 'Hero (สไลด์หน้าแรก)', list: true, fields: [['tab', 'ชื่อแท็บด้านล่าง'], ['title', 'หัวข้อใหญ่'], ['text', 'ข้อความ', 'area'], ['button', 'ข้อความบนปุ่ม (ว่าง = ไม่แสดงปุ่ม)'], ['link', 'ลิงก์ปุ่ม (ว่าง = ใช้ลิงก์จองหลัก)', 'url'], ['showBooking', 'แสดงแถบเลือกวันและจองคิว', 'bool'], ['showImage', 'แสดงรูปพื้นหลัง', 'bool'], ['image', 'รูปพื้นหลัง', 'image']] },
   about: { label: 'ที่อยู่ร้าน', hint: 'ส่วนนี้อยู่ท้ายหน้าเว็บ — ที่อยู่ เบอร์โทร อีเมล ดึงจากแท็บ «ตั้งค่าทั่วไป» · ลิงก์ Google Maps: เปิด Google Maps → แชร์ → คัดลอกลิงก์ แล้ววางด้านล่าง กดบันทึกแล้วระบบสร้างแผนที่ให้', fields: [['title', 'หัวข้อ'], ['text', 'ข้อความสั้น (เช่น วิธีเดินทาง ที่จอดรถ)', 'area'], ['mapUrl', 'ลิงก์ Google Maps (ว่าง = ใช้ลิงก์จากแอดมินร้าน ถ้ามี)', 'url'], ['showMap', 'แสดงแผนที่ Google Maps', 'bool'], ['showImage', 'แสดงรูป (ใช้เมื่อไม่มีแผนที่)', 'bool'], ['imageFirst', 'แผนที่ / รูปอยู่ด้านซ้าย (ปิด = ข้อความซ้าย)', 'bool'], ['image', 'รูป', 'image']] },
-  rooms: { label: 'บริการ', list: true, prefixRoot: [['roomsHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['name', 'ชื่อรายการ'], ['type', 'รหัสโฟลเดอร์รูป (a-z 0-9 - _ เช่น classic)'], ['detail', 'รายละเอียดสั้น'], ['titleColor', 'สีชื่อบริการ (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียด (ว่าง = ตามธีม)', 'color'], ['linkColor', 'สีลิงก์จองเลย (ว่าง = ตามธีม)', 'color'], ['showImage', 'แสดงรูป', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจองของรายการนี้ (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
+  rooms: { label: 'บริการ', list: true, prefixRoot: [['roomsHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['name', 'ชื่อรายการ'], ['type', 'รหัสโฟลเดอร์รูป (a-z 0-9 - _ เช่น classic)'], ['detail', 'รายละเอียดสั้น'], ['icon', 'ไอคอน (แสดงเมื่อไม่มีรูป — อัตโนมัติ = เลือกจากชื่อบริการ)', 'icon'], ['titleColor', 'สีชื่อบริการ (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียด (ว่าง = ตามธีม)', 'color'], ['linkColor', 'สีลิงก์จองเลย (ว่าง = ตามธีม)', 'color'], ['showImage', 'ใช้รูปแทนไอคอน (ถ้าอัปโหลดรูปไว้)', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจองของรายการนี้ (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
   promos: { label: 'โปรโมชั่น', list: true, prefixRoot: [['promosHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['title', 'หัวข้อ'], ['text', 'รายละเอียด', 'area'], ['titleColor', 'สีหัวข้อบนรูป (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียดบนรูป (ว่าง = ตามธีม)', 'color'], ['showImage', 'แสดงรูป', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจอง (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
   dining: { label: 'บรรยากาศ / สิ่งอำนวยความสะดวก', fields: [['title', 'หัวข้อ'], ['text', 'ข้อความ', 'area'], ['showImage', 'แสดงรูป', 'bool'], ['imageFirst', 'รูปอยู่ด้านซ้าย (ปิด = ข้อความซ้าย รูปขวา)', 'bool'], ['image', 'รูป', 'image']] },
   news: { label: 'รีวิว', list: true, prefixRoot: [['newsHeading', 'หัวข้อด้านบน (เช่น รีวิว)'], ['newsShowImage', 'แสดงรูปใต้หัวข้อ', 'bool'], ['newsImage', 'รูปใต้หัวข้อ', 'image']], fields: [['date', 'วันที่'], ['title', 'หัวข้อรีวิว'], ['showImage', 'แสดงรูป', 'bool'], ['image', 'รูป', 'image']] }
@@ -152,6 +153,15 @@ const hexColor = (v, key) => {
   if (key === 'linkColor') return (c.value?.theme?.roomLink || '').trim() || themeInk()
   return defaultTheme[key] || '#000000'
 }
+const moreIcons = ref({})
+const iconQuery = ref({})
+const moreOpen = (o, i) => moreIcons.value[i] ?? isMoreIcon(o.icon)
+const toggleMore = (o, i) => { moreIcons.value = { ...moreIcons.value, [i]: !moreOpen(o, i) } }
+const filteredMoreIcons = i => {
+  const q = String(iconQuery.value[i] || '').trim().toLowerCase()
+  return q ? [...SERVICE_ICONS, ...MORE_SERVICE_ICONS].filter(([id, name]) => name.toLowerCase().includes(q) || id.includes(q)) : MORE_SERVICE_ICONS
+}
+watch(tab, () => { moreIcons.value = {}; iconQuery.value = {} })
 const add = () => c.value[tab.value].push(blank())
 const del = i => confirm('ลบรายการนี้?') && c.value[tab.value].splice(i, 1)
 const move = (i, d) => { const a = c.value[tab.value], j = i + d; if (j < 0 || j >= a.length) return;[a[i], a[j]] = [a[j], a[i]] }
@@ -191,6 +201,14 @@ watch(
   { deep: true },
 )
 
+const cardStatus = ref({ key: '', text: '', ok: true })
+let cardStatusTimer
+async function saveCard(i) {
+  const ok = await save()
+  cardStatus.value = { key: tab.value + i, text: ok ? 'บันทึกแล้ว' : msg.value, ok }
+  clearTimeout(cardStatusTimer)
+  if (ok) cardStatusTimer = setTimeout(() => { cardStatus.value = { key: '', text: '', ok: true } }, 4000)
+}
 async function save() {
   busy.value = true
   try {
@@ -205,21 +223,40 @@ async function save() {
     msg.value = savedAbout?.mapUrl && !savedAbout.mapEmbedUrl
       ? 'บันทึกแล้ว — แต่อ่านลิงก์ Google Maps ไม่ได้ ลองคัดลอกลิงก์แชร์ใหม่'
       : 'บันทึกแล้ว — เปิดดูหน้าเว็บเพื่อเห็นธีมใหม่'
-  } catch (e) { msg.value = e.message }
-  busy.value = false
+    busy.value = false
+    return true
+  } catch (e) {
+    msg.value = e?.response?.data?.error || e.message || 'บันทึกไม่สำเร็จ'
+    busy.value = false
+    return false
+  }
+}
+const SAVE_NOW_NOTE = '\nระบบจะบันทึกให้ทันที (รวมถึงการแก้ไขอื่นที่ยังไม่ได้บันทึก)'
+const presetSaving = ref('')
+const presetError = ref({ id: '', text: '' })
+async function applyThemeAndSave(theme, doneText, id) {
+  c.value.theme = theme
+  dirty.value = true
+  presetSaving.value = id
+  presetError.value = { id: '', text: '' }
+  nextTick(paintLivePreview)
+  const ok = await save()
+  presetSaving.value = ''
+  if (ok) {
+    msg.value = `${doneText} — บันทึกแล้ว หน้าเว็บเปลี่ยนตามทันที`
+  } else {
+    presetError.value = { id, text: `บันทึกไม่สำเร็จ: ${msg.value}` }
+    msg.value = `${doneText} แต่บันทึกไม่สำเร็จ: ${msg.value} — ลองกดบันทึกทั้งหมดอีกครั้ง`
+  }
 }
 function resetTheme() {
-  if (!confirm('รีเซ็ตกลับเป็นธีมเริ่มต้น Rose Blush? ค่าที่ตั้งเองจะถูกเขียนทับ')) return
-  c.value.theme = applyPresetTheme(defaultPreset())
-  dirty.value = true
-  msg.value = 'รีเซ็ตกลับเป็นธีมเริ่มต้นแล้ว กดบันทึกทั้งหมดเพื่อใช้บนหน้าเว็บ'
+  if (!confirm('รีเซ็ตกลับเป็นธีมเริ่มต้น Rose Blush? ค่าที่ตั้งเองจะถูกเขียนทับ' + SAVE_NOW_NOTE)) return
+  const preset = defaultPreset()
+  applyThemeAndSave(applyPresetTheme(preset), 'รีเซ็ตกลับเป็นธีมเริ่มต้นแล้ว', preset.id)
 }
 function usePreset(preset) {
-  if (!confirm('ค่าที่ตั้งเองจะถูกเขียนทับ ต้องการดำเนินการต่อไหม')) return
-  c.value.theme = applyPresetTheme(preset)
-  dirty.value = true
-  msg.value = `ใช้ธีม ${preset.nameTh} แล้ว — กดบันทึกทั้งหมดเพื่อใช้บนหน้าเว็บ`
-  nextTick(paintLivePreview)
+  if (!confirm(`ใช้ธีม ${preset.nameTh}? ค่าสีที่ตั้งเองจะถูกเขียนทับ` + SAVE_NOW_NOTE)) return
+  applyThemeAndSave(applyPresetTheme(preset), `ใช้ธีม ${preset.nameTh} แล้ว`, preset.id)
 }
 function presetMock(preset) {
   const t = preset.theme
@@ -288,7 +325,7 @@ onMounted(async () => {
           <div class="theme-live" ref="livePreviewEl" aria-label="ตัวอย่างธีมบนหน้าเว็บ">
             <div class="theme-live-hero">
               <b>เล็บสวยแบบจองคิวได้</b>
-              <p>ตัวอย่างหน้าแรกตามธีมที่เลือก — กดบันทึกทั้งหมดแล้วเปิดดูหน้าเว็บ</p>
+              <p>ตัวอย่างหน้าแรกตามธีมที่ใช้อยู่</p>
               <span class="btn">จองคิว</span>
             </div>
           </div>
@@ -312,7 +349,8 @@ onMounted(async () => {
                 <span :style="{ background: preset.theme.heroBtnBg, color: preset.theme.heroBtnText, borderRadius: preset.theme.radius }">จองเลย</span>
               </div>
               <small v-if="activePresetId === preset.id" class="preset-status">กำลังใช้ธีมนี้</small>
-              <button type="button" @click="usePreset(preset)">ใช้ธีมนี้</button>
+              <small v-if="presetError.id === preset.id" class="preset-error" role="alert">{{ presetError.text }}</small>
+              <button type="button" :disabled="busy" @click="usePreset(preset)">{{ presetSaving === preset.id ? 'กำลังบันทึก...' : 'ใช้ธีมนี้' }}</button>
             </article>
           </div>
         </section>
@@ -359,9 +397,31 @@ onMounted(async () => {
             <b>รายการที่ {{ i + 1 }}</b>
             <span><button type="button" @click="move(i, -1)" aria-label="เลื่อนขึ้น">↑</button><button type="button" @click="move(i, 1)" aria-label="เลื่อนลง">↓</button><button type="button" @click="del(i)">ลบ</button></span>
           </div>
-          <label v-for="f in sec.fields" :key="f[0]" :class="{ chk: f[2] === 'bool' }">
+          <component :is="f[2] === 'icon' ? 'div' : 'label'" v-for="f in sec.fields" :key="f[0]" :class="{ chk: f[2] === 'bool', 'icon-field': f[2] === 'icon' }">
             {{ f[1] }}
-            <textarea v-if="f[2] === 'area'" v-model="o[f[0]]" rows="4"></textarea>
+            <template v-if="f[2] === 'icon'">
+            <span class="icon-pick" role="radiogroup" :aria-label="f[1]">
+              <button type="button" role="radio" class="auto" :aria-checked="!o[f[0]]" :class="{ on: !o[f[0]] }" @click="o[f[0]] = ''">
+                <i class="ti" :class="'ti-' + serviceIcon({ ...o, icon: '' }, i)" aria-hidden="true"></i><small>อัตโนมัติ</small>
+              </button>
+              <button v-for="[id, name] in SERVICE_ICONS" :key="id" type="button" role="radio" :aria-checked="o[f[0]] === id" :class="{ on: o[f[0]] === id }" :title="name" :aria-label="name" @click="o[f[0]] = id">
+                <i class="ti" :class="'ti-' + id" aria-hidden="true"></i>
+              </button>
+              <button type="button" class="more" :class="{ on: !moreOpen(o, i) && isMoreIcon(o[f[0]]) }" :aria-expanded="moreOpen(o, i)" :aria-controls="'icon-more-' + i" @click="toggleMore(o, i)">
+                <i class="ti" :class="moreOpen(o, i) ? 'ti-chevron-up' : 'ti-dots'" aria-hidden="true"></i><small>{{ moreOpen(o, i) ? 'ซ่อน' : `อื่นๆ (${MORE_SERVICE_ICONS.length})` }}</small>
+              </button>
+            </span>
+            <span v-if="moreOpen(o, i)" :id="'icon-more-' + i" class="icon-more">
+              <input v-model="iconQuery[i]" type="search" placeholder="ค้นหาไอคอน เช่น ดอกไม้ นวด ส่วนลด" aria-label="ค้นหาไอคอน">
+              <span class="icon-pick" role="radiogroup" aria-label="ไอคอนเพิ่มเติม">
+                <button v-for="[id, name] in filteredMoreIcons(i)" :key="id" type="button" role="radio" :aria-checked="o[f[0]] === id" :class="{ on: o[f[0]] === id }" :title="name" :aria-label="name" @click="o[f[0]] = id">
+                  <i class="ti" :class="'ti-' + id" aria-hidden="true"></i>
+                </button>
+                <em v-if="!filteredMoreIcons(i).length" class="hint">ไม่พบไอคอนที่ค้นหา</em>
+              </span>
+            </span>
+            </template>
+            <textarea v-else-if="f[2] === 'area'" v-model="o[f[0]]" rows="4"></textarea>
             <input v-else-if="f[2] === 'bool' && f[0] === 'imageFirst'" type="checkbox" :checked="tab === 'dining' ? o[f[0]] !== false : !!o[f[0]]" @change="o[f[0]] = $event.target.checked">
             <input v-else-if="f[2] === 'bool' && (f[0] === 'showImage' || f[0] === 'showMap' || f[0] === 'showBooking' || f[0] === 'heroOverlay' || f[0] === 'lightEnhance' || f[0] === 'darkEnhance')" type="checkbox" :checked="o[f[0]] !== false" @change="o[f[0]] = $event.target.checked">
             <input v-else-if="f[2] === 'bool'" type="checkbox" v-model="o[f[0]]">
@@ -382,7 +442,11 @@ onMounted(async () => {
             </span>
             <input v-else-if="f[2] === 'size'" v-model="o[f[0]]" type="text" :placeholder="sizePlaceholders[f[0]] || 'ว่าง = ค่าเริ่มต้น'">
             <input v-else v-model="o[f[0]]" :type="f[2] === 'url' ? 'url' : 'text'">
-          </label>
+          </component>
+          <div v-if="sec.list" class="card-save">
+            <span v-if="cardStatus.key === tab + i" class="msg" :class="{ err: !cardStatus.ok }" role="status">{{ cardStatus.text }}</span>
+            <button type="button" class="save" :disabled="busy" @click="saveCard(i)">{{ busy ? 'กำลังบันทึก...' : 'บันทึก' }}</button>
+          </div>
         </section>
         <button v-if="sec.list" class="add" type="button" @click="add">+ เพิ่มรายการ</button>
       </template>
