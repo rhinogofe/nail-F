@@ -222,6 +222,21 @@ test.describe('Admin page', () => {
     await expect(field).toHaveValue(original)
   })
 
+  test('error toast stays until dismissed', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
+    await page.route('**/api/admin/bookings/calendar-summary**', (route) => route.fulfill({
+      status: 500,
+      json: { error: 'ทดสอบข้อผิดพลาด' },
+    }))
+    await page.getByRole('button', { name: 'เดือนถัดไป' }).click()
+    const toast = page.locator('.admin-toast-stack').getByRole('alert')
+    await expect(toast).toHaveText(/ทดสอบข้อผิดพลาด/)
+    await page.waitForTimeout(3500)
+    await expect(toast).toBeVisible()
+    await toast.getByRole('button', { name: 'ปิดข้อความผิดพลาด' }).click()
+    await expect(toast).toHaveCount(0)
+  })
+
   test('booking calendar shows location color legend', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
     await expect(page.locator('.cal-location-legend:visible')).toHaveText(/สีพื้นช่องวัน = สถานที่ให้บริการ ไม่ใช่สถานะคิว/)

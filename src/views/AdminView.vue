@@ -433,33 +433,28 @@ const optionFormUseColor = ref(false)
 const loading = ref(false)
 const message = ref('')
 const errorMessage = ref('')
-const adminToast = ref(null)
+const adminToastSuccess = ref('')
+const adminToastError = ref('')
 let adminToastTimer = 0
 
-function dismissAdminToast() {
-  if (adminToastTimer) {
-    clearTimeout(adminToastTimer)
-    adminToastTimer = 0
-  }
-  adminToast.value = null
-  message.value = ''
+function dismissAdminError() {
+  adminToastError.value = ''
   errorMessage.value = ''
 }
 
 function showAdminToast(type, text) {
   if (!text) return
-  if (adminToastTimer) {
-    clearTimeout(adminToastTimer)
+  if (type === 'error') {
+    adminToastError.value = text
+    return
+  }
+  if (adminToastTimer) clearTimeout(adminToastTimer)
+  adminToastSuccess.value = text
+  adminToastTimer = window.setTimeout(() => {
+    adminToastSuccess.value = ''
+    message.value = ''
     adminToastTimer = 0
-  }
-  adminToast.value = { type, text }
-  if (type !== 'error') {
-    adminToastTimer = window.setTimeout(() => {
-      adminToast.value = null
-      message.value = ''
-      adminToastTimer = 0
-    }, 3000)
-  }
+  }, 3000)
 }
 
 watch(message, (val) => {
@@ -5392,27 +5387,22 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </div>
 
     <Teleport to="body">
-      <div v-if="adminToast" class="admin-toast-stack" :data-type="adminToast.type">
-        <p
-          class="admin-toast"
-          :class="`admin-toast--${adminToast.type}`"
-          :role="adminToast.type === 'error' ? 'alert' : 'status'"
-        >
-          <i
-            class="ti"
-            :class="adminToast.type === 'error' ? 'ti-alert-triangle' : 'ti-check'"
-            aria-hidden="true"
-          ></i>
-          <span>{{ adminToast.text }}</span>
+      <div v-if="adminToastError || adminToastSuccess" class="admin-toast-stack">
+        <p v-if="adminToastError" class="admin-toast admin-toast--error" role="alert">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          <span>{{ adminToastError }}</span>
           <button
-            v-if="adminToast.type === 'error'"
             type="button"
             class="admin-toast-close"
             aria-label="ปิดข้อความผิดพลาด"
-            @click="dismissAdminToast"
+            @click="dismissAdminError"
           >
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
+        </p>
+        <p v-if="adminToastSuccess" class="admin-toast admin-toast--success" role="status">
+          <i class="ti ti-check" aria-hidden="true"></i>
+          <span>{{ adminToastSuccess }}</span>
         </p>
       </div>
     </Teleport>

@@ -738,14 +738,18 @@ textarea:focus-visible {
   left: 50%;
   top: calc(12px + env(safe-area-inset-top, 0px));
   transform: translateX(-50%);
-  z-index: var(--z-toast);
+  /* Above admin modals so results of saves made inside a modal stay visible; below SweetAlert. */
+  z-index: calc(var(--z-admin-modal) + 100);
   width: min(420px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   pointer-events: none;
 }
 
 .admin-toast {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   margin: 0;
   padding: var(--space-3);
