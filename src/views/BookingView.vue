@@ -184,7 +184,6 @@ const stripDragState = ref({
   moved: false,
   startX: 0,
   startScrollLeft: 0,
-  targetIso: null,
   pointerId: null,
 })
 const categoryStripDragState = ref({
@@ -241,13 +240,11 @@ function onStripPointerDown(e) {
   if (e.pointerType === 'mouse' && e.button !== 0) return
   const el = dayStripRef.value
   if (!el) return
-  const pill = e.target.closest?.('.day-pill')
   stripDragState.value = {
     active: true,
     moved: false,
     startX: e.clientX,
     startScrollLeft: el.scrollLeft,
-    targetIso: pill?.dataset?.iso || null,
     pointerId: e.pointerId,
   }
 }
@@ -259,7 +256,6 @@ function onStripPointerMove(e) {
   const dx = e.clientX - stripDragState.value.startX
   if (!stripDragState.value.moved && Math.abs(dx) > 10) {
     stripDragState.value.moved = true
-    stripDragState.value.targetIso = null
     el.setPointerCapture(e.pointerId)
   }
   if (!stripDragState.value.moved) return
@@ -267,10 +263,12 @@ function onStripPointerMove(e) {
   el.scrollLeft = stripDragState.value.startScrollLeft - dx
 }
 
+let suppressDayPillClick = false
+
 function onStripPointerUp(e) {
   if (!stripDragState.value.active || e.pointerId !== stripDragState.value.pointerId) return
   const el = dayStripRef.value
-  const { moved, targetIso } = stripDragState.value
+  const { moved } = stripDragState.value
   resetStripDragState()
   try {
     if (el?.hasPointerCapture?.(e.pointerId)) {
@@ -280,7 +278,26 @@ function onStripPointerUp(e) {
     /* ignore */
   }
   updateStripScroll()
-  if (!moved && targetIso) selectDate(targetIso)
+  if (moved) {
+    // A drag can still end with a click on the pill under the pointer; ignore that one.
+    suppressDayPillClick = true
+    setTimeout(() => { suppressDayPillClick = false }, 0)
+  }
+}
+
+function onDayPillClick(iso) {
+  if (suppressDayPillClick) return
+  selectDate(iso)
+}
+
+const weekdayFullNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+
+function dayPillAriaLabel(day) {
+  const d = parseYmdLocal(day.iso)
+  const parts = [`วัน${weekdayFullNames[d.getDay()]}ที่ ${d.getDate()} ${thMonths[d.getMonth()]} ${d.getFullYear() + 543}`]
+  if (day.isToday) parts.push('วันนี้')
+  if (hasBookingOnDay(day.iso)) parts.push('มีคิวของคุณ')
+  return parts.join(' · ')
 }
 
 function resetCategoryStripDragState() {
@@ -829,7 +846,6 @@ function resetStripDragState() {
     moved: false,
     startX: 0,
     startScrollLeft: 0,
-    targetIso: null,
     pointerId: null,
   }
   if (el && pointerId != null) {
@@ -1215,11 +1231,11 @@ onUnmounted(() => {
       </p>
 
       <div class="date-nav">
-        <button class="nav-btn" :disabled="!canGoPrev" @click="prevWeek" aria-label="ก่อนหน้า">
+        <button type="button" class="nav-btn" :disabled="!canGoPrev" @click="prevWeek" aria-label="เลื่อนดูวันก่อนหน้า">
           <i class="ti ti-chevron-left" aria-hidden="true"></i>
         </button>
         <span class="month-label">{{ monthLabel }}</span>
-        <button class="nav-btn" :disabled="!canGoNext" @click="nextWeek" aria-label="ถัดไป">
+        <button type="button" class="nav-btn" :disabled="!canGoNext" @click="nextWeek" aria-label="เลื่อนดูวันถัดไป">
           <i class="ti ti-chevron-right" aria-hidden="true"></i>
         </button>
       </div>
@@ -1250,6 +1266,9 @@ onUnmounted(() => {
             'has-tint': Boolean(day.tintColor),
           }"
           :style="dayPillStyle(day)"
+          :aria-label="dayPillAriaLabel(day)"
+          :aria-pressed="selectedDate === day.iso"
+          @click="onDayPillClick(day.iso)"
         >
           <span class="day-name">{{ day.label }}</span>
           <strong class="day-num">{{ day.day }}</strong>
@@ -1673,7 +1692,7 @@ onUnmounted(() => {
                         v-if="!opt.is_required"
                         type="button"
                         class="selected-service-remove"
-                        aria-label="ลบรายการ"
+                        :aria-label="`ลบ ${opt.option_name} ออกจากรายการ`"
                         @click="removeSelectedOption(opt.id)"
                       >
                         <i class="ti ti-x" aria-hidden="true"></i>
@@ -1855,7 +1874,7 @@ onUnmounted(() => {
   display: none;
 }
 .day-pill {
-  flex: 0 0 clamp(42px, 12vw, 52px);
+  flex: 0 0 clamp(var(--touch-min), 12vw, 52px);
   scroll-snap-align: start;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   min-height: 58px; padding: 8px 0; border-radius: 12px;
@@ -2238,18 +2257,19 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: -10px -10px -10px -4px;
+  padding: 10px;
   border: none;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent) content-box;
   color: var(--color-text-muted);
   cursor: pointer;
   flex-shrink: 0;
 }
 .selected-service-remove:hover {
-  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent) content-box;
   color: var(--color-error);
 }
 .selected-services-total {

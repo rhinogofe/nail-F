@@ -81,6 +81,33 @@ test.describe('Customer booking flow', () => {
     await expect(slotsOrEmpty.first()).toBeVisible({ timeout: 15000 })
   })
 
+  test('day pills select a date by click and by keyboard', async ({ page }) => {
+    await page.goto('/default/bookings')
+    const pills = page.locator('.day-pill')
+    await expect(pills.first()).toBeVisible({ timeout: 15000 })
+    test.skip((await pills.count()) < 3, 'เปิดรับจองไม่ถึง 3 วัน')
+
+    const second = pills.nth(1)
+    await expect(second).toHaveAttribute('aria-label', /^วัน.+ที่ \d+ /)
+    await second.click()
+    await expect(second).toHaveAttribute('aria-pressed', 'true')
+    await expect(pills.first()).toHaveAttribute('aria-pressed', 'false')
+
+    const third = pills.nth(2)
+    await third.focus()
+    await page.keyboard.press('Enter')
+    await expect(third).toHaveAttribute('aria-pressed', 'true')
+    await expect(second).toHaveAttribute('aria-pressed', 'false')
+
+    const dragStart = await second.boundingBox()
+    await page.mouse.move(dragStart.x + dragStart.width / 2, dragStart.y + dragStart.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(dragStart.x - 60, dragStart.y + dragStart.height / 2, { steps: 8 })
+    await page.mouse.up()
+    await expect(third).toHaveAttribute('aria-pressed', 'true')
+    await expect(second).toHaveAttribute('aria-pressed', 'false')
+  })
+
   test('customer nav pages load', async ({ page }) => {
     await page.goto('/default/bookings')
     const nav = page.getByRole('navigation', { name: 'เมนูหลัก' })

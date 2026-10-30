@@ -1348,3 +1348,12 @@ textarea.admin-input {
     margin: 0;
   }
 }
+
+/* iOS Safari zooms the page when a field under 16px gets focus; pinch-zoom is no longer locked. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}

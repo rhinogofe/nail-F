@@ -240,7 +240,7 @@ test.describe('Admin page', () => {
       status: 500,
       json: { error: 'ทดสอบข้อผิดพลาด' },
     }))
-    await page.getByRole('button', { name: 'เดือนถัดไป' }).click()
+    await page.getByRole('button', { name: 'ดูเดือนถัดไปในปฏิทินคิว' }).click()
     const toast = page.locator('.admin-toast-stack').getByRole('alert')
     await expect(toast).toHaveText(/ทดสอบข้อผิดพลาด/)
     await page.waitForTimeout(3500)

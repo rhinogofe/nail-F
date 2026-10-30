@@ -5522,11 +5522,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
 
         <div class="service-cal-nav">
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(-1)" aria-label="เดือนก่อน">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(-1)" aria-label="ดูเดือนก่อนหน้าในปฏิทินคิว">
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </button>
           <span class="service-cal-month">{{ bookingMonthLabel }}</span>
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(1)" aria-label="เดือนถัดไป">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(1)" aria-label="ดูเดือนถัดไปในปฏิทินคิว">
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -5737,11 +5737,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </label>
 
       <div class="service-cal-nav">
-        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(-1)" aria-label="เดือนก่อน">
+        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(-1)" aria-label="ดูเดือนก่อนหน้าในสรุปยอด">
           <i class="ti ti-chevron-left" aria-hidden="true"></i>
         </button>
         <span class="service-cal-month">{{ revenueMonthLabel }}</span>
-        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(1)" aria-label="เดือนถัดไป">
+        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(1)" aria-label="ดูเดือนถัดไปในสรุปยอด">
           <i class="ti ti-chevron-right" aria-hidden="true"></i>
         </button>
       </div>
@@ -5910,11 +5910,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
 
         <div class="service-cal-nav">
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(-1)" aria-label="เดือนก่อน">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(-1)" aria-label="ดูเดือนก่อนหน้าในปฏิทินบริการ">
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </button>
           <span class="service-cal-month">{{ serviceMonthLabel }}</span>
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(1)" aria-label="เดือนถัดไป">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(1)" aria-label="ดูเดือนถัดไปในปฏิทินบริการ">
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -5986,7 +5986,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 type="button"
                 class="btn service-order-btn"
                 :disabled="index === 0"
-                aria-label="เลื่อนขึ้น"
+                :aria-label="`เลื่อน ${item.option_name} ขึ้น`"
                 @click="moveNailOption(item, 'up', { everyday: true })"
               >
                 <i class="ti ti-chevron-up" aria-hidden="true"></i>
@@ -5995,7 +5995,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 type="button"
                 class="btn service-order-btn"
                 :disabled="index === everyDayOptions.length - 1"
-                aria-label="เลื่อนลง"
+                :aria-label="`เลื่อน ${item.option_name} ลง`"
                 @click="moveNailOption(item, 'down', { everyday: true })"
               >
                 <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -6141,7 +6141,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               type="button"
               class="btn service-order-btn"
               :disabled="index === 0"
-              aria-label="เลื่อนขึ้น"
+              :aria-label="`เลื่อน ${item.option_name} ขึ้น`"
               @click="moveNailOption(item, 'up', { date: selectedServiceDate })"
             >
               <i class="ti ti-chevron-up" aria-hidden="true"></i>
@@ -6150,7 +6150,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               type="button"
               class="btn service-order-btn"
               :disabled="index === selectedDayOptions.length - 1"
-              aria-label="เลื่อนลง"
+              :aria-label="`เลื่อน ${item.option_name} ลง`"
               @click="moveNailOption(item, 'down', { date: selectedServiceDate })"
             >
               <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -6214,7 +6214,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-modal="true" aria-labelledby="staff-form-title">
           <div class="booking-edit-header">
             <h3 id="staff-form-title">{{ staffEditTarget ? 'แก้ไขช่าง' : 'เพิ่มช่าง' }}</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeStaffForm">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดฟอร์มช่าง" @click="closeStaffForm">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -6281,7 +6281,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
-              aria-label="ปิดหัวข้อ"
+              aria-label="ปิดหัวข้อตั้งค่า"
               @click="settingsNavOpen = false"
             >
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -7043,7 +7043,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
-              aria-label="ปิดหัวข้อ"
+              aria-label="ปิดหัวข้อ UI"
               @click="uiNavOpen = false"
             >
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -7226,7 +7226,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
-              aria-label="ปิดหัวข้อ"
+              aria-label="ปิดหัวข้อเวลา"
               @click="blocksNavOpen = false"
             >
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -7320,11 +7320,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 </div>
 
                 <div class="service-cal-nav">
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="เดือนก่อน">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="ดูเดือนก่อนหน้าในเวลาเปิด-ปิดเฉพาะวัน">
                     <i class="ti ti-chevron-left" aria-hidden="true"></i>
                   </button>
                   <span class="service-cal-month">{{ dayHoursMonthLabel }}</span>
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(1)" aria-label="เดือนถัดไป">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(1)" aria-label="ดูเดือนถัดไปในเวลาเปิด-ปิดเฉพาะวัน">
                     <i class="ti ti-chevron-right" aria-hidden="true"></i>
                   </button>
                 </div>
@@ -7692,11 +7692,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 </div>
 
                 <div class="service-cal-nav">
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="เดือนก่อน">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="ดูเดือนก่อนหน้าในปฏิทินปิดรับคิว">
                     <i class="ti ti-chevron-left" aria-hidden="true"></i>
                   </button>
                   <span class="service-cal-month">{{ blockMonthLabel }}</span>
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="เดือนถัดไป">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="ดูเดือนถัดไปในปฏิทินปิดรับคิว">
                     <i class="ti ti-chevron-right" aria-hidden="true"></i>
                   </button>
                 </div>
@@ -8065,7 +8065,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="shop-edit-title">
           <div class="booking-edit-header">
             <h3 id="shop-edit-title">แก้ไขสาขา</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeShopEdit">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดหน้าต่างแก้ไขสาขา" @click="closeShopEdit">×</button>
           </div>
           <p v-if="shopEditItem" class="muted booking-edit-meta">/{{ shopEditItem.slug }}</p>
           <label class="booking-edit-field">
@@ -8125,7 +8125,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-chat-send-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="chat-send-title">
           <div class="booking-edit-header">
             <h3 id="chat-send-title">ส่งข้อความ</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeSendMessageModal">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดหน้าต่างส่งข้อความ" @click="closeSendMessageModal">×</button>
           </div>
           <p v-if="chatSendUser" class="muted booking-edit-meta">
             ถึง <strong>{{ chatSendUser.name }}</strong>
@@ -8161,7 +8161,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card user-history-modal" role="dialog" aria-labelledby="user-history-title">
           <div class="booking-edit-header">
             <h3 id="user-history-title">ประวัติการจอง</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserHistory">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดประวัติการจอง" @click="closeUserHistory">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8217,7 +8217,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="staff-add-title">
           <div class="booking-edit-header">
             <h3 id="staff-add-title">{{ staffAddBtnLabel }}</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeStaffAdd">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดหน้าต่างเพิ่มแอดมิน" @click="closeStaffAdd">×</button>
           </div>
           <p v-if="isSuperAdmin" class="muted booking-edit-meta">
             สร้างบัญชีล็อกอินเบอร์โทร + ให้สิทธิ์แอดมินตามสาขาที่เลือก
@@ -8285,7 +8285,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-user-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="user-edit-title">
           <div class="booking-edit-header">
             <h3 id="user-edit-title">แก้ไขข้อมูลผู้ใช้</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserEdit">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดหน้าต่างแก้ไขผู้ใช้" @click="closeUserEdit">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8417,7 +8417,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="booking-add-title">
           <div class="booking-edit-header">
             <h3 id="booking-add-title">เพิ่มคิว</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingAdd">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดหน้าต่างเพิ่มคิว" @click="closeBookingAdd">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8631,7 +8631,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-booking-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="booking-edit-title">
           <div class="booking-edit-header">
             <h3 id="booking-edit-title">{{ isBookingRestoreMode ? 'เลือกเวลาเพื่อคืนสถานะจอง' : 'แก้ไขข้อมูลคิว' }}</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingEdit">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดหน้าต่างแก้ไขคิว" @click="closeBookingEdit">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8835,7 +8835,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-day-hour-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="day-hour-edit-title">
           <div class="booking-edit-header">
             <h3 id="day-hour-edit-title">แก้ไขช่วงเวลา</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeDayHourForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มเวลาเฉพาะวัน" @click="closeDayHourForm">×</button>
           </div>
           <p v-if="selectedDayHoursDate" class="muted booking-edit-meta">
             วันที่ {{ formatServiceDateLabel(selectedDayHoursDate) }}
@@ -8898,7 +8898,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-category-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="category-edit-title">
           <div class="booking-edit-header">
             <h3 id="category-edit-title">แก้ไขหมวดหมู่</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetCategoryForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มหมวดหมู่" @click="resetCategoryForm">×</button>
           </div>
           <div class="admin-form-grid admin-option-grid">
             <label>
@@ -8932,7 +8932,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-option-edit-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-labelledby="option-edit-title">
           <div class="booking-edit-header">
             <h3 id="option-edit-title">แก้ไขบริการ</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetOptionForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มแก้ไขบริการ" @click="resetOptionForm">×</button>
           </div>
           <p v-if="optionEditScopeLabel" class="muted booking-edit-meta">{{ optionEditScopeLabel }}</p>
           <div class="admin-form-grid admin-option-grid">
@@ -9009,7 +9009,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-option-add-everyday-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-modal="true" aria-labelledby="option-add-everyday-title">
           <div class="booking-edit-header">
             <h3 id="option-add-everyday-title">เพิ่มบริการทุกวัน</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeEveryDayForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มเพิ่มบริการทุกวัน" @click="closeEveryDayForm">×</button>
           </div>
           <p class="muted booking-edit-meta">บริการนี้จะแสดงให้ลูกค้าเลือกได้ทุกวัน</p>
           <div class="admin-form-grid admin-option-grid">
@@ -9087,7 +9087,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-location-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="location-edit-title">
           <div class="booking-edit-header">
             <h3 id="location-edit-title">แก้ไขสถานที่</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetLocationForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มสถานที่" @click="resetLocationForm">×</button>
           </div>
           <div class="admin-form-grid admin-option-grid">
             <label>
@@ -9145,7 +9145,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-clip-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="clip-edit-title">
           <div class="booking-edit-header">
             <h3 id="clip-edit-title">แก้ไขคลิป</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetClipForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มคลิปรีวิว" @click="resetClipForm">×</button>
           </div>
           <label class="booking-edit-field">
             ลิงก์ TikTok / Instagram
@@ -10717,17 +10717,27 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .color-preset-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
 
 .color-preset-btn {
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
+}
+
+/* Extends the tap target to 44px; with the 8px row gap neighbours never overlap. */
+.color-preset-btn::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
 }
 
 .color-preset-btn.active {
@@ -10907,7 +10917,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .service-order-btn {
-  min-width: 36px;
+  min-width: var(--touch-min);
   padding: 6px 8px;
 }
 
@@ -11179,8 +11189,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .booking-edit-close {
-  padding: 6px 10px;
-  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  font-size: 22px;
+  line-height: 1;
 }
 
 .booking-edit-meta {
