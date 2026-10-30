@@ -1,6 +1,5 @@
 import axios from 'axios'
-
-const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+import { encodeShopSlugHeader, isShopSlugFormat } from '../utils/shopSlug'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000',
@@ -11,13 +10,18 @@ function shopSlugFromUrl() {
   const segment = String(window.location.pathname || '')
     .split('/')
     .filter(Boolean)[0] || ''
-  const slug = segment.trim().toLowerCase()
-  return SLUG_RE.test(slug) ? slug : ''
+  let slug = segment.trim().toLowerCase()
+  try {
+    slug = decodeURIComponent(segment).trim().toLowerCase()
+  } catch {
+    slug = segment.trim().toLowerCase()
+  }
+  return isShopSlugFormat(slug) ? slug : ''
 }
 
 function resolveShopSlug() {
   const fromStorage = String(localStorage.getItem('shopSlug') || '').trim().toLowerCase()
-  if (fromStorage && SLUG_RE.test(fromStorage)) return fromStorage
+  if (fromStorage && isShopSlugFormat(fromStorage)) return fromStorage
 
   const fromUrl = shopSlugFromUrl()
   if (fromUrl) {
@@ -40,9 +44,9 @@ api.interceptors.request.use((config) => {
   // Per-request slug (e.g. super admin editing another branch) must win over storage/URL.
   if (shopSlug && (existingShopSlug == null || existingShopSlug === '')) {
     if (typeof headers.set === 'function') {
-      headers.set('X-Shop-Slug', shopSlug)
+      headers.set('X-Shop-Slug', encodeShopSlugHeader(shopSlug))
     } else {
-      headers['X-Shop-Slug'] = shopSlug
+      headers['X-Shop-Slug'] = encodeShopSlugHeader(shopSlug)
     }
     config.headers = headers
   }

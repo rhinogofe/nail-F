@@ -469,28 +469,6 @@ watch(errorMessage, (val) => {
   if (val) showAdminToast('error', val)
 })
 const activeTab = ref('bookings')
-const adminNavRef = ref(null)
-const adminNavOverflow = ref({ left: false, right: false })
-
-function updateAdminNavOverflow() {
-  const el = adminNavRef.value
-  if (!el) {
-    adminNavOverflow.value = { left: false, right: false }
-    return
-  }
-  adminNavOverflow.value = {
-    left: el.scrollLeft > 4,
-    right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-  }
-}
-
-function scrollActiveAdminTabIntoView() {
-  nextTick(() => {
-    const btn = adminNavRef.value?.querySelector('.admin-nav-item.active')
-    btn?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
-    updateAdminNavOverflow()
-  })
-}
 
 const bookingEditOpen = ref(false)
 const bookingEditItem = ref(null)
@@ -2543,7 +2521,6 @@ async function switchTab(tab) {
     uiNavOpen.value = true
     blocksNavOpen.value = true
   }
-  scrollActiveAdminTabIntoView()
 }
 
 const filtered = computed(() => bookings.value)
@@ -4589,11 +4566,12 @@ function openEveryDayOptionForm() {
   resetOptionForm()
   message.value = ''
   errorMessage.value = ''
-  scrollToAdminSection('services-option-form-everyday', 'input[type="text"]')
+  focusAdminModal('admin-everyday-option-modal', 'input[type="text"]')
 }
 
 function closeEveryDayForm() {
   showEveryDayForm.value = false
+  errorMessage.value = ''
   resetOptionForm()
 }
 
@@ -5111,6 +5089,7 @@ async function saveNailOption() {
     } else if (selectedServiceDate.value) {
       resetOptionFormForDay()
     } else {
+      showEveryDayForm.value = false
       resetOptionForm()
     }
     await loadNailOptions()
@@ -5223,10 +5202,6 @@ watch(() => shopFeaturesStore.staffEnabled, (enabled) => {
   }
 })
 
-watch(activeTab, () => {
-  scrollActiveAdminTabIntoView()
-})
-
 watch(visibleAdminTabs, (tabs) => {
   if (!tabs.some((t) => t.key === activeTab.value)) {
     activeTab.value = tabs[0]?.key || 'bookings'
@@ -5251,10 +5226,6 @@ onMounted(loadAllShops)
 onMounted(loadShopPresets)
 onMounted(loadRenewalBannerSetting)
 onMounted(loadBookingCalendarSummary)
-onMounted(() => {
-  updateAdminNavOverflow()
-  window.addEventListener('resize', updateAdminNavOverflow)
-})
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
 onMounted(loadRegisterShopPinSetting)
@@ -5287,7 +5258,6 @@ onUnmounted(() => {
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
   if (adminToastTimer) clearTimeout(adminToastTimer)
-  window.removeEventListener('resize', updateAdminNavOverflow)
 })
 
 onBeforeRouteLeave(async () => {
@@ -5369,19 +5339,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       เพื่อดูวิธีเปิด
     </button>
 
-    <div
-      class="admin-tab-wrap"
-      :class="{
-        'admin-tab-wrap--fade-left': adminNavOverflow.left,
-        'admin-tab-wrap--fade-right': adminNavOverflow.right,
-      }"
-    >
-    <nav
-      ref="adminNavRef"
-      class="admin-nav"
-      aria-label="เมนูแอดมิน"
-      @scroll="updateAdminNavOverflow"
-    >
+    <div class="admin-tab-wrap">
+    <nav class="admin-nav" aria-label="เมนูแอดมิน">
       <button
         v-for="tab in visibleAdminTabs"
         :key="tab.key"
@@ -5917,76 +5876,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </div>
           <p class="muted">บริการที่ไม่ผูกวันที่ จะแสดงให้ลูกค้าเลือกได้ทุกวันในปฏิทินจอง</p>
 
-          <div v-if="showEveryDayForm && !optionForm.id" id="services-option-form-everyday" class="service-option-form card-inner admin-settings-section">
-            <h4>เพิ่มบริการทุกวัน</h4>
-      <div class="admin-form-grid admin-option-grid">
-        <label>
-          ชื่อบริการ *
-          <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
-        </label>
-        <label>
-          รายละเอียด
-          <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
-        </label>
-              <label>
-                หมวดหมู่
-                <select v-model="optionForm.category_id" class="admin-input">
-                  <option value="">— ไม่ระบุ —</option>
-                  <option v-for="cat in activeServiceCategories" :key="cat.id" :value="cat.id">
-                    {{ cat.name }}
-                  </option>
-                </select>
-              </label>
-        <label>
-          ราคา (บาท)
-          <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
-        </label>
-        <label>
-          ระยะเวลา (นาที)
-                <input v-model.number="optionForm.duration_min" type="number" min="0" step="1" class="admin-input" />
-        </label>
-              <label class="admin-color-field admin-color-field-full">
-                <span class="admin-color-label-row">
-                  สีแสดงในปฏิทิน
-                    <AdminSwitch compact v-model="optionFormUseColor" label="ใช้สี" />
-                </span>
-                <template v-if="optionFormUseColor">
-                  <div class="color-picker-row">
-                    <input v-model="optionForm.color" type="color" class="admin-color-input" />
-                    <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
-                  </div>
-                  <div class="color-preset-row">
-                    <button
-                      v-for="preset in optionColorPresets"
-                      :key="preset.value"
-                      type="button"
-                      class="color-preset-btn"
-                      :class="{ active: optionForm.color === preset.value }"
-                      :style="{ background: preset.value }"
-                      :title="preset.label"
-                      :aria-label="preset.label"
-                      @click="setOptionColor(preset.value)"
-                    ></button>
-                  </div>
-                </template>
-                <p v-else class="muted admin-color-hint">ไม่ใช้สี — วันในปฏิทินจะไม่เปลี่ยนจากบริการนี้</p>
-              </label>
-            </div>
-            <div class="admin-form-row">
-              <AdminSwitch v-model="optionForm.is_active" label="แสดงให้ลูกค้าเลือกจอง" />
-              <AdminSwitch v-model="optionForm.is_required" label="บังคับเลือกเมื่อจอง" />
-              <button class="btn primary admin-action-btn" @click="saveNailOption">
-                เพิ่มบริการ
-              </button>
-              <button class="btn admin-action-btn" @click="closeEveryDayForm">ยกเลิก</button>
-            </div>
-          </div>
-
           <div v-if="!nailOptionsLoaded" class="state-card">
             <i class="ti ti-loader-2 state-card-icon" aria-hidden="true"></i>
             <span class="state-card-title">กำลังโหลดบริการ</span>
           </div>
-          <div v-else-if="everyDayOptions.length === 0 && !showEveryDayForm" class="state-card">
+          <div v-else-if="everyDayOptions.length === 0" class="state-card">
             <i class="ti ti-list state-card-icon" aria-hidden="true"></i>
             <p class="state-card-title">ยังไม่มีบริการทุกวัน</p>
           </div>
@@ -9005,6 +8899,84 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
     <Teleport to="body">
       <div
+        v-if="showEveryDayForm && !optionForm.id"
+        class="booking-edit-backdrop"
+        @click.self="closeEveryDayForm"
+      >
+        <div id="admin-everyday-option-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-labelledby="everyday-option-title">
+          <div class="booking-edit-header">
+            <h3 id="everyday-option-title">เพิ่มบริการทุกวัน</h3>
+            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeEveryDayForm">×</button>
+          </div>
+          <p class="muted booking-edit-meta">แสดงให้ลูกค้าเลือกได้ทุกวันในปฏิทินจอง</p>
+          <div class="admin-form-grid admin-option-grid">
+            <label>
+              ชื่อบริการ *
+              <input v-model="optionForm.option_name" type="text" class="admin-input" placeholder="เช่น ทาสีเจลมือ" />
+            </label>
+            <label>
+              รายละเอียด
+              <input v-model="optionForm.description" type="text" class="admin-input" placeholder="คำอธิบายสั้นๆ" />
+            </label>
+            <label>
+              หมวดหมู่
+              <select v-model="optionForm.category_id" class="admin-input">
+                <option value="">— ไม่ระบุ —</option>
+                <option v-for="cat in activeServiceCategories" :key="`everyday-cat-${cat.id}`" :value="cat.id">
+                  {{ cat.name }}
+                </option>
+              </select>
+            </label>
+            <label>
+              ราคา (บาท)
+              <input v-model.number="optionForm.price" type="number" min="0" step="1" class="admin-input" />
+            </label>
+            <label>
+              ระยะเวลา (นาที)
+              <input v-model.number="optionForm.duration_min" type="number" min="0" step="1" class="admin-input" />
+            </label>
+            <label class="admin-color-field admin-color-field-full">
+              <span class="admin-color-label-row">
+                สีแสดงในปฏิทิน
+                <AdminSwitch compact v-model="optionFormUseColor" label="ใช้สี" />
+              </span>
+              <template v-if="optionFormUseColor">
+                <div class="color-picker-row">
+                  <input v-model="optionForm.color" type="color" class="admin-color-input" />
+                  <input v-model="optionForm.color" type="text" class="admin-input" maxlength="7" placeholder="#C4847A" />
+                </div>
+                <div class="color-preset-row">
+                  <button
+                    v-for="preset in optionColorPresets"
+                    :key="`everyday-opt-${preset.value}`"
+                    type="button"
+                    class="color-preset-btn"
+                    :class="{ active: optionForm.color === preset.value }"
+                    :style="{ background: preset.value }"
+                    :title="preset.label"
+                    :aria-label="preset.label"
+                    @click="setOptionColor(preset.value)"
+                  ></button>
+                </div>
+              </template>
+              <p v-else class="muted admin-color-hint">ไม่ใช้สี — วันในปฏิทินจะไม่เปลี่ยนจากบริการนี้</p>
+            </label>
+          </div>
+          <div class="admin-form-row" style="margin-bottom:16px">
+            <AdminSwitch v-model="optionForm.is_active" label="แสดงให้ลูกค้าเลือกจอง" />
+            <AdminSwitch v-model="optionForm.is_required" label="บังคับเลือกเมื่อจอง" />
+          </div>
+          <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+          <div class="booking-edit-actions">
+            <button type="button" class="btn" @click="closeEveryDayForm">ยกเลิก</button>
+            <button type="button" class="btn primary" @click="saveNailOption">เพิ่มบริการ</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="locationForm.id"
         class="booking-edit-backdrop"
         @click.self="resetLocationForm"
@@ -9215,8 +9187,6 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   width: 20px;
   z-index: 2;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--transition);
 }
 
 .admin-tab-wrap::before {
@@ -9227,11 +9197,6 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .admin-tab-wrap::after {
   right: 0;
   background: linear-gradient(to left, var(--color-surface), transparent);
-}
-
-.admin-tab-wrap--fade-left::before,
-.admin-tab-wrap--fade-right::after {
-  opacity: 1;
 }
 
 .admin-nav {

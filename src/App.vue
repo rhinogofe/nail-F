@@ -13,7 +13,8 @@ import { syncShopManifestLink } from './utils/shopManifest'
 const route = useRoute()
 const auth = useAuthStore()
 const shopStore = useShopStore()
-const isAdminRoute = computed(() => /\/admin$/.test(route.path))
+const isBookingSiteRoute = computed(() => Boolean(route.meta.bookingSite))
+const isAdminRoute = computed(() => /\/admin$/.test(route.path) && !isBookingSiteRoute.value)
 const isNavRoute = computed(() =>
   /\/(bookings|reviews|location|chat|profile)(\/|$)/.test(route.path),
 )
@@ -39,13 +40,19 @@ function syncPushListener() {
     .catch(() => {})
 }
 
+function syncBookingSiteScroll() {
+  document.documentElement.classList.toggle('booking-site-open', isBookingSiteRoute.value)
+}
+
 onMounted(() => {
   syncManifestFromRoute()
   syncPushListener()
+  syncBookingSiteScroll()
 })
 
 onUnmounted(() => {
   stopPushListener?.()
+  document.documentElement.classList.remove('booking-site-open')
 })
 
 watch(
@@ -59,6 +66,10 @@ watch(
 watch(() => auth.isLoggedIn, () => {
   syncPushListener()
 })
+
+watch(isBookingSiteRoute, () => {
+  syncBookingSiteScroll()
+}, { immediate: true })
 </script>
 
 <template>
@@ -67,6 +78,7 @@ watch(() => auth.isLoggedIn, () => {
     :class="{
       'app-shell--admin': isAdminRoute,
       'app-shell--nav': isNavRoute,
+      'app-shell--booking-site': isBookingSiteRoute,
     }"
   >
     <AppUpdateBanner :visible="updateAvailable" @reload="reload" />
@@ -92,6 +104,15 @@ watch(() => auth.isLoggedIn, () => {
   overflow: hidden;
   box-sizing: border-box;
   background: var(--color-background);
+}
+
+.app-shell--booking-site {
+  max-width: none;
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  background: var(--bg, #fbf4f1);
 }
 
 @media (min-width: 431px) {

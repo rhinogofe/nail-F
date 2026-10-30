@@ -197,6 +197,7 @@ async function toggleItem(item, nextValue) {
       }
       message.value = next ? `เปิด "${item.label}" แล้ว` : `ปิด "${item.label}" — สาขานี้จะไม่เห็น`
     }
+    emit('saved')
   } catch (err) {
     errorMessage.value = err.response?.data?.error || err.message || 'บันทึกไม่สำเร็จ'
   } finally {
@@ -234,6 +235,7 @@ async function resetShopToDefaults() {
       shops.value[idx] = { ...shops.value[idx], features: data.features }
     }
     message.value = 'รีเซ็ตเป็นค่าเริ่มต้นแล้ว'
+    emit('saved')
   } catch (err) {
     errorMessage.value = err.response?.data?.error || err.message || 'รีเซ็ตไม่สำเร็จ'
   } finally {

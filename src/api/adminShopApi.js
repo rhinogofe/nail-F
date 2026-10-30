@@ -1,4 +1,5 @@
 import api from './axios'
+import { encodeShopSlugHeader } from '../utils/shopSlug'
 
 /** Admin API scoped to a specific branch (super admin on default). */
 export function shopAdminRequest(shopSlug, config = {}) {
@@ -9,7 +10,7 @@ export function shopAdminRequest(shopSlug, config = {}) {
     ...config,
     headers: {
       ...(config.headers || {}),
-      'X-Shop-Slug': shopSlug,
+      'X-Shop-Slug': encodeShopSlugHeader(shopSlug),
     },
   })
 }

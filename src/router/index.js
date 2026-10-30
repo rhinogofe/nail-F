@@ -27,6 +27,16 @@ const shopChildren = [
   { path: 'profile', component: ProfileView, meta: { requiresAuth: true } },
   { path: 'payment/:bookingId', component: PaymentView, meta: { requiresAuth: true } },
   { path: 'admin', component: AdminView, meta: { requiresAuth: true, requiresAdmin: true } },
+  {
+    path: 'booking-site/admin',
+    component: () => import('../views/BookingSiteAdminView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, bookingSite: true },
+  },
+  {
+    path: 'booking-site',
+    component: () => import('../views/BookingSiteView.vue'),
+    meta: { bookingSite: true },
+  },
   { path: 'auth/callback', component: LoginView, meta: { guest: true } },
   { path: '', redirect: (to) => ({ path: `/${to.params.shopSlug}/bookings` }) },
 ]
@@ -35,7 +45,8 @@ const router = createRouter({
   history: createWebHistory(),
   // iOS PWA restores stale scroll offsets on back navigation, which leaves the
   // sticky header pushed off-screen and swallows taps until the user scrolls.
-  scrollBehavior() {
+  scrollBehavior(to) {
+    if (to.hash) return { el: to.hash }
     return { left: 0, top: 0 }
   },
   routes: [
@@ -91,6 +102,13 @@ router.beforeEach(async (to) => {
       return shopPath(shopSlug, '/bookings')
     }
     if (pathSuffix.endsWith('/chat') && !shopFeatures.navChat) {
+      return shopPath(shopSlug, '/bookings')
+    }
+    const isBookingSitePath = pathSuffix === '/booking-site' || pathSuffix.startsWith('/booking-site/')
+    if (isBookingSitePath && !shopFeatures.bookingSiteEnabled) {
+      if (pathSuffix.startsWith('/booking-site/admin')) {
+        return shopPath(shopSlug, '/admin')
+      }
       return shopPath(shopSlug, '/bookings')
     }
 

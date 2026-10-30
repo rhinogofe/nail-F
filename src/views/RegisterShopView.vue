@@ -18,6 +18,7 @@ import {
 } from '../utils/bookingSlots'
 import defaultShopImage from '../assets/S__22888451.jpg'
 import { useMobileKeyboardViewport } from '../composables/useMobileKeyboardViewport'
+import { isCreatableShopSlug, slugifyShopName, splitBrandName } from '../utils/shopSlug'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +33,8 @@ const name = ref('')
 const phone = ref('')
 const shopSlug = ref('')
 const shopName = ref('')
+const slugEdited = ref(false)
+const brandEdited = ref(false)
 const uiForm = ref({ ...UI_FORM_DEFAULTS })
 const submitting = ref(false)
 const errorMessage = ref('')
@@ -42,11 +45,14 @@ const pendingLogoFile = ref(null)
 const pendingHeroFile = ref(null)
 const pendingKshopFile = ref(null)
 const registerServices = ref([])
+const shopPresets = ref([])
+const selectedPreset = ref('')
 const serviceDraft = ref({
   option_name: '',
   description: '',
   price: 0,
   duration_min: 60,
+  category_name: '',
 })
 const shopOpenHour = ref(9)
 const shopLastBookingHour = ref(18)
@@ -62,7 +68,8 @@ const {
 } = useMobileKeyboardViewport()
 
 const uiFieldGroups = REGISTER_UI_FIELD_GROUPS
-const scheduleStep = 3 + uiFieldGroups.length + 1
+const presetStep = 4
+const scheduleStep = 4 + uiFieldGroups.length + 1
 const serviceStep = scheduleStep + 1
 const totalSteps = serviceStep
 const openHourOptions = Array.from({ length: 20 }, (_, i) => i + 1)
@@ -79,16 +86,30 @@ const groupIcons = {
   'สีธีม': 'ti-color-swatch',
 }
 
-const currentUiGroupIndex = computed(() => step.value - 4)
+const currentUiGroupIndex = computed(() => step.value - 5)
 const currentUiGroup = computed(() => {
   const idx = currentUiGroupIndex.value
   if (idx < 0 || idx >= uiFieldGroups.length) return null
   return uiFieldGroups[idx]
 })
 
+const isPresetStep = computed(() => step.value === presetStep)
 const isScheduleStep = computed(() => step.value === scheduleStep)
 const isServiceStep = computed(() => step.value === serviceStep)
 const isLastStep = computed(() => isServiceStep.value)
+const selectedPresetMeta = computed(() => (
+  shopPresets.value.find((item) => item.key === selectedPreset.value) || null
+))
+const presetCategoryNames = computed(() => {
+  const names = []
+  for (const cat of selectedPresetMeta.value?.categories || []) {
+    if (cat.name && !names.includes(cat.name)) names.push(cat.name)
+  }
+  for (const svc of registerServices.value) {
+    if (svc.category_name && !names.includes(svc.category_name)) names.push(svc.category_name)
+  }
+  return names
+})
 
 const lastBookingHourOptions = computed(() => {
   const open = normalizeShopOpenHour(shopOpenHour.value)
@@ -100,6 +121,7 @@ const stepTitle = computed(() => {
   if (step.value === 1) return 'รหัสสร้างร้าน'
   if (step.value === 2) return 'บัญชีเจ้าของ'
   if (step.value === 3) return 'ข้อมูลร้าน'
+  if (isPresetStep.value) return 'ประเภทร้าน'
   if (isServiceStep.value) return 'เพิ่มบริการ'
   if (isScheduleStep.value) return 'เวลา & การจอง'
   return currentUiGroup.value?.title || 'ตั้งค่า UI'
@@ -107,7 +129,7 @@ const stepTitle = computed(() => {
 
 const pageTitle = computed(() => {
   const brandTab = uiForm.value.ui_page_title?.trim()
-  if (step.value >= 4 && currentUiGroupIndex.value === 0 && brandTab) {
+  if (step.value >= 5 && currentUiGroupIndex.value === 0 && brandTab) {
     return brandTab
   }
   return `สมัครร้านค้า — ${stepTitle.value}`
@@ -121,14 +143,22 @@ function loginPath() {
   return `/${loginSlug.value}/login`
 }
 
-function slugFromName(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+function applyShopNameDerived(value) {
+  const name = String(value || '').trim()
+  if (!slugEdited.value) {
+    shopSlug.value = slugifyShopName(name)
+  }
+  if (!brandEdited.value) {
+    const split = splitBrandName(name)
+    uiForm.value.ui_brand_main = split.main
+    uiForm.value.ui_brand_accent = split.accent
+  }
+}
+
+function onShopSlugInput(event) {
+  const next = slugifyShopName(event.target.value)
+  shopSlug.value = next
+  slugEdited.value = Boolean(next)
 }
 
 function onRegisterPinInput(event) {
@@ -173,16 +203,21 @@ function validateStepOwner() {
 }
 
 function validateStepShop() {
-  if (!shopSlug.value.trim()) {
-    errorMessage.value = 'กรุณาระบุ slug ร้าน (a-z, 0-9, -)'
-    return false
-  }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(shopSlug.value.trim())) {
-    errorMessage.value = 'slug ใช้ได้เฉพาะตัวพิมพ์เล็ก a-z, 0-9 และ -'
-    return false
-  }
   if (!shopName.value.trim()) {
     errorMessage.value = 'กรุณาระบุชื่อร้าน'
+    return false
+  }
+  if (!slugEdited.value) {
+    shopSlug.value = slugifyShopName(shopName.value)
+  } else {
+    shopSlug.value = slugifyShopName(shopSlug.value)
+  }
+  if (!shopSlug.value) {
+    errorMessage.value = 'กรุณาตั้งชื่อร้านที่มีตัวอักษรหรือตัวเลข สำหรับ URL'
+    return false
+  }
+  if (!isCreatableShopSlug(shopSlug.value)) {
+    errorMessage.value = 'ชื่อนี้ใช้เป็น URL ไม่ได้ กรุณาเปลี่ยนชื่อร้าน'
     return false
   }
   return true
@@ -205,6 +240,48 @@ function registerGroupFields(group) {
   return group.fields.filter((field) => shouldShowRegisterField(field))
 }
 
+function validatePresetStep() {
+  if (!selectedPreset.value || !selectedPresetMeta.value) {
+    errorMessage.value = 'กรุณาเลือกประเภทร้าน'
+    return false
+  }
+  return true
+}
+
+function flattenPresetServices(preset) {
+  const list = []
+  for (const cat of preset?.categories || []) {
+    for (const svc of cat.services || []) {
+      list.push({
+        option_name: svc.option_name,
+        description: svc.description || null,
+        price: Number(svc.price) || 0,
+        duration_min: Number(svc.duration_min) || 0,
+        is_active: true,
+        is_required: false,
+        category_name: cat.name,
+      })
+    }
+  }
+  return list
+}
+
+function presetServiceCount(preset) {
+  return flattenPresetServices(preset).length
+}
+
+function selectPreset(key) {
+  const preset = shopPresets.value.find((item) => item.key === key)
+  if (!preset) return
+  selectedPreset.value = preset.key
+  registerServices.value = flattenPresetServices(preset)
+  if (preset.tagline) {
+    uiForm.value.ui_tagline = preset.tagline
+  }
+  serviceDraft.value.category_name = preset.categories?.[0]?.name || ''
+  errorMessage.value = ''
+}
+
 function validateServiceStep() {
   if (registerServices.value.length >= 1) return true
   errorMessage.value = 'กรุณาเพิ่มบริการอย่างน้อย 1 รายการ'
@@ -217,6 +294,7 @@ function resetServiceDraft() {
     description: '',
     price: 0,
     duration_min: 60,
+    category_name: presetCategoryNames.value[0] || '',
   }
 }
 
@@ -245,6 +323,7 @@ function addRegisterService() {
     duration_min: durationMin,
     is_active: true,
     is_required: false,
+    category_name: String(serviceDraft.value.category_name || '').trim(),
   })
   resetServiceDraft()
   errorMessage.value = ''
@@ -256,12 +335,6 @@ function removeRegisterService(index) {
 
 function formatServicePrice(value) {
   return Number(value || 0).toLocaleString('th-TH')
-}
-
-async function createRegisterServices() {
-  for (const service of registerServices.value) {
-    await api.post('/api/admin/nailoptions', service)
-  }
 }
 
 function validateScheduleStep() {
@@ -350,14 +423,14 @@ async function goStepOwner() {
 
     uiForm.value = {
       ...UI_FORM_DEFAULTS,
-      ui_brand_main: name.value.trim(),
-      ui_brand_accent: '',
       ui_bank_account_name: '',
       ui_bank_account_no: '',
       ui_page_title: '',
     }
+    slugEdited.value = false
+    brandEdited.value = false
     shopName.value = name.value.trim()
-    shopSlug.value = slugFromName(name.value)
+    applyShopNameDerived(shopName.value)
     step.value = 3
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'ไม่สามารถใช้เบอร์นี้สมัครร้านได้'
@@ -384,7 +457,13 @@ async function goNext() {
     if (!uiForm.value.ui_page_title?.trim()) {
       uiForm.value.ui_page_title = shopName.value.trim()
     }
-    step.value = 4
+    step.value = presetStep
+    return
+  }
+
+  if (isPresetStep.value) {
+    if (!validatePresetStep()) return
+    step.value += 1
     return
   }
 
@@ -470,7 +549,7 @@ async function uploadPendingImages(targetSlug) {
 }
 
 async function submitRegister() {
-  if (!validateStepShop() || !validateAllUi() || !validateScheduleStep()) return
+  if (!validateStepShop() || !validatePresetStep() || !validateAllUi() || !validateScheduleStep() || !validateServiceStep()) return
   if (!pinVerified.value || !/^\d{4}$/.test(registerPin.value)) {
     errorMessage.value = 'กรุณายืนยันรหัสสร้างร้านใหม่'
     step.value = 1
@@ -492,6 +571,8 @@ async function submitRegister() {
       shop_slug: shopSlug.value.trim().toLowerCase(),
       shop_name: shopName.value.trim(),
       register_pin: registerPin.value,
+      preset: selectedPreset.value,
+      services: registerServices.value,
       ui: payloadUi,
     })
 
@@ -506,10 +587,6 @@ async function submitRegister() {
     }
 
     await saveRegisterScheduleSettings()
-
-    if (registerServices.value.length) {
-      await createRegisterServices()
-    }
 
     router.replace(`/${data.shop.slug}/admin`)
   } catch (error) {
@@ -537,6 +614,16 @@ function goBack() {
   router.push(loginPath())
 }
 
+function onUiFieldInput(field) {
+  if (field.key === 'ui_brand_main' || field.key === 'ui_brand_accent') {
+    brandEdited.value = true
+  }
+}
+
+watch(shopName, (value) => {
+  applyShopNameDerived(value)
+})
+
 watch([shopOpenHour, bookingSlotHours], () => {
   const open = normalizeShopOpenHour(shopOpenHour.value)
   const slot = normalizeBookingSlotHours(bookingSlotHours.value)
@@ -560,6 +647,7 @@ onMounted(async () => {
   try {
     const { data } = await api.get('/api/auth/register-shop/config')
     registerEnabled.value = Boolean(data?.enabled)
+    shopPresets.value = Array.isArray(data?.presets) ? data.presets : []
     if (!registerEnabled.value) {
       errorMessage.value = 'ยังไม่เปิดรับสมัครร้าน กรุณาติดต่อผู้ดูแลระบบ'
     }
@@ -681,7 +769,7 @@ onUnmounted(() => {
           <div class="register-fields">
             <label class="field">
               <i class="ti ti-user field-icon" aria-hidden="true"></i>
-              <input v-model="name" type="text" placeholder="ชื่อ-นามสกุล" />
+              <input v-model="name" type="text" placeholder="ไอดี Login" />
             </label>
             <label class="field">
               <i class="ti ti-phone field-icon" aria-hidden="true"></i>
@@ -713,7 +801,7 @@ onUnmounted(() => {
         <div v-else-if="step === 3" class="register-panel">
           <div class="register-panel-head">
             <h2>ข้อมูลร้าน</h2>
-            <p class="muted">ตั้งชื่อร้านและ URL ที่ลูกค้าจะใช้จองคิว</p>
+            <p class="muted">ตั้งชื่อร้าน ระบบจะสร้าง URL ให้เอง และตัดช่องว่างกับอักขระพิเศษ</p>
           </div>
 
           <div class="register-meta-card">
@@ -725,11 +813,21 @@ onUnmounted(() => {
               <span>URL ร้าน (slug)</span>
               <div class="register-slug-row">
                 <span class="register-slug-prefix">/</span>
-                <input v-model="shopSlug" type="text" class="input register-slug-input" placeholder="my-nail-shop" />
+                <input
+                  :value="shopSlug"
+                  type="text"
+                  class="input register-slug-input"
+                  placeholder="จากชื่อร้าน"
+                  @input="onShopSlugInput"
+                />
                 <span class="register-slug-suffix">/bookings</span>
               </div>
             </label>
           </div>
+          <p class="register-note">
+            <i class="ti ti-link" aria-hidden="true"></i>
+            URL สร้างจากชื่อร้านให้อัตโนมัติ ช่องว่างกลายเป็น - อักขระพิเศษถูกตัดออก ตัวอักษรไทยใช้ได้
+          </p>
 
           <button type="button" class="btn primary register-cta" :disabled="submitting" @click="goNext">
             ถัดไป
@@ -737,7 +835,61 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Steps 4–5: UI groups -->
+        <!-- Step 4: Shop type preset -->
+        <div v-else-if="isPresetStep" class="register-panel">
+          <div class="register-panel-head">
+            <h2>ประเภทร้าน</h2>
+            <p class="muted">เลือกแบบที่ใกล้ร้านคุณ ระบบจะใส่บริการเบื้องต้นให้ แล้วตั้งค่าอื่นตามค่าเริ่มต้นของร้านใหม่</p>
+          </div>
+
+          <p v-if="!shopPresets.length" class="register-note">
+            <i class="ti ti-alert-circle" aria-hidden="true"></i>
+            โหลดเทมเพลตร้านไม่สำเร็จ กรุณารีเฟรชหน้านี้
+          </p>
+          <div v-else class="register-preset-list" role="listbox" aria-label="ประเภทร้าน">
+            <button
+              v-for="preset in shopPresets"
+              :key="preset.key"
+              type="button"
+              class="register-preset-btn"
+              :class="{ 'is-selected': selectedPreset === preset.key }"
+              role="option"
+              :aria-selected="selectedPreset === preset.key"
+              @click="selectPreset(preset.key)"
+            >
+              <span class="register-group-icon" aria-hidden="true">
+                <i class="ti" :class="preset.icon || 'ti-building-store'"></i>
+              </span>
+              <span class="register-preset-copy">
+                <strong>{{ preset.label }}</strong>
+                <span>{{ preset.hint }}</span>
+                <span class="register-preset-count">{{ presetServiceCount(preset) }} บริการตั้งต้น</span>
+              </span>
+              <i
+                class="ti register-preset-check"
+                :class="selectedPreset === preset.key ? 'ti-circle-check-filled' : 'ti-circle'"
+                aria-hidden="true"
+              ></i>
+            </button>
+          </div>
+
+          <p class="register-note">
+            <i class="ti ti-info-circle" aria-hidden="true"></i>
+            ฟังก์ชัน เวลาเปิดร้าน และมัดจำ ยังใช้ค่าที่ระบบตั้งไว้สำหรับร้านใหม่ ปรับได้ในขั้นถัดไปและในแอดมิน
+          </p>
+
+          <button
+            type="button"
+            class="btn primary register-cta"
+            :disabled="submitting || !selectedPreset"
+            @click="goNext"
+          >
+            ถัดไป
+            <i class="ti ti-arrow-right" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Steps 5–6: UI groups -->
         <div v-else-if="currentUiGroup" class="register-panel">
           <div class="register-panel-head register-panel-head--group">
             <span class="register-group-icon">
@@ -790,6 +942,7 @@ onUnmounted(() => {
                 :type="field.type || 'text'"
                 class="input"
                 :placeholder="field.placeholder || ''"
+                @input="onUiFieldInput(field)"
               />
 
               <p
@@ -897,7 +1050,12 @@ onUnmounted(() => {
             </span>
             <div>
               <h2>เพิ่มบริการ</h2>
-              <p class="muted">เพิ่มอย่างน้อย 1 บริการที่ลูกค้าจะเลือกจองได้</p>
+              <p class="muted">
+                <template v-if="selectedPresetMeta">
+                  เทมเพลต {{ selectedPresetMeta.label }} ใส่บริการเบื้องต้นไว้แล้ว ปรับราคาหรือลบได้
+                </template>
+                <template v-else>เพิ่มอย่างน้อย 1 บริการที่ลูกค้าจะเลือกจองได้</template>
+              </p>
             </div>
           </div>
 
@@ -910,6 +1068,7 @@ onUnmounted(() => {
               <div>
                 <strong>{{ item.option_name }}</strong>
                 <p class="register-service-meta muted">
+                  <template v-if="item.category_name">{{ item.category_name }} · </template>
                   {{ formatServicePrice(item.price) }} บาท
                   <template v-if="Number(item.duration_min) > 0"> · {{ item.duration_min }} นาที</template>
                 </p>
@@ -926,6 +1085,14 @@ onUnmounted(() => {
           </div>
 
           <div class="register-meta-card register-service-form">
+            <label v-if="presetCategoryNames.length" class="register-meta-field">
+              <span>หมวด</span>
+              <select v-model="serviceDraft.category_name" class="input">
+                <option v-for="catName in presetCategoryNames" :key="catName" :value="catName">
+                  {{ catName }}
+                </option>
+              </select>
+            </label>
             <label class="register-meta-field">
               <span>ชื่อบริการ *</span>
               <input
@@ -1296,7 +1463,7 @@ onUnmounted(() => {
     inset 0 1px 0 color-mix(in srgb, #fff 80%, transparent);
 }
 
-.register-panel :is(input.input, textarea.input, textarea.register-textarea) {
+.register-panel :is(input.input, select.input, textarea.input, textarea.register-textarea) {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--color-border);
@@ -1321,7 +1488,7 @@ onUnmounted(() => {
   opacity: 0.9;
 }
 
-.register-panel :is(input.input, textarea.input, textarea.register-textarea):focus {
+.register-panel :is(input.input, select.input, textarea.input, textarea.register-textarea):focus {
   border-color: var(--color-primary);
   background: #fff;
   box-shadow:
@@ -1545,6 +1712,89 @@ onUnmounted(() => {
 
 .ui-image-file-input {
   display: none;
+}
+
+.register-preset-list {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.register-preset-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--space-3);
+  text-align: left;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    box-shadow var(--transition);
+}
+
+.register-preset-btn:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+}
+
+.register-preset-btn:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent),
+    var(--shadow-sm);
+}
+
+.register-preset-btn.is-selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary-light) 78%, var(--color-surface-elevated));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent),
+    var(--shadow-sm);
+}
+
+.register-preset-btn .register-group-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.register-preset-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.register-preset-copy strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.register-preset-copy > span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.register-preset-count {
+  font-weight: 600;
+  color: var(--color-primary-dark, var(--color-primary));
+}
+
+.register-preset-check {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--color-text-muted);
+}
+
+.register-preset-btn.is-selected .register-preset-check {
+  color: var(--color-primary);
 }
 
 .register-service-list {

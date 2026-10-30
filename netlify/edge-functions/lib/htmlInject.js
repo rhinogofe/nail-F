@@ -8,7 +8,7 @@ const BOT_UA =
   /bot|crawler|spider|facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|TelegramBot|Line\/|line-poker|Applebot/i
 
 export const SHOP_APP_PATH_RE =
-  /^\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(bookings|login|reviews|profile|chat|admin|location|payment|register-shop)(?:\/|$)/
+  /^\/([\p{L}\p{M}\p{N}]+(?:-[\p{L}\p{M}\p{N}]+)*)\/(bookings|login|reviews|profile|chat|admin|location|payment|register-shop)(?:\/|$)/u
 
 const MANIFEST_LINK_RE =
   /<link\s+rel="manifest"\s+href="\/manifest\.webmanifest"\s+id="app-manifest"\s*\/?>/i

@@ -1,6 +1,6 @@
 export const DEFAULT_APP_NAME = 'Nail Thuean'
 export const MANIFEST_THEME = '#FAF6F3'
-export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+export const SLUG_RE = /^[\p{L}\p{M}\p{N}]+(?:-[\p{L}\p{M}\p{N}]+)*$/u
 
 export const MANIFEST_ICONS = [
   {
@@ -82,7 +82,7 @@ export function buildShopManifestIcons(apiBase, slug, version) {
 }
 
 export function parseManifestSlug(pathname) {
-  const match = String(pathname || '').match(/^\/manifest\/([a-z0-9]+(?:-[a-z0-9]+)*)\.webmanifest$/i)
+  const match = String(pathname || '').match(/^\/manifest\/([\p{L}\p{M}\p{N}]+(?:-[\p{L}\p{M}\p{N}]+)*)\.webmanifest$/iu)
   if (!match) return null
   const slug = match[1].toLowerCase()
   return SLUG_RE.test(slug) ? slug : null

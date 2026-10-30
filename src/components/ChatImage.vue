@@ -26,7 +26,7 @@ function chatImageRequestHeaders() {
   const token = localStorage.getItem('token')
   const shopSlug = localStorage.getItem('shopSlug')
   if (token) headers.Authorization = `Bearer ${token}`
-  if (shopSlug) headers['X-Shop-Slug'] = shopSlug
+  if (shopSlug) headers['X-Shop-Slug'] = encodeURIComponent(shopSlug)
   return headers
 }
 
