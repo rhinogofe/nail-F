@@ -433,6 +433,41 @@ const optionFormUseColor = ref(false)
 const loading = ref(false)
 const message = ref('')
 const errorMessage = ref('')
+const adminToast = ref(null)
+let adminToastTimer = 0
+
+function dismissAdminToast() {
+  if (adminToastTimer) {
+    clearTimeout(adminToastTimer)
+    adminToastTimer = 0
+  }
+  adminToast.value = null
+  message.value = ''
+  errorMessage.value = ''
+}
+
+function showAdminToast(type, text) {
+  if (!text) return
+  if (adminToastTimer) {
+    clearTimeout(adminToastTimer)
+    adminToastTimer = 0
+  }
+  adminToast.value = { type, text }
+  if (type !== 'error') {
+    adminToastTimer = window.setTimeout(() => {
+      adminToast.value = null
+      message.value = ''
+      adminToastTimer = 0
+    }, 3000)
+  }
+}
+
+watch(message, (val) => {
+  if (val) showAdminToast('success', val)
+})
+watch(errorMessage, (val) => {
+  if (val) showAdminToast('error', val)
+})
 const activeTab = ref('bookings')
 
 const bookingEditOpen = ref(false)
@@ -5220,6 +5255,7 @@ onUnmounted(() => {
   window.removeEventListener('focus', onAdminWindowFocus)
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
+  if (adminToastTimer) clearTimeout(adminToastTimer)
 })
 
 onBeforeRouteLeave(async () => {
@@ -5318,8 +5354,31 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </nav>
     </div>
 
-    <p v-if="message" class="alert-banner success" role="status">{{ message }}</p>
-    <p v-if="errorMessage" class="alert-banner error" role="alert">{{ errorMessage }}</p>
+    <Teleport to="body">
+      <div v-if="adminToast" class="admin-toast-stack" :data-type="adminToast.type">
+        <p
+          class="admin-toast"
+          :class="`admin-toast--${adminToast.type}`"
+          :role="adminToast.type === 'error' ? 'alert' : 'status'"
+        >
+          <i
+            class="ti"
+            :class="adminToast.type === 'error' ? 'ti-alert-triangle' : 'ti-check'"
+            aria-hidden="true"
+          ></i>
+          <span>{{ adminToast.text }}</span>
+          <button
+            v-if="adminToast.type === 'error'"
+            type="button"
+            class="admin-toast-close"
+            aria-label="ปิดข้อความผิดพลาด"
+            @click="dismissAdminToast"
+          >
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
+        </p>
+      </div>
+    </Teleport>
     <button
       v-if="showBranchUsageExpiredBanner && activeTab !== 'renewal'"
       type="button"

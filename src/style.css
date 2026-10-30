@@ -181,6 +181,24 @@ textarea {
   -webkit-overflow-scrolling: auto;
 }
 
+html.booking-site-open,
+html.booking-site-open body,
+html.booking-site-open #app {
+  position: relative;
+  inset: auto;
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+  overscroll-behavior: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg, #fbf4f1);
+  color: var(--ink, #3a2428);
+}
+
+html.booking-site-open {
+  scroll-behavior: smooth;
+}
+
 /* ฟอร์มล็อกอิน/สมัครใน LINE: ย่อ #app ตาม visualViewport แทนการบีบเนื้อหาในกล่องเต็มจอ */
 html.mobile-keyboard-layout {
   position: fixed;
@@ -713,6 +731,54 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   color: var(--color-warning);
   border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+
+.admin-toast-stack {
+  position: fixed;
+  left: 50%;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  width: min(420px, calc(100% - 24px));
+  pointer-events: none;
+}
+
+.admin-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-body);
+  pointer-events: auto;
+}
+
+.admin-toast--success {
+  background: var(--color-surface-elevated);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 35%, transparent);
+}
+
+.admin-toast--error {
+  background: var(--color-surface-elevated);
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 35%, transparent);
+}
+
+.admin-toast-close {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .back-header-row {
