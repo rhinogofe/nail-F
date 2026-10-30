@@ -469,6 +469,28 @@ watch(errorMessage, (val) => {
   if (val) showAdminToast('error', val)
 })
 const activeTab = ref('bookings')
+const adminNavRef = ref(null)
+const adminNavOverflow = ref({ left: false, right: false })
+
+function updateAdminNavOverflow() {
+  const el = adminNavRef.value
+  if (!el) {
+    adminNavOverflow.value = { left: false, right: false }
+    return
+  }
+  adminNavOverflow.value = {
+    left: el.scrollLeft > 4,
+    right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+  }
+}
+
+function scrollActiveAdminTabIntoView() {
+  nextTick(() => {
+    const btn = adminNavRef.value?.querySelector('.admin-nav-item.active')
+    btn?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+    updateAdminNavOverflow()
+  })
+}
 
 const bookingEditOpen = ref(false)
 const bookingEditItem = ref(null)
@@ -2521,6 +2543,7 @@ async function switchTab(tab) {
     uiNavOpen.value = true
     blocksNavOpen.value = true
   }
+  scrollActiveAdminTabIntoView()
 }
 
 const filtered = computed(() => bookings.value)
@@ -5200,6 +5223,10 @@ watch(() => shopFeaturesStore.staffEnabled, (enabled) => {
   }
 })
 
+watch(activeTab, () => {
+  scrollActiveAdminTabIntoView()
+})
+
 watch(visibleAdminTabs, (tabs) => {
   if (!tabs.some((t) => t.key === activeTab.value)) {
     activeTab.value = tabs[0]?.key || 'bookings'
@@ -5224,6 +5251,10 @@ onMounted(loadAllShops)
 onMounted(loadShopPresets)
 onMounted(loadRenewalBannerSetting)
 onMounted(loadBookingCalendarSummary)
+onMounted(() => {
+  updateAdminNavOverflow()
+  window.addEventListener('resize', updateAdminNavOverflow)
+})
 onMounted(loadBlocks)
 onMounted(loadDepositSetting)
 onMounted(loadRegisterShopPinSetting)
@@ -5256,6 +5287,7 @@ onUnmounted(() => {
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
   if (adminToastTimer) clearTimeout(adminToastTimer)
+  window.removeEventListener('resize', updateAdminNavOverflow)
 })
 
 onBeforeRouteLeave(async () => {
@@ -5337,8 +5369,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       เพื่อดูวิธีเปิด
     </button>
 
-    <div class="admin-tab-wrap">
-    <nav class="admin-nav" aria-label="เมนูแอดมิน">
+    <div
+      class="admin-tab-wrap"
+      :class="{
+        'admin-tab-wrap--fade-left': adminNavOverflow.left,
+        'admin-tab-wrap--fade-right': adminNavOverflow.right,
+      }"
+    >
+    <nav
+      ref="adminNavRef"
+      class="admin-nav"
+      aria-label="เมนูแอดมิน"
+      @scroll="updateAdminNavOverflow"
+    >
       <button
         v-for="tab in visibleAdminTabs"
         :key="tab.key"
@@ -9172,6 +9215,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   width: 20px;
   z-index: 2;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
 }
 
 .admin-tab-wrap::before {
@@ -9182,6 +9227,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .admin-tab-wrap::after {
   right: 0;
   background: linear-gradient(to left, var(--color-surface), transparent);
+}
+
+.admin-tab-wrap--fade-left::before,
+.admin-tab-wrap--fade-right::after {
+  opacity: 1;
 }
 
 .admin-nav {
