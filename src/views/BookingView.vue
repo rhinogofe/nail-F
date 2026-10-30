@@ -36,6 +36,7 @@ import { useShopRealtime } from '../composables/useShopRealtime'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import { useShopFeaturesStore } from '../stores/shopFeatures'
 import { formatUiText } from '../utils/formatUiText'
+import { bookingStatusLabel } from '../constants/bookingStatus'
 import BrandMark from '../components/BrandMark.vue'
 import {
   buildBookableCategories,
@@ -543,9 +544,7 @@ function formatOptionDuration(opt) {
 }
 
 function occupiedSlotLabel(status) {
-  if (status === 'awaiting_payment') return 'ไม่ว่าง/ยังไม่ชำระ'
-  if (status === 'pending' || status === 'done') return 'ไม่ว่าง/ชำระแล้ว'
-  return 'ไม่ว่าง'
+  return bookingStatusLabel(status, { audience: 'customer' }) || 'ไม่ว่าง'
 }
 
 function occupiedSlotStatusClass(status) {
@@ -1148,8 +1147,14 @@ onMounted(() => {
   void bootstrapBookingPage()
 })
 
+function applyDateFromQuery() {
+  const raw = String(route.query.date || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) selectedDate.value = raw
+}
+
 async function bootstrapBookingPage() {
   try {
+    applyDateFromQuery()
     await Promise.all([
       bookingStore.fetchBookingSettings().catch(() => null),
       bookingStore.fetchAllNailOptions().catch(() => null),

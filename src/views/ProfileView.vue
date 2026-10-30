@@ -9,6 +9,7 @@ import { useCoupons } from '../composables/useCoupons'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
+import { bookingStatusLabel } from '../constants/bookingStatus'
 
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
@@ -76,13 +77,7 @@ function formatTotal(value) {
 }
 
 function statusLabel(status) {
-  const map = {
-    awaiting_payment: 'รอชำระเงิน',
-    pending: 'ชำระแล้ว / รอให้บริการ',
-    done: 'ทำเสร็จแล้ว',
-    cancelled: 'ยกเลิกแล้ว',
-  }
-  return map[status] || status
+  return bookingStatusLabel(status)
 }
 
 function statusClass(status) {

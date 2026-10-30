@@ -32,6 +32,7 @@ const adminSwal = Swal.mixin({
 import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, normalizeBookingMinGapMinutes, resolveEffectiveMinGapMinutes, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey, formatDurationMinutes, sumOptionDurationMinutes, applyServiceDurationToSlot } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
+import { BOOKING_STATUS, BOOKING_STATUS_FILTERS, CALENDAR_PAID_LABEL, bookingStatusLabel } from '../constants/bookingStatus'
 import { imageUrlHint } from '../utils/imageUrl'
 import { resolveUiImageUrl } from '../utils/resolveUiImageUrl'
 import { compressImage } from '../utils/compressChatImage'
@@ -2512,9 +2513,9 @@ function bookingDayHasUnpaid(iso) {
 function bookingDayChipItems(iso) {
   const stats = bookingDayStats(iso)
   return [
-    { key: 'paid', icon: 'ti-check', value: stats.paid_count, title: 'ชำระแล้ว', tone: 'success' },
-    { key: 'unpaid', icon: 'ti-clock', value: stats.unpaid_count, title: 'รอชำระ', tone: 'warning' },
-    { key: 'cancelled', icon: 'ti-x', value: stats.cancelled_count, title: 'ยกเลิก', tone: 'muted' },
+    { key: 'paid', icon: 'ti-check', value: stats.paid_count, title: CALENDAR_PAID_LABEL, tone: 'success' },
+    { key: 'unpaid', icon: BOOKING_STATUS.awaiting_payment.icon, value: stats.unpaid_count, title: BOOKING_STATUS.awaiting_payment.label, tone: 'warning' },
+    { key: 'cancelled', icon: BOOKING_STATUS.cancelled.icon, value: stats.cancelled_count, title: BOOKING_STATUS.cancelled.label, tone: 'muted' },
   ]
 }
 
@@ -5087,13 +5088,7 @@ async function removeNailOption(item) {
 }
 
 function statusLabel(s) {
-  const map = {
-    awaiting_payment: 'รอชำระ',
-    pending: 'รอบริการ',
-    done: 'ทำเสร็จแล้ว',
-    cancelled: 'ยกเลิก',
-  }
-  return map[s] || s
+  return bookingStatusLabel(s)
 }
 
 function backToBooking() {
@@ -5430,9 +5425,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
 
         <div class="booking-cal-legend" aria-label="คำอธิบายปฏิทินคิว">
-          <span><i class="ti ti-check" aria-hidden="true"></i> {{ bookingMonthPaidTotal }} ชำระแล้ว</span>
-          <span><i class="ti ti-clock" aria-hidden="true"></i> {{ bookingMonthUnpaidTotal }} รอชำระ</span>
-          <span><i class="ti ti-x" aria-hidden="true"></i> {{ bookingMonthCancelledTotal }} ยกเลิก</span>
+          <span><i class="ti ti-check" aria-hidden="true"></i> {{ bookingMonthPaidTotal }} {{ CALENDAR_PAID_LABEL }}</span>
+          <span><i class="ti ti-clock" aria-hidden="true"></i> {{ bookingMonthUnpaidTotal }} {{ BOOKING_STATUS.awaiting_payment.label }}</span>
+          <span><i class="ti ti-x" aria-hidden="true"></i> {{ bookingMonthCancelledTotal }} {{ BOOKING_STATUS.cancelled.label }}</span>
           <span>รวม {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }}</span>
         </div>
         <AdminCalendarLocationLegend extra="ชิปในช่อง = จำนวนคิวของวันนั้น" />
@@ -5454,9 +5449,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <div>
             <h3>คิววันที่ {{ formatServiceDateLabel(selectedBookingDate) }}</h3>
             <p class="muted">
-              ชำระแล้ว {{ bookingDayStats(selectedBookingDate).paid_count }} ·
-              รอชำระ {{ bookingDayStats(selectedBookingDate).unpaid_count }} ·
-              ยกเลิก {{ bookingDayStats(selectedBookingDate).cancelled_count }} 
+              {{ CALENDAR_PAID_LABEL }} {{ bookingDayStats(selectedBookingDate).paid_count }} ·
+              {{ BOOKING_STATUS.awaiting_payment.label }} {{ bookingDayStats(selectedBookingDate).unpaid_count }} ·
+              {{ BOOKING_STATUS.cancelled.label }} {{ bookingDayStats(selectedBookingDate).cancelled_count }} 
              
             </p>
           </div>
@@ -5469,11 +5464,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <label class="admin-filter-item">
           สถานะ
           <select v-model="status" @change="loadBookings" class="admin-input">
-            <option value="">ทั้งหมด</option>
-            <option value="awaiting_payment">รอชำระเงิน</option>
-            <option value="pending">ชำระแล้ว / รอให้บริการ</option>
-            <option value="done">ทำเสร็จแล้ว</option>
-            <option value="cancelled">ยกเลิกแล้ว</option>
+            <option v-for="opt in BOOKING_STATUS_FILTERS" :key="opt.value || 'all'" :value="opt.value">
+              {{ opt.label }}
+            </option>
           </select>
         </label>
       </div>
@@ -8386,9 +8379,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <label class="booking-edit-field">
             สถานะ
             <select v-model="bookingAddStatus" class="admin-input" @change="bookingAddError = ''">
-              <option value="awaiting_payment">รอชำระเงิน</option>
-              <option value="pending">ชำระแล้ว / รอให้บริการ</option>
-              <option value="done">ทำเสร็จแล้ว</option>
+              <option value="awaiting_payment">{{ BOOKING_STATUS.awaiting_payment.label }}</option>
+              <option value="pending">{{ BOOKING_STATUS.pending.label }}</option>
+              <option value="done">{{ BOOKING_STATUS.done.label }}</option>
             </select>
           </label>
 
