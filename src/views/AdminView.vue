@@ -2570,14 +2570,23 @@ function bookingDayHasUnpaid(iso) {
   return bookingDayStats(iso).unpaid_count > 0
 }
 
-function bookingDayChipItems(iso) {
-  const stats = bookingDayStats(iso)
+function bookingChipItems(stats) {
   return [
     { key: 'paid', icon: 'ti-check', value: stats.paid_count, title: CALENDAR_PAID_LABEL, tone: 'success' },
     { key: 'unpaid', icon: BOOKING_STATUS.awaiting_payment.icon, value: stats.unpaid_count, title: BOOKING_STATUS.awaiting_payment.label, tone: 'warning' },
     { key: 'cancelled', icon: BOOKING_STATUS.cancelled.icon, value: stats.cancelled_count, title: BOOKING_STATUS.cancelled.label, tone: 'muted' },
   ]
 }
+
+function bookingDayChipItems(iso) {
+  return bookingChipItems(bookingDayStats(iso))
+}
+
+const bookingMonthLegendItems = computed(() => bookingChipItems({
+  paid_count: bookingMonthPaidTotal.value,
+  unpaid_count: bookingMonthUnpaidTotal.value,
+  cancelled_count: bookingMonthCancelledTotal.value,
+}))
 
 function bookingDayColor(iso) {
   return colorForDate(nailOptions.value, iso)
@@ -2772,6 +2781,12 @@ function revenueDayChipItems(iso) {
     },
   ]
 }
+
+const revenueLegendItems = [
+  { key: 'deposit', icon: 'ti-coin', title: 'มัดจำ', tone: 'warning' },
+  { key: 'total', icon: 'ti-receipt', title: 'ยอดบริการ', tone: 'success' },
+  { key: 'done', icon: 'ti-check', title: 'คิวทำเสร็จ', tone: 'info' },
+]
 
 function shiftRevenueMonth(delta) {
   const [y, m] = revenueMonth.value.split('-').map(Number)
@@ -5505,13 +5520,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </div>
         </div>
 
-        <div class="booking-cal-legend" aria-label="คำอธิบายปฏิทินคิว">
-          <span><i class="ti ti-check" aria-hidden="true"></i> {{ bookingMonthPaidTotal }} {{ CALENDAR_PAID_LABEL }}</span>
-          <span><i class="ti ti-clock" aria-hidden="true"></i> {{ bookingMonthUnpaidTotal }} {{ BOOKING_STATUS.awaiting_payment.label }}</span>
-          <span><i class="ti ti-x" aria-hidden="true"></i> {{ bookingMonthCancelledTotal }} {{ BOOKING_STATUS.cancelled.label }}</span>
-          <span>รวม {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }}</span>
+        <div class="booking-cal-legend" role="group" aria-label="คำอธิบายปฏิทินคิว · ทั้งเดือน">
+          <AdminCalendarStatChips legend :items="bookingMonthLegendItems" />
+          <span class="booking-cal-legend-total">
+            รวม {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }} คิว
+          </span>
         </div>
-        <AdminCalendarLocationLegend extra="ชิปในช่อง = จำนวนคิวของวันนั้น" />
+        <AdminCalendarLocationLegend />
 
         <AdminBookingPaymentSlips
           :active="activeTab === 'bookings' && !selectedBookingDate"
@@ -5722,7 +5737,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
           </div>
         </div>
-        <AdminCalendarLocationLegend extra="ชิปในช่อง = มัดจำ / ยอดบริการ / คิวทำเสร็จ" />
+        <div class="booking-cal-legend" role="group" aria-label="คำอธิบายปฏิทินสรุปยอด">
+          <AdminCalendarStatChips legend :items="revenueLegendItems" />
+        </div>
+        <AdminCalendarLocationLegend />
 
         <div class="revenue-month-summary">
           <div class="revenue-summary-grid">
@@ -10068,14 +10086,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .booking-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
   font-size: var(--text-caption);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
 }
 
-.booking-cal-legend i {
-  margin-right: 2px;
+.booking-cal-legend .cal-stat-chips--legend {
+  margin-top: 0;
 }
 
 .legend-paid,
@@ -10402,7 +10421,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   }
 
   .revenue-section .service-cal-num {
-    font-size: 11px;
+    font-size: var(--text-caption);
   }
 
   .revenue-summary-deposit,

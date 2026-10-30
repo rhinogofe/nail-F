@@ -224,6 +224,11 @@ test.describe('Admin page', () => {
 
   test('booking calendar shows location color legend', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
-    await expect(page.getByText('สีพื้นช่องวัน = สถานที่ให้บริการ ไม่ใช่สถานะคิว')).toBeVisible()
+    await expect(page.locator('.cal-location-legend:visible')).toHaveText(/สีพื้นช่องวัน = สถานที่ให้บริการ ไม่ใช่สถานะคิว/)
+    const legend = page.getByRole('group', { name: 'คำอธิบายปฏิทินคิว · ทั้งเดือน' })
+    await expect(legend).toBeVisible()
+    for (const label of ['ชำระแล้ว', 'รอชำระ', 'ยกเลิก']) {
+      await expect(legend.getByText(label, { exact: true })).toBeVisible()
+    }
   })
 })
