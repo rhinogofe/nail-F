@@ -4258,13 +4258,13 @@ async function deleteBooking(id) {
 async function restoreBooking(item) {
   const result = await adminSwal.fire({
     title: 'คืนสถานะจอง',
-    html: 'คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน<br><small class="muted">ถ้าเลือกรอชำระเงิน ระบบจะเริ่มนับเวลาชำระใหม่</small>',
+    html: `คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน<br><small class="muted">ถ้าเลือก${BOOKING_STATUS.awaiting_payment.label} ระบบจะเริ่มนับเวลาชำระใหม่</small>`,
     icon: 'question',
     showCancelButton: true,
-    confirmButtonText: 'รอชำระเงิน',
+    confirmButtonText: BOOKING_STATUS.awaiting_payment.label,
     cancelButtonText: 'ปิด',
     showDenyButton: true,
-    denyButtonText: 'ชำระแล้ว / รอให้บริการ',
+    denyButtonText: `${BOOKING_STATUS.pending.label} (${CALENDAR_PAID_LABEL})`,
   })
   if (!result.isConfirmed && !result.isDenied) return
 
@@ -4405,7 +4405,7 @@ async function saveBookingAdd() {
   if (bookingAddStatus.value === 'done') {
     const total = Number(bookingAddTotal.value)
     if (bookingAddTotal.value === '' || !Number.isFinite(total) || total < 0) {
-      bookingAddError.value = 'สถานะทำเสร็จแล้วต้องระบุยอดเงิน'
+      bookingAddError.value = `สถานะ${BOOKING_STATUS.done.label}ต้องระบุยอดเงิน`
       return
     }
     if (couponManualCompletionPoints.value) {
@@ -8452,7 +8452,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               min="0"
               step="1"
               class="admin-input"
-              :placeholder="bookingAddStatus === 'done' ? 'จำเป็นสำหรับสถานะทำเสร็จแล้ว' : 'ไม่บังคับ'"
+              :placeholder="bookingAddStatus === 'done' ? `จำเป็นสำหรับสถานะ${BOOKING_STATUS.done.label}` : 'ไม่บังคับ'"
               @input="bookingAddError = ''"
             />
           </label>
