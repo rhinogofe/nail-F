@@ -4566,12 +4566,11 @@ function openEveryDayOptionForm() {
   resetOptionForm()
   message.value = ''
   errorMessage.value = ''
-  focusAdminModal('admin-everyday-option-modal', 'input[type="text"]')
+  focusAdminModal('admin-option-add-everyday-modal', 'input[type="text"]')
 }
 
 function closeEveryDayForm() {
   showEveryDayForm.value = false
-  errorMessage.value = ''
   resetOptionForm()
 }
 
@@ -8903,12 +8902,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         class="booking-edit-backdrop"
         @click.self="closeEveryDayForm"
       >
-        <div id="admin-everyday-option-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-labelledby="everyday-option-title">
+        <div id="admin-option-add-everyday-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-modal="true" aria-labelledby="option-add-everyday-title">
           <div class="booking-edit-header">
-            <h3 id="everyday-option-title">เพิ่มบริการทุกวัน</h3>
+            <h3 id="option-add-everyday-title">เพิ่มบริการทุกวัน</h3>
             <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeEveryDayForm">×</button>
           </div>
-          <p class="muted booking-edit-meta">แสดงให้ลูกค้าเลือกได้ทุกวันในปฏิทินจอง</p>
+          <p class="muted booking-edit-meta">บริการนี้จะแสดงให้ลูกค้าเลือกได้ทุกวัน</p>
           <div class="admin-form-grid admin-option-grid">
             <label>
               ชื่อบริการ *
@@ -8922,7 +8921,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               หมวดหมู่
               <select v-model="optionForm.category_id" class="admin-input">
                 <option value="">— ไม่ระบุ —</option>
-                <option v-for="cat in activeServiceCategories" :key="`everyday-cat-${cat.id}`" :value="cat.id">
+                <option v-for="cat in activeServiceCategories" :key="`add-cat-${cat.id}`" :value="cat.id">
                   {{ cat.name }}
                 </option>
               </select>
@@ -8948,7 +8947,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 <div class="color-preset-row">
                   <button
                     v-for="preset in optionColorPresets"
-                    :key="`everyday-opt-${preset.value}`"
+                    :key="`add-opt-${preset.value}`"
                     type="button"
                     class="color-preset-btn"
                     :class="{ active: optionForm.color === preset.value }"
@@ -8966,7 +8965,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <AdminSwitch v-model="optionForm.is_active" label="แสดงให้ลูกค้าเลือกจอง" />
             <AdminSwitch v-model="optionForm.is_required" label="บังคับเลือกเมื่อจอง" />
           </div>
-          <p v-if="errorMessage" class="alert error">{{ errorMessage }}</p>
+          <p v-if="errorMessage" class="alert error" role="alert">{{ errorMessage }}</p>
           <div class="booking-edit-actions">
             <button type="button" class="btn" @click="closeEveryDayForm">ยกเลิก</button>
             <button type="button" class="btn primary" @click="saveNailOption">เพิ่มบริการ</button>
