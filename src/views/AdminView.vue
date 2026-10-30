@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { useShopRoute } from '../composables/useShopRoute'
 import api from '../api/axios'
 import { useAuthStore } from '../stores/auth'
@@ -14,9 +14,12 @@ import AdminRenewalPanel from '../components/AdminRenewalPanel.vue'
 import AdminShopFeaturesPanel from '../components/AdminShopFeaturesPanel.vue'
 import AdminBookingPaymentSlips from '../components/AdminBookingPaymentSlips.vue'
 import AdminSwitch from '../components/AdminSwitch.vue'
+import AdminSaveStatus from '../components/AdminSaveStatus.vue'
+import { useAutoSaveField } from '../composables/useAutoSaveField'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
 import { isFirebaseConfigured } from '../utils/firebaseConfig'
+import { slugifyShopName } from '../utils/shopSlug'
 
 /** Above teleported admin modals (.booking-edit-backdrop z-index 2000) */
 const adminSwal = Swal.mixin({
@@ -39,6 +42,11 @@ import {
   UNCategorized_CATEGORY_ID,
 } from '../utils/bookingOptionsResponse'
 import { useShopRealtime } from '../composables/useShopRealtime'
+
+const autoSave = useAutoSaveField()
+function autoSaveState(key) {
+  return autoSave.fields[key] || { status: 'idle', error: '' }
+}
 
 const router = useRouter()
 const { shopPath, shopSlug } = useShopRoute()
@@ -212,16 +220,22 @@ const bulkBlockNote = ref('')
 const bulkStartDate = ref(todayYmd())
 const bulkDays = ref(7)
 const depositAmount = ref(300)
+const depositAmountSaved = ref(300)
 const depositFullPaymentEnabled = ref(false)
 const registerShopPin = ref('')
+const registerShopPinSaved = ref('')
 const registerShopPinConfigured = ref(false)
 const couponDiscountPercent = ref(20)
 const couponRequiredPoints = ref(100)
 const couponCompletionPoints = ref(10)
+const couponDiscountPercentSaved = ref(20)
+const couponRequiredPointsSaved = ref(100)
+const couponCompletionPointsSaved = ref(10)
 const couponManualCompletionPoints = ref(false)
 const linePushEnabled = ref(false)
 const lineCanEditEnabled = ref(false)
 const linePushToId = ref('')
+const linePushToIdSaved = ref('')
 const lineChannelToken = ref('')
 const lineChannelSecret = ref('')
 
@@ -248,6 +262,7 @@ const chatNotifyNewBookingEnabled = ref(true)
 const chatNotifyUpcomingAdminEnabled = ref(true)
 const chatNotifyUpcomingCustomerEnabled = ref(true)
 const chatNotifyUpcomingMinutes = ref(30)
+const chatNotifyUpcomingMinutesSaved = ref(30)
 const chatNotifyCancelAdminEnabled = ref(true)
 const chatNotifyCancelCustomerEnabled = ref(true)
 const chatNotifyPaidAdminEnabled = ref(false)
@@ -964,7 +979,10 @@ function goToSettingsSection(key) {
 const allShops = ref([])
 const newShopName = ref('')
 const newShopSlug = ref('')
+const newShopSlugEdited = ref(false)
 const newShopUsageLimitDays = ref('')
+const newShopPreset = ref('')
+const shopPresets = ref([])
 const USAGE_PRESET_DAYS = [10, 15, 30]
 
 function parseUsageInputDays(value) {
@@ -1052,6 +1070,14 @@ const branchShopOptions = computed(() =>
   allShops.value.filter((shop) => shop.slug !== 'default' && shop.is_active)
 )
 const uiForm = ref({})
+const uiFormSnapshot = ref('{}')
+const uiFormSaving = ref(false)
+
+function snapshotUiForm() {
+  uiFormSnapshot.value = JSON.stringify(uiForm.value || {})
+}
+
+const uiFormDirty = computed(() => JSON.stringify(uiForm.value || {}) !== uiFormSnapshot.value)
 const uiImageUploading = ref('')
 const pendingUiUploadKind = ref('')
 const uiImageFileInput = ref(null)
@@ -1146,10 +1172,22 @@ async function saveAdvanceDays() {
   }
 }
 
+async function loadShopPresets() {
+  try {
+    const { data } = await api.get('/api/shops/presets')
+    shopPresets.value = Array.isArray(data?.presets) ? data.presets : []
+  } catch {
+    shopPresets.value = []
+  }
+}
+
 async function loadAllShops() {
   try {
     const { data } = await api.get('/api/admin/shops')
     allShops.value = data || []
+    if (!shopPresets.value.length) {
+      await loadShopPresets()
+    }
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดรายการร้านไม่สำเร็จ'
   }
@@ -1200,12 +1238,16 @@ async function createShop() {
   message.value = ''
   errorMessage.value = ''
   const name = newShopName.value.trim()
-  const slug = newShopSlug.value.trim().toLowerCase()
+  const slug = slugifyShopName(newShopSlug.value || name)
   if (!name || !slug) {
     errorMessage.value = 'กรุณากรอกชื่อและ slug ร้าน'
     return
   }
-  const ok = await confirmAdminSave('ยืนยันเพิ่มสาขา', `เพิ่มสาขา "${name}" (/${slug}) ใช่ไหม`)
+  const presetMeta = shopPresets.value.find((item) => item.key === newShopPreset.value)
+  const confirmDetail = presetMeta
+    ? `เพิ่มสาขา "${name}" (/${slug}) เทมเพลต ${presetMeta.label} ใช่ไหม`
+    : `เพิ่มสาขา "${name}" (/${slug}) ใช่ไหม`
+  const ok = await confirmAdminSave('ยืนยันเพิ่มสาขา', confirmDetail)
   if (!ok) return
   const limitDays = parseUsageInputDays(newShopUsageLimitDays.value)
   if (String(newShopUsageLimitDays.value).trim() && limitDays == null) {
@@ -1217,16 +1259,32 @@ async function createShop() {
     if (limitDays != null) {
       payload.usage_limit_days = limitDays
     }
+    if (newShopPreset.value) {
+      payload.preset = newShopPreset.value
+    }
     await api.post('/api/shops', payload)
     newShopName.value = ''
     newShopSlug.value = ''
+    newShopSlugEdited.value = false
     newShopUsageLimitDays.value = ''
+    newShopPreset.value = ''
     message.value = `สร้างร้าน ${name} แล้ว — URL: /${slug}/bookings`
     await loadAllShops()
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'สร้างร้านไม่สำเร็จ'
   }
 }
+
+function onNewShopSlugInput(event) {
+  const next = slugifyShopName(event.target.value)
+  newShopSlug.value = next
+  newShopSlugEdited.value = Boolean(next)
+}
+
+watch(newShopName, (name) => {
+  if (newShopSlugEdited.value) return
+  newShopSlug.value = slugifyShopName(name)
+})
 
 function switchShopAdmin(slug) {
   if (slug === shopSlug.value) return
@@ -1447,15 +1505,20 @@ async function loadUiSettingsAdmin() {
   try {
     const { data } = await api.get('/api/admin/settings/ui')
     uiForm.value = { ...(data || {}) }
+    snapshotUiForm()
     uiSettingsStore.applyLocal(data || {})
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'โหลดตั้งค่า UI ไม่สำเร็จ'
   }
 }
 
+async function discardUiForm() {
+  await loadUiSettingsAdmin()
+}
+
 async function saveUiSettingsAdmin() {
-  const ok = await confirmAdminSave('ยืนยันบันทึก UI', 'บันทึกการตั้งค่า UI และข้อความทั้งหมดใช่ไหม')
-  if (!ok) return
+  if (uiFormSaving.value) return
+  uiFormSaving.value = true
   message.value = ''
   errorMessage.value = ''
   try {
@@ -1467,11 +1530,27 @@ async function saveUiSettingsAdmin() {
     }
     const { data } = await api.patch('/api/admin/settings/ui', payload)
     uiForm.value = { ...(data.settings || {}) }
+    snapshotUiForm()
     uiSettingsStore.applyLocal(data.settings || uiForm.value)
     message.value = 'บันทึกการตั้งค่า UI แล้ว'
   } catch (err) {
     errorMessage.value = err?.response?.data?.error || 'บันทึก UI ไม่สำเร็จ'
+  } finally {
+    uiFormSaving.value = false
   }
+}
+
+async function confirmLeaveUiDirty() {
+  if (!uiFormDirty.value) return true
+  const result = await adminSwal.fire({
+    title: 'มีการแก้ไขที่ยังไม่บันทึก',
+    text: 'ออกจากแท็บ UI โดยยังไม่บันทึกหรือไม่',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ออกโดยไม่บันทึก',
+    cancelButtonText: 'อยู่ต่อ',
+  })
+  return result.isConfirmed
 }
 
 function uiPreviewUrl(key) {
@@ -1499,23 +1578,7 @@ function isUiFormToggleOn(key) {
 }
 
 async function onUiToggleChange(field, checked) {
-  const key = field.key
-  const previous = uiForm.value[key]
-  uiForm.value[key] = checked ? '1' : '0'
-  await autoSaveSettingToggle({
-    key: `ui:${key}`,
-    url: '/api/admin/settings/ui',
-    payload: { [key]: checked ? '1' : '0' },
-    label: field.label,
-    nextValue: checked,
-    revert: () => { uiForm.value[key] = previous },
-    apply: (data) => {
-      if (data?.settings) {
-        uiForm.value = { ...uiForm.value, ...data.settings }
-        uiSettingsStore.applyLocal(data.settings)
-      }
-    },
-  })
+  uiForm.value[field.key] = checked ? '1' : '0'
 }
 
 function triggerUiImageUpload(kind) {
@@ -1544,6 +1607,7 @@ async function onUiImageSelected(event) {
       image_mime: mime,
     })
     uiForm.value = { ...(data.settings || uiForm.value) }
+    snapshotUiForm()
     uiSettingsStore.applyLocal(data.settings || uiForm.value)
     message.value = kind === 'logo'
       ? 'อัปโหลดโลโก้แล้ว'
@@ -2390,8 +2454,9 @@ async function onRenewalShopsChanged() {
   }
 }
 
-function switchTab(tab) {
+async function switchTab(tab) {
   if (activeTab.value === tab) return
+  if (activeTab.value === 'ui' && !(await confirmLeaveUiDirty())) return
   if (activeTab.value === 'services') closeServiceDay()
   if (activeTab.value === 'bookings') closeBookingDay()
   if (activeTab.value === 'blocks') {
@@ -2849,6 +2914,7 @@ async function loadDepositSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/deposit')
     depositAmount.value = Number(data?.deposit_amount || 300)
+    depositAmountSaved.value = depositAmount.value
     depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดค่ายอดมัดจำไม่สำเร็จ'
@@ -2860,6 +2926,7 @@ async function loadRegisterShopPinSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/register-pin')
     registerShopPin.value = String(data?.pin || '')
+    registerShopPinSaved.value = registerShopPin.value
     registerShopPinConfigured.value = Boolean(data?.configured)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดรหัสสร้างร้านไม่สำเร็จ'
@@ -2868,105 +2935,155 @@ async function loadRegisterShopPinSetting() {
 
 async function saveRegisterShopPinSetting() {
   const pin = String(registerShopPin.value || '').replace(/\D/g, '').slice(0, 4)
-  if (pin && !/^\d{4}$/.test(pin)) {
-    errorMessage.value = 'รหัสต้องเป็นตัวเลข 4 หลัก'
-    return
-  }
-  const ok = await confirmAdminSave(
-    pin ? 'ยืนยันบันทึกรหัสสร้างร้าน' : 'ยืนยันปิดการสมัครร้าน',
-    pin
-      ? 'บันทึกรหัสนี้สำหรับสมัครร้านค้าใหม่ใช่ไหม'
-      : 'ล้างรหัสจะปิดให้สมัครร้านใหม่ และซ่อนปุ่มสมัครร้านในหน้าล็อกอิน ใช่ไหม'
-  )
-  if (!ok) return
-  message.value = ''
-  errorMessage.value = ''
-  try {
-    const { data } = await api.patch('/api/admin/settings/register-pin', { pin })
-    registerShopPin.value = String(data?.pin || '')
-    registerShopPinConfigured.value = Boolean(data?.configured)
-    message.value = data?.configured
-      ? 'บันทึกรหัสสร้างร้านค้าแล้ว — เปิดรับสมัครร้าน'
-      : 'ปิดการสมัครร้านแล้ว'
-  } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'บันทึกรหัสไม่สำเร็จ'
-  }
+  registerShopPin.value = pin
+  if (pin === registerShopPinSaved.value) return
+  await autoSave.run('register-pin', {
+    value: pin,
+    restoreAttempt: () => { registerShopPin.value = pin },
+    validate: (value) => {
+      if (value && !/^\d{4}$/.test(value)) return 'รหัสต้องเป็นตัวเลข 4 หลัก หรือเว้นว่างเพื่อปิดสมัครร้าน'
+      return ''
+    },
+    save: async (value) => {
+      const { data } = await api.patch('/api/admin/settings/register-pin', { pin: value })
+      return data
+    },
+    apply: (data) => {
+      registerShopPin.value = String(data?.pin || '')
+      registerShopPinSaved.value = registerShopPin.value
+      registerShopPinConfigured.value = Boolean(data?.configured)
+    },
+    revert: () => { registerShopPin.value = registerShopPinSaved.value },
+  })
 }
 
 function onRegisterPinInput(event) {
   registerShopPin.value = String(event.target.value || '').replace(/\D/g, '').slice(0, 4)
 }
 
+function applyCouponResponse(data) {
+  couponDiscountPercent.value = Number(data.discount_percent) || couponDiscountPercent.value
+  couponRequiredPoints.value = Number(data.required_points) || couponRequiredPoints.value
+  couponCompletionPoints.value = Number(data.completion_points ?? couponCompletionPoints.value)
+  couponDiscountPercentSaved.value = couponDiscountPercent.value
+  couponRequiredPointsSaved.value = couponRequiredPoints.value
+  couponCompletionPointsSaved.value = couponCompletionPoints.value
+  couponManualCompletionPoints.value = Boolean(data.manual_completion_points)
+}
+
+function couponPayload(overrides = {}) {
+  return {
+    discount_percent: Number(couponDiscountPercent.value),
+    required_points: Number(couponRequiredPoints.value),
+    completion_points: Number(couponCompletionPoints.value),
+    manual_completion_points: couponManualCompletionPoints.value,
+    ...overrides,
+  }
+}
+
 async function loadCouponSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/coupon')
-    couponDiscountPercent.value = Number(data?.discount_percent) || 20
-    couponRequiredPoints.value = Number(data?.required_points) || 100
-    couponCompletionPoints.value = Number(data?.completion_points ?? 10)
-    couponManualCompletionPoints.value = Boolean(data?.manual_completion_points)
+    applyCouponResponse(data)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าคูปองไม่สำเร็จ'
   }
 }
 
-async function saveCouponSetting() {
+async function saveCouponField(key, validate, previousManual) {
+  const payload = couponPayload()
+  const previous = {
+    discount: couponDiscountPercentSaved.value,
+    points: couponRequiredPointsSaved.value,
+    completion: couponCompletionPointsSaved.value,
+    manual: previousManual ?? couponManualCompletionPoints.value,
+  }
+  await autoSave.run(key, {
+    value: payload,
+    restoreAttempt: () => {
+      couponDiscountPercent.value = payload.discount_percent
+      couponRequiredPoints.value = payload.required_points
+      couponCompletionPoints.value = payload.completion_points
+      couponManualCompletionPoints.value = payload.manual_completion_points
+    },
+    validate,
+    save: async (body) => {
+      const { data } = await api.patch('/api/admin/settings/coupon', body)
+      return data
+    },
+    apply: (data) => applyCouponResponse(data),
+    revert: () => {
+      couponDiscountPercent.value = previous.discount
+      couponRequiredPoints.value = previous.points
+      couponCompletionPoints.value = previous.completion
+      couponManualCompletionPoints.value = previous.manual
+    },
+  })
+}
+
+async function saveCouponManualToggle(nextValue) {
+  const previousManual = !nextValue
+  couponManualCompletionPoints.value = nextValue
+  await saveCouponField('coupon:manual', () => '', previousManual)
+}
+
+async function saveCouponDiscountPercent() {
   const discount = Number(couponDiscountPercent.value)
+  if (discount === couponDiscountPercentSaved.value) return
+  await saveCouponField('coupon:discount', () => {
+    if (!Number.isInteger(discount) || discount < 1 || discount > 100) return 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
+    return ''
+  })
+}
+
+async function saveCouponRequiredPoints() {
   const points = Number(couponRequiredPoints.value)
+  if (points === couponRequiredPointsSaved.value) return
+  await saveCouponField('coupon:points', () => {
+    if (!Number.isInteger(points) || points < 1) return 'แต้มที่ใช้แลกต้องมากกว่า 0'
+    return ''
+  })
+}
+
+async function saveCouponCompletionPoints() {
   const completion = Number(couponCompletionPoints.value)
-  if (!Number.isInteger(discount) || discount < 1 || discount > 100) {
-    errorMessage.value = 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
-    return
-  }
-  if (!Number.isInteger(points) || points < 1) {
-    errorMessage.value = 'แต้มที่ใช้แลกต้องมากกว่า 0'
-    return
-  }
-  if (!Number.isInteger(completion) || completion < 0) {
-    errorMessage.value = 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
-    return
-  }
-  const completionHint = couponManualCompletionPoints.value
-    ? 'กรอกแต้มเองเมื่อทำคิวเสร็จ'
-    : `ทำเสร็จ +${completion.toLocaleString('th-TH')} แต้ม`
-  const ok = await confirmAdminSave(
-    'ยืนยันบันทึกคูปอง',
-    `ลด ${discount}% ใช้ ${points.toLocaleString('th-TH')} แต้ม · ${completionHint} ใช่ไหม`
-  )
-  if (!ok) return
-  message.value = ''
-  errorMessage.value = ''
-  try {
-    const { data } = await api.patch('/api/admin/settings/coupon', {
-      discount_percent: discount,
-      required_points: points,
-      completion_points: completion,
-      manual_completion_points: couponManualCompletionPoints.value,
-    })
-    couponDiscountPercent.value = Number(data.discount_percent) || discount
-    couponRequiredPoints.value = Number(data.required_points) || points
-    couponCompletionPoints.value = Number(data.completion_points ?? completion)
-    couponManualCompletionPoints.value = Boolean(data.manual_completion_points)
-    message.value = couponManualCompletionPoints.value
-      ? `บันทึกแล้ว: ลด ${couponDiscountPercent.value}% · แลก ${couponRequiredPoints.value} แต้ม · กรอกแต้มเองเมื่อทำเสร็จ`
-      : `บันทึกแล้ว: ลด ${couponDiscountPercent.value}% · แลก ${couponRequiredPoints.value} แต้ม · ทำเสร็จ +${couponCompletionPoints.value} แต้ม`
-  } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'บันทึกตั้งค่าคูปองไม่สำเร็จ'
-  }
+  if (completion === couponCompletionPointsSaved.value) return
+  await saveCouponField('coupon:completion', () => {
+    if (!Number.isInteger(completion) || completion < 0) return 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
+    return ''
+  })
+}
+
+function applyLinePushResponse(data) {
+  linePushEnabled.value = data.enabled !== false
+  if (data.can_edit_enabled != null) lineCanEditEnabled.value = data.can_edit_enabled === true
+  linePushToId.value = data.push_to_id || ''
+  linePushToIdSaved.value = linePushToId.value
+  lineTokenConfigured.value = Boolean(data.token_configured)
+  lineTokenMasked.value = data.token_masked || ''
+  lineSecretConfigured.value = Boolean(data.secret_configured)
+  lineSecretMasked.value = data.secret_masked || ''
+  lineCentralBotEnabled.value = Boolean(data.central_bot_enabled)
+  lineUsesOwnBot.value = Boolean(data.uses_own_bot)
+  lineUseOwnBot.value = Boolean(data.use_own_bot)
+  if (data.can_edit_use_own_bot != null) lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
+  lineWebhookPath.value = data.webhook_url || lineWebhookPath.value
+  const configured = lineUsesOwnBot.value
+    ? Boolean(data.token_configured && data.secret_configured && data.push_to_id)
+    : Boolean(data.token_configured && data.push_to_id)
+  syncShopLinePushInList(shopSlug.value, {
+    line_push_enabled: data.enabled !== false,
+    line_push_configured: configured,
+    line_push_ready: data.enabled !== false && configured,
+    line_use_own_bot: Boolean(data.use_own_bot),
+  })
 }
 
 async function loadLinePushSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/line-push')
-    linePushEnabled.value = data.enabled !== false
+    applyLinePushResponse(data)
     lineCanEditEnabled.value = data.can_edit_enabled === true
-    linePushToId.value = data.push_to_id || ''
-    lineTokenConfigured.value = Boolean(data.token_configured)
-    lineTokenMasked.value = data.token_masked || ''
-    lineSecretConfigured.value = Boolean(data.secret_configured)
-    lineSecretMasked.value = data.secret_masked || ''
-    lineCentralBotEnabled.value = Boolean(data.central_bot_enabled)
-    lineUsesOwnBot.value = Boolean(data.uses_own_bot)
-    lineUseOwnBot.value = Boolean(data.use_own_bot)
     lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
     lineWebhookPath.value = data.webhook_url || '/api/line/webhook'
     lineChannelToken.value = ''
@@ -2982,56 +3099,49 @@ function syncShopLinePushInList(slug, patch) {
   Object.assign(shop, patch)
 }
 
-async function saveLinePushSetting() {
-  const ok = await confirmAdminSave('ยืนยันบันทึก LINE', 'บันทึกการตั้งค่าแจ้งเตือน LINE ใช่ไหม')
-  if (!ok) return
-  message.value = ''
-  errorMessage.value = ''
-  try {
-    const payload = {
-      push_to_id: linePushToId.value.trim(),
-    }
-    if (isSuperAdmin.value) {
-      payload.enabled = linePushEnabled.value
-    }
-    if (lineCanEditUseOwnBot.value) {
-      payload.use_own_bot = lineUseOwnBot.value
-    }
-    if (lineUsesOwnBot.value || lineUseOwnBot.value) {
-      if (lineChannelToken.value.trim()) {
-        payload.channel_access_token = lineChannelToken.value.trim()
-      }
-      if (lineChannelSecret.value.trim()) {
-        payload.channel_secret = lineChannelSecret.value.trim()
-      }
-    }
-    const { data } = await api.patch('/api/admin/settings/line-push', payload)
-    linePushEnabled.value = data.enabled !== false
-    linePushToId.value = data.push_to_id || ''
-    lineTokenConfigured.value = Boolean(data.token_configured)
-    lineTokenMasked.value = data.token_masked || ''
-    lineSecretConfigured.value = Boolean(data.secret_configured)
-    lineSecretMasked.value = data.secret_masked || ''
-    lineCentralBotEnabled.value = Boolean(data.central_bot_enabled)
-    lineUsesOwnBot.value = Boolean(data.uses_own_bot)
-    lineUseOwnBot.value = Boolean(data.use_own_bot)
-    lineCanEditUseOwnBot.value = Boolean(data.can_edit_use_own_bot)
-    lineWebhookPath.value = data.webhook_url || lineWebhookPath.value
-    lineChannelToken.value = ''
-    lineChannelSecret.value = ''
-    message.value = 'บันทึกการแจ้งเตือน LINE แล้ว'
-    const configured = lineUsesOwnBot.value
-      ? Boolean(data.token_configured && data.secret_configured && data.push_to_id)
-      : Boolean(data.token_configured && data.push_to_id)
-    syncShopLinePushInList(shopSlug.value, {
-      line_push_enabled: data.enabled !== false,
-      line_push_configured: configured,
-      line_push_ready: data.enabled !== false && configured,
-      line_use_own_bot: Boolean(data.use_own_bot),
-    })
-  } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'บันทึก LINE แจ้งเตือนไม่สำเร็จ'
-  }
+async function patchLinePush(key, payload, { restoreAttempt, revert } = {}) {
+  await autoSave.run(key, {
+    value: payload,
+    restoreAttempt,
+    revert,
+    save: async (body) => {
+      const { data } = await api.patch('/api/admin/settings/line-push', body)
+      return data
+    },
+    apply: (data) => {
+      applyLinePushResponse(data)
+      if (payload.channel_access_token) lineChannelToken.value = ''
+      if (payload.channel_secret) lineChannelSecret.value = ''
+    },
+  })
+}
+
+async function saveLinePushToId() {
+  const next = linePushToId.value.trim()
+  if (next === linePushToIdSaved.value) return
+  const previous = linePushToIdSaved.value
+  await patchLinePush('line-push:id', { push_to_id: next }, {
+    restoreAttempt: () => { linePushToId.value = next },
+    revert: () => { linePushToId.value = previous },
+  })
+}
+
+async function saveLineChannelToken() {
+  const token = lineChannelToken.value.trim()
+  if (!token) return
+  await patchLinePush('line-push:token', { channel_access_token: token }, {
+    restoreAttempt: () => { lineChannelToken.value = token },
+    revert: () => { lineChannelToken.value = token },
+  })
+}
+
+async function saveLineChannelSecret() {
+  const secret = lineChannelSecret.value.trim()
+  if (!secret) return
+  await patchLinePush('line-push:secret', { channel_secret: secret }, {
+    restoreAttempt: () => { lineChannelSecret.value = secret },
+    revert: () => { lineChannelSecret.value = secret },
+  })
 }
 
 async function toggleShopLinePush(shop, enabled) {
@@ -3067,26 +3177,28 @@ async function testLinePushSetting() {
   }
 }
 
-// Boolean settings save the moment they are switched. Only the toggled field is
-// sent, so pending edits in the text/number fields next to it stay unsaved until
-// their own Save button is pressed.
-async function autoSaveSettingToggle({ key, url, payload, label, nextValue, revert, apply }) {
-  if (settingToggleSaving.value) {
-    revert()
-    return
-  }
-  settingToggleSaving.value = key
+async function autoSaveSettingToggle({ key, url, payload, label, nextValue, revert, apply, restoreAttempt }) {
   message.value = ''
   errorMessage.value = ''
-  try {
-    const { data } = await api.patch(url, payload)
-    apply?.(data)
-    message.value = `${nextValue ? 'เปิด' : 'ปิด'} — ${label}`
-  } catch (error) {
-    revert()
-    errorMessage.value = error?.response?.data?.error || `บันทึก "${label}" ไม่สำเร็จ`
-  } finally {
-    settingToggleSaving.value = ''
+  await autoSave.run(key, {
+    value: nextValue,
+    restoreAttempt,
+    onStart: () => { settingToggleSaving.value = key },
+    onFinally: () => {
+      if (settingToggleSaving.value === key) settingToggleSaving.value = ''
+    },
+    save: async () => {
+      const { data } = await api.patch(url, payload)
+      return data
+    },
+    apply: (data) => {
+      apply?.(data)
+    },
+    revert,
+  })
+  const field = autoSave.fields[key]
+  if (field?.status === 'error') {
+    errorMessage.value = field.error || `บันทึก "${label}" ไม่สำเร็จ`
   }
 }
 
@@ -3218,6 +3330,7 @@ async function loadChatNotifySetting() {
     chatNotifyUpcomingAdminEnabled.value = data.upcoming_admin_enabled !== false
     chatNotifyUpcomingCustomerEnabled.value = data.upcoming_customer_enabled !== false
     chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || 30
+    chatNotifyUpcomingMinutesSaved.value = chatNotifyUpcomingMinutes.value
     chatNotifyCancelAdminEnabled.value = data.cancel_admin_enabled !== false
     chatNotifyCancelCustomerEnabled.value = data.cancel_customer_enabled !== false
     chatNotifyPaidAdminEnabled.value = data.paid_admin_enabled === true
@@ -3230,25 +3343,25 @@ async function loadChatNotifySetting() {
 
 async function saveChatNotifySetting() {
   const minutes = Number(chatNotifyUpcomingMinutes.value)
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
-    errorMessage.value = 'เวลาแจ้งเตือนก่อนคิวต้องเป็น 1–1440 นาที'
-    return
-  }
-
-  const ok = await confirmAdminSave('ยืนยันบันทึก', `แจ้งก่อนถึงคิว ${minutes} นาที ใช่ไหม`)
-  if (!ok) return
-
-  message.value = ''
-  errorMessage.value = ''
-  try {
-    const { data } = await api.patch('/api/admin/settings/chat-notify', {
-      upcoming_minutes: minutes,
-    })
-    chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || minutes
-    message.value = 'บันทึกเวลาแจ้งก่อนถึงคิวแล้ว'
-  } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'บันทึกแจ้งเตือนในแอปไม่สำเร็จ'
-  }
+  if (minutes === chatNotifyUpcomingMinutesSaved.value) return
+  const previous = chatNotifyUpcomingMinutesSaved.value
+  await autoSave.run('chat-notify:minutes', {
+    value: minutes,
+    restoreAttempt: () => { chatNotifyUpcomingMinutes.value = minutes },
+    validate: (value) => {
+      if (!Number.isInteger(value) || value < 1 || value > 1440) return 'เวลาแจ้งเตือนก่อนคิวต้องเป็น 1–1440 นาที'
+      return ''
+    },
+    save: async (value) => {
+      const { data } = await api.patch('/api/admin/settings/chat-notify', { upcoming_minutes: value })
+      return data
+    },
+    apply: (data) => {
+      chatNotifyUpcomingMinutes.value = Number(data.upcoming_minutes) || minutes
+      chatNotifyUpcomingMinutesSaved.value = chatNotifyUpcomingMinutes.value
+    },
+    revert: () => { chatNotifyUpcomingMinutes.value = previous },
+  })
 }
 
 async function loadUnpaidAutoCancelSetting() {
@@ -3264,63 +3377,74 @@ async function loadUnpaidAutoCancelSetting() {
 
 async function saveUnpaidAutoCancelSetting() {
   const hours = Number(unpaidExpireHours.value)
-  if (!Number.isInteger(hours) || hours < 1 || hours > 168) {
-    errorMessage.value = 'เวลายกเลิกต้องเป็นจำนวนเต็ม 1–168 ชั่วโมง'
-    return
-  }
-
-  const ok = await confirmAdminSave(
-    'ยืนยันบันทึก',
-    unpaidAutoCancelEnabled.value
-      ? `เปิดยกเลิกอัตโนมัติ — คิวรอชำระจะถูกยกเลิกหลัง <strong>${hours} ชม.</strong>`
-      : 'ปิดยกเลิกอัตโนมัติ — คิวรอชำระจะไม่ถูกยกเลิกเอง'
-  )
-  if (!ok) return
-
-  message.value = ''
-  errorMessage.value = ''
-  try {
-    const { data } = await api.patch('/api/admin/settings/unpaid-auto-cancel', {
-      enabled: unpaidAutoCancelEnabled.value,
-      expire_hours: hours,
-    })
-    unpaidAutoCancelEnabled.value = data.enabled !== false
-    unpaidExpireHours.value = Number(data.expire_hours) || hours
-    unpaidExpireHoursSaved.value = unpaidExpireHours.value
-    message.value = unpaidAutoCancelEnabled.value
-      ? `บันทึกแล้ว: ยกเลิกอัตโนมัติหลัง ${unpaidExpireHours.value} ชม.`
-      : 'บันทึกแล้ว: ปิดยกเลิกอัตโนมัติ'
-  } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'บันทึกตั้งค่าไม่สำเร็จ'
-  }
+  if (hours === unpaidExpireHoursSaved.value) return
+  const previous = unpaidExpireHoursSaved.value
+  await autoSave.run('unpaid:hours', {
+    value: hours,
+    restoreAttempt: () => { unpaidExpireHours.value = hours },
+    validate: (value) => {
+      if (!Number.isInteger(value) || value < 1 || value > 168) return 'เวลายกเลิกต้องเป็นจำนวนเต็ม 1–168 ชั่วโมง'
+      return ''
+    },
+    save: async (value) => {
+      const { data } = await api.patch('/api/admin/settings/unpaid-auto-cancel', {
+        enabled: unpaidAutoCancelEnabled.value,
+        expire_hours: value,
+      })
+      return data
+    },
+    apply: (data) => {
+      unpaidAutoCancelEnabled.value = data.enabled !== false
+      unpaidExpireHours.value = Number(data.expire_hours) || hours
+      unpaidExpireHoursSaved.value = unpaidExpireHours.value
+    },
+    revert: () => { unpaidExpireHours.value = previous },
+  })
 }
 
-async function saveDepositSetting() {
-  const fullHint = depositFullPaymentEnabled.value
-    ? 'ลูกค้าชำระเต็มจำนวนตามราคาบริการ'
-    : `มัดจำ ${depositAmount.value} บาท`
-  const ok = await confirmAdminSave(
-    'ยืนยันบันทึกการชำระ',
-    `${fullHint} ใช่ไหม`
-  )
-  if (!ok) return
+async function saveDepositFullPaymentToggle(nextValue) {
+  const previous = !nextValue
+  depositFullPaymentEnabled.value = nextValue
+  await autoSave.run('deposit:full', {
+    value: nextValue,
+    restoreAttempt: () => { depositFullPaymentEnabled.value = nextValue },
+    save: async (value) => {
+      const { data } = await api.patch('/api/admin/settings/deposit', { full_payment_enabled: value })
+      return data
+    },
+    apply: (data) => {
+      depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
+      if (data?.deposit_amount != null) {
+        depositAmount.value = Number(data.deposit_amount)
+        depositAmountSaved.value = depositAmount.value
+      }
+    },
+    revert: () => { depositFullPaymentEnabled.value = previous },
+  })
+}
 
-  message.value = ''
-  errorMessage.value = ''
-  try {
-    const payload = {
-      deposit_amount: Number(depositAmount.value),
-      full_payment_enabled: depositFullPaymentEnabled.value,
-    }
-    const { data } = await api.patch('/api/admin/settings/deposit', payload)
-    depositAmount.value = Number(data?.deposit_amount || depositAmount.value)
-    depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
-    message.value = depositFullPaymentEnabled.value
-      ? 'บันทึกแล้ว: ลูกค้าชำระเต็มจำนวนตามราคาบริการ'
-      : 'บันทึกยอดมัดจำแล้ว'
-  } catch (error) {
-    errorMessage.value = error?.response?.data?.error || 'บันทึกยอดมัดจำไม่สำเร็จ'
-  }
+async function saveDepositAmount() {
+  const amount = Number(depositAmount.value)
+  if (amount === depositAmountSaved.value) return
+  const previous = depositAmountSaved.value
+  await autoSave.run('deposit:amount', {
+    value: amount,
+    restoreAttempt: () => { depositAmount.value = amount },
+    validate: (value) => {
+      if (!Number.isFinite(value) || value < 1) return 'ยอดมัดจำต้องมากกว่า 0'
+      return ''
+    },
+    save: async (value) => {
+      const { data } = await api.patch('/api/admin/settings/deposit', { deposit_amount: value })
+      return data
+    },
+    apply: (data) => {
+      depositAmount.value = Number(data?.deposit_amount || amount)
+      depositAmountSaved.value = depositAmount.value
+      depositFullPaymentEnabled.value = Boolean(data?.full_payment_enabled)
+    },
+    revert: () => { depositAmount.value = previous },
+  })
 }
 
 function formatYmdLocal(dt) {
@@ -4936,8 +5060,18 @@ function backToBooking() {
   router.push(shopPath('/bookings'))
 }
 
+function editWebsite() {
+  router.push(shopPath('/booking-site/admin'))
+}
+
 const shopShareUrl = computed(() => {
   const path = `/${shopSlug.value}/bookings`
+  if (typeof window === 'undefined') return path
+  return `${window.location.origin}${path}`
+})
+
+const websiteShareUrl = computed(() => {
+  const path = `/${shopSlug.value}/booking-site`
   if (typeof window === 'undefined') return path
   return `${window.location.origin}${path}`
 })
@@ -4965,6 +5099,18 @@ async function shareShopLink() {
     } catch {
       errorMessage.value = 'แชร์/คัดลอกลิงก์ไม่สำเร็จ'
     }
+  }
+}
+
+async function shareWebsiteLink() {
+  message.value = ''
+  errorMessage.value = ''
+  const url = websiteShareUrl.value
+  try {
+    await navigator.clipboard.writeText(url)
+    message.value = 'คัดลอกลิงก์เว็บไซต์แล้ว'
+  } catch {
+    errorMessage.value = 'คัดลอกลิงก์เว็บไซต์ไม่สำเร็จ'
   }
 }
 
@@ -5005,6 +5151,7 @@ watch(visibleBlocksSections, (sections) => {
 onMounted(() => void shopFeaturesStore.fetchForAdmin())
 onMounted(loadUiSettingsAdmin)
 onMounted(loadAllShops)
+onMounted(loadShopPresets)
 onMounted(loadRenewalBannerSetting)
 onMounted(loadBookingCalendarSummary)
 onMounted(loadBlocks)
@@ -5040,6 +5187,11 @@ onUnmounted(() => {
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
 })
 
+onBeforeRouteLeave(async () => {
+  if (activeTab.value !== 'ui' || !uiFormDirty.value) return true
+  return confirmLeaveUiDirty()
+})
+
 watch(shopSlug, (next, prev) => {
   if (!prev || next === prev) return
   void reloadAdminShopContext()
@@ -5073,6 +5225,24 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </div>
       <div class="admin-top-actions">
         <AccountMenuDrawer ref="accountMenuRef" />
+        <button
+          v-if="shopFeaturesStore.bookingSiteEnabled"
+          type="button"
+          class="btn admin-site-btn"
+          @click="editWebsite"
+        >
+          <i class="ti ti-pencil" aria-hidden="true"></i>
+          แก้ไขเว็บไซต์
+        </button>
+        <button
+          v-if="shopFeaturesStore.bookingSiteEnabled"
+          type="button"
+          class="btn admin-site-btn"
+          @click="shareWebsiteLink"
+        >
+          <i class="ti ti-link" aria-hidden="true"></i>
+          แชร์ลิงก์เว็บไซต์
+        </button>
         <button type="button" class="btn admin-share-btn" @click="shareShopLink">
           <i class="ti ti-share-2" aria-hidden="true"></i>
           แชร์ลิงก์ร้าน
@@ -6080,6 +6250,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <AdminSwitch
         v-model="depositFullPaymentEnabled"
         label="ชำระเต็มจำนวนตามราคาบริการ"
+        :disabled="autoSaveState('deposit:full').status === 'saving'"
+        @update:model-value="saveDepositFullPaymentToggle"
+      />
+      <AdminSaveStatus
+        :status="autoSaveState('deposit:full').status"
+        :error="autoSaveState('deposit:full').error"
+        @retry="autoSave.retry('deposit:full')"
       />
       <p v-if="depositFullPaymentEnabled" class="muted admin-settings-hint">
         เปิดแล้วลูกค้าต้องโอนตามราคารวมของบริการที่เลือก (ไม่ใช่มัดจำคงที่)
@@ -6094,11 +6271,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             step="1"
             class="admin-input"
             :disabled="depositFullPaymentEnabled"
+            @blur="saveDepositAmount"
+            @keydown.enter.prevent="saveDepositAmount"
           />
         </label>
-        <button type="button" class="btn primary admin-action-btn" @click="saveDepositSetting">
-          บันทึกการชำระ
-        </button>
+        <AdminSaveStatus
+          :status="autoSaveState('deposit:amount').status"
+          :error="autoSaveState('deposit:amount').error"
+          @retry="autoSave.retry('deposit:amount')"
+        />
       </div>
       <div class="shop-hours-preview">
         <i class="ti ti-cash" style="font-size:16px;color:var(--color-primary)"></i>
@@ -6119,6 +6300,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <AdminSwitch
         v-model="couponManualCompletionPoints"
         label="กรอกแต้มเองเมื่อทำคิวเสร็จ"
+        :disabled="autoSaveState('coupon:manual').status === 'saving'"
+        @update:model-value="saveCouponManualToggle"
+      />
+      <AdminSaveStatus
+        :status="autoSaveState('coupon:manual').status"
+        :error="autoSaveState('coupon:manual').error"
+        @retry="autoSave.retry('coupon:manual')"
       />
       <p v-if="couponManualCompletionPoints" class="muted admin-settings-hint">
         เปิดแล้วจะถามแต้มตอนกดทำเสร็จ (ค่าเริ่มต้น 0) แทนการให้แต้มอัตโนมัติ
@@ -6126,11 +6314,38 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <div class="admin-form-row" style="flex-wrap:wrap">
         <label class="admin-label-grow">
           ส่วนลด (%)
-          <input v-model.number="couponDiscountPercent" type="number" min="1" max="100" step="1" class="admin-input" />
+          <input
+            v-model.number="couponDiscountPercent"
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            class="admin-input"
+            @blur="saveCouponDiscountPercent"
+            @keydown.enter.prevent="saveCouponDiscountPercent"
+          />
+          <AdminSaveStatus
+            :status="autoSaveState('coupon:discount').status"
+            :error="autoSaveState('coupon:discount').error"
+            @retry="autoSave.retry('coupon:discount')"
+          />
         </label>
         <label class="admin-label-grow">
           แต้มที่ใช้แลก
-          <input v-model.number="couponRequiredPoints" type="number" min="1" step="1" class="admin-input" />
+          <input
+            v-model.number="couponRequiredPoints"
+            type="number"
+            min="1"
+            step="1"
+            class="admin-input"
+            @blur="saveCouponRequiredPoints"
+            @keydown.enter.prevent="saveCouponRequiredPoints"
+          />
+          <AdminSaveStatus
+            :status="autoSaveState('coupon:points').status"
+            :error="autoSaveState('coupon:points').error"
+            @retry="autoSave.retry('coupon:points')"
+          />
         </label>
         <label class="admin-label-grow" :class="{ muted: couponManualCompletionPoints }">
           แต้มเมื่อทำเสร็จ (อัตโนมัติ)
@@ -6141,11 +6356,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             step="1"
             class="admin-input"
             :disabled="couponManualCompletionPoints"
+            @blur="saveCouponCompletionPoints"
+            @keydown.enter.prevent="saveCouponCompletionPoints"
+          />
+          <AdminSaveStatus
+            :status="autoSaveState('coupon:completion').status"
+            :error="autoSaveState('coupon:completion').error"
+            @retry="autoSave.retry('coupon:completion')"
           />
         </label>
-        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveCouponSetting">
-          บันทึกคูปอง
-        </button>
       </div>
       <div class="shop-hours-preview">
         <i class="ti ti-ticket" style="font-size:16px;color:var(--color-primary)"></i>
@@ -6278,6 +6497,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               class="admin-input"
               :placeholder="lineTokenConfigured ? `ตั้งแล้ว (${lineTokenMasked}) — ใส่ใหม่เพื่อเปลี่ยน` : 'ใส่ Channel Access Token'"
               autocomplete="off"
+              @blur="saveLineChannelToken"
+              @keydown.enter.prevent="saveLineChannelToken"
+            />
+            <AdminSaveStatus
+              :status="autoSaveState('line-push:token').status"
+              :error="autoSaveState('line-push:token').error"
+              @retry="autoSave.retry('line-push:token')"
             />
           </label>
           <label>
@@ -6288,6 +6514,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               class="admin-input"
               :placeholder="lineSecretConfigured ? `ตั้งแล้ว (${lineSecretMasked}) — ใส่ใหม่เพื่อเปลี่ยน` : 'ใส่ Channel Secret (32 ตัวอักษร)'"
               autocomplete="off"
+              @blur="saveLineChannelSecret"
+              @keydown.enter.prevent="saveLineChannelSecret"
+            />
+            <AdminSaveStatus
+              :status="autoSaveState('line-push:secret').status"
+              :error="autoSaveState('line-push:secret').error"
+              @retry="autoSave.retry('line-push:secret')"
             />
           </label>
         </template>
@@ -6300,6 +6533,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             :placeholder="lineCentralBotEnabled && !lineEffectiveUsesOwnBot
               ? 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทกลาง slug ร้านเพื่อผูกอัตโนมัติ'
               : 'Uxxxxxxxx หรือ Cxxxxxxxx — หรือทักบอทสาขานี้เพื่อผูกอัตโนมัติ'"
+            @blur="saveLinePushToId"
+            @keydown.enter.prevent="saveLinePushToId"
+          />
+          <AdminSaveStatus
+            :status="autoSaveState('line-push:id').status"
+            :error="autoSaveState('line-push:id').error"
+            @retry="autoSave.retry('line-push:id')"
           />
         </label>
       </div>
@@ -6309,9 +6549,8 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <p v-else-if="lineCentralBotEnabled && !lineEffectiveUsesOwnBot" class="muted" style="margin-top:8px">
         หลังทักบอทกลาง slug แล้ว รีเฟรชหน้านี้เพื่อดู User/Group ID · ร้าน Premium ให้แอดมินหลักเปิด “ใช้ LINE Bot ของร้านเอง” ด้านบน
       </p>
-      <p class="muted" style="margin-top:8px">สวิตช์ด้านบนบันทึกทันที — ปุ่มนี้ใช้บันทึก ID และ Token</p>
+      <p class="muted" style="margin-top:8px">สวิตช์และช่องด้านบนบันทึกทันทีเมื่อเปลี่ยนหรือออกจากช่อง</p>
       <div class="admin-form-row" style="flex-wrap:wrap;margin-top:12px">
-        <button type="button" class="btn primary admin-action-btn" @click="saveLinePushSetting">บันทึก LINE แจ้งเตือน</button>
         <button
           type="button"
           class="btn ghost admin-action-btn"
@@ -6399,11 +6638,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           max="1440"
           step="1"
           class="admin-input"
+          @blur="saveChatNotifySetting"
+          @keydown.enter.prevent="saveChatNotifySetting"
+        />
+        <AdminSaveStatus
+          :status="autoSaveState('chat-notify:minutes').status"
+          :error="autoSaveState('chat-notify:minutes').error"
+          @retry="autoSave.retry('chat-notify:minutes')"
         />
       </label>
-      <div class="admin-form-row" style="margin-top:12px">
-        <button type="button" class="btn primary admin-action-btn" @click="saveChatNotifySetting">บันทึกเวลา</button>
-      </div>
       </div>
 
       <div v-show="activeSettingsSection === 'unpaid'" id="settings-unpaid" class="admin-settings-section">
@@ -6432,11 +6675,17 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             step="1"
             class="admin-input"
             :disabled="!unpaidAutoCancelEnabled"
+            @blur="saveUnpaidAutoCancelSetting"
+            @keydown.enter.prevent="saveUnpaidAutoCancelSetting"
           />
         </label>
-        <button class="btn primary admin-action-btn" @click="saveUnpaidAutoCancelSetting">บันทึก</button>
+        <AdminSaveStatus
+          :status="autoSaveState('unpaid:hours').status"
+          :error="autoSaveState('unpaid:hours').error"
+          @retry="autoSave.retry('unpaid:hours')"
+        />
       </div>
-      <p class="muted" style="margin:8px 0 0">สวิตช์บันทึกทันที — ปุ่มนี้ใช้บันทึกจำนวนชั่วโมง</p>
+      <p class="muted" style="margin:8px 0 0">สวิตช์และจำนวนชั่วโมงบันทึกเมื่อเปลี่ยนหรือออกจากช่อง</p>
       <div class="shop-hours-preview">
         <i class="ti ti-clock-pause" style="font-size:16px;color:var(--color-primary)"></i>
         <template v-if="unpaidAutoCancelEnabled">
@@ -6505,7 +6754,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </label>
         <label class="admin-label-grow">
           slug (URL)
-          <input v-model="newShopSlug" class="admin-input" placeholder="เช่น chula" />
+          <input
+            :value="newShopSlug"
+            class="admin-input"
+            placeholder="จากชื่อร้าน"
+            @input="onNewShopSlugInput"
+          />
+        </label>
+        <label class="admin-label-grow">
+          เทมเพลตร้าน
+          <select v-model="newShopPreset" class="admin-input">
+            <option value="">ไม่ใช้เทมเพลต</option>
+            <option v-for="preset in shopPresets" :key="preset.key" :value="preset.key">
+              {{ preset.label }}
+            </option>
+          </select>
         </label>
         <label class="admin-label-grow">
           จำกัดเวลาใช้งาน (วัน)
@@ -6556,11 +6819,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             placeholder="เช่น 1234 (ว่าง = ปิด)"
             autocomplete="off"
             @input="onRegisterPinInput"
+            @blur="saveRegisterShopPinSetting"
+            @keydown.enter.prevent="saveRegisterShopPinSetting"
           />
         </label>
-        <button type="button" class="btn primary admin-action-btn" style="align-self:flex-end" @click="saveRegisterShopPinSetting">
-          {{ registerShopPin ? 'บันทึกรหัส' : 'ปิดสมัครร้าน' }}
-        </button>
+        <AdminSaveStatus
+          :status="autoSaveState('register-pin').status"
+          :error="autoSaveState('register-pin').error"
+          @retry="autoSave.retry('register-pin')"
+        />
       </div>
       <div class="shop-hours-preview">
         <i class="ti ti-lock" style="font-size:16px;color:var(--color-primary)"></i>
@@ -6830,8 +7097,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               class="ui-image-file-input"
               @change="onUiImageSelected"
             />
-            <button type="button" class="btn primary admin-action-btn" @click="saveUiSettingsAdmin">บันทึก UI ทั้งหมด</button>
-            <button type="button" class="btn ghost admin-action-btn" @click="loadUiSettingsAdmin">โหลดใหม่</button>
+            <div v-if="uiFormDirty" class="admin-ui-dirty-bar" role="status">
+              <p class="admin-ui-dirty-bar-text">มีการแก้ไขที่ยังไม่บันทึก</p>
+              <div class="admin-ui-dirty-actions">
+                <button type="button" class="btn ghost" :disabled="uiFormSaving" @click="discardUiForm">ยกเลิก</button>
+                <button type="button" class="btn primary" :disabled="uiFormSaving" @click="saveUiSettingsAdmin">
+                  {{ uiFormSaving ? 'กำลังบันทึก' : 'บันทึก' }}
+                </button>
+              </div>
+            </div>
           </div>
           </div>
         </div>
@@ -7573,6 +7847,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       :is-super-admin="isSuperAdmin"
       :shop-slug="shopSlug"
       :active="true"
+      @saved="shopFeaturesStore.fetchForAdmin()"
     />
 
     <!-- ── ผู้ใช้ ── -->
@@ -8773,6 +9048,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.admin-site-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--btn-secondary-height);
 }
 
 .admin-share-btn {
