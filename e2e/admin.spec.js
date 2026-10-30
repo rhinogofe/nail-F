@@ -195,4 +195,9 @@ test.describe('Admin page', () => {
     await input.blur()
     await expect(input).toHaveValue(original, { timeout: 10000 })
   })
+
+  test('booking calendar shows location color legend', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
+    await expect(page.getByText('สีพื้นช่องวัน = สถานที่ให้บริการ ไม่ใช่สถานะคิว')).toBeVisible()
+  })
 })

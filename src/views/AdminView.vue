@@ -15,6 +15,8 @@ import AdminShopFeaturesPanel from '../components/AdminShopFeaturesPanel.vue'
 import AdminBookingPaymentSlips from '../components/AdminBookingPaymentSlips.vue'
 import AdminSwitch from '../components/AdminSwitch.vue'
 import AdminSaveStatus from '../components/AdminSaveStatus.vue'
+import AdminCalendarStatChips from '../components/AdminCalendarStatChips.vue'
+import AdminCalendarLocationLegend from '../components/AdminCalendarLocationLegend.vue'
 import { useAutoSaveField } from '../composables/useAutoSaveField'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
@@ -2507,6 +2509,15 @@ function bookingDayHasUnpaid(iso) {
   return bookingDayStats(iso).unpaid_count > 0
 }
 
+function bookingDayChipItems(iso) {
+  const stats = bookingDayStats(iso)
+  return [
+    { key: 'paid', icon: 'ti-check', value: stats.paid_count, title: 'ชำระแล้ว', tone: 'success' },
+    { key: 'unpaid', icon: 'ti-clock', value: stats.unpaid_count, title: 'รอชำระ', tone: 'warning' },
+    { key: 'cancelled', icon: 'ti-x', value: stats.cancelled_count, title: 'ยกเลิก', tone: 'muted' },
+  ]
+}
+
 function bookingDayColor(iso) {
   return colorForDate(nailOptions.value, iso)
 }
@@ -2670,6 +2681,35 @@ function formatDayRevenueCell(value) {
     return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1).replace(/\.0$/, '')}k`
   }
   return n.toLocaleString('th-TH')
+}
+
+function revenueDayChipItems(iso) {
+  const stats = revenueDayStats(iso)
+  return [
+    {
+      key: 'deposit',
+      icon: 'ti-coin',
+      value: stats.deposit_amount,
+      text: formatDayRevenueCell(stats.deposit_amount),
+      title: `มัดจำ ${formatDayRevenue(stats.deposit_amount)}`,
+      tone: 'warning',
+    },
+    {
+      key: 'total',
+      icon: 'ti-receipt',
+      value: stats.total_amount,
+      text: formatDayRevenueCell(stats.total_amount),
+      title: `ยอดบริการ ${formatDayRevenue(stats.total_amount)}`,
+      tone: 'success',
+    },
+    {
+      key: 'done',
+      icon: 'ti-check',
+      value: stats.done_count,
+      title: 'คิวทำเสร็จ',
+      tone: 'info',
+    },
+  ]
 }
 
 function shiftRevenueMonth(delta) {
@@ -5347,7 +5387,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <template v-if="!selectedBookingDate">
         <div class="admin-section-head">
           <h3>จัดการคิวตามวัน</h3>
-          <p class="muted">กดวันที่เพื่อดูคิว · สีตามสถานที่ให้บริการ</p>
+          <p class="muted">กดวันที่เพื่อดูคิว</p>
         </div>
 
         <div class="service-cal-nav">
@@ -5381,32 +5421,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               @click="cell && openBookingDay(cell.iso)"
             >
               <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
-              <span v-if="cell && bookingDayHasBookings(cell.iso)" class="booking-cal-stats">
-                <span class="booking-stat-paid" title="ชำระแล้ว">{{ bookingDayStats(cell.iso).paid_count }}</span>
-                <span class="booking-stat-sep">/</span>
-                <span class="booking-stat-unpaid" title="รอชำระ">{{ bookingDayStats(cell.iso).unpaid_count }}</span>
-                <span
-                  v-if="bookingDayStats(cell.iso).cancelled_count > 0"
-                  class="booking-stat-cancelled"
-                  title="ยกเลิก"
-                >
-                  ยก.{{ bookingDayStats(cell.iso).cancelled_count }}
-                </span>
-              </span>
-              <span v-if="cell && bookingDayHasUnpaid(cell.iso)" class="booking-cal-alert" title="มีคิวยังไม่ชำระ">!</span>
+              <AdminCalendarStatChips
+                v-if="cell && bookingDayHasBookings(cell.iso)"
+                :items="bookingDayChipItems(cell.iso)"
+              />
             </button>
           </div>
         </div>
 
-        <div class="booking-cal-legend">
-          <span><span class="legend-paid">{{ bookingMonthPaidTotal }}</span> ชำระแล้ว</span>
-          <span><span class="legend-unpaid">{{ bookingMonthUnpaidTotal }}</span> รอชำระ</span>
-          <span><span class="legend-cancelled">{{ bookingMonthCancelledTotal }}</span> ยกเลิก</span>
-          <span>รวมทั้งหมด {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }}</span>
-          <span v-if="bookingMonthUnpaidTotal > 0">
-            <span class="booking-cal-alert inline">!</span> มีคิวยังไม่ชำระ
-          </span>
+        <div class="booking-cal-legend" aria-label="คำอธิบายปฏิทินคิว">
+          <span><i class="ti ti-check" aria-hidden="true"></i> {{ bookingMonthPaidTotal }} ชำระแล้ว</span>
+          <span><i class="ti ti-clock" aria-hidden="true"></i> {{ bookingMonthUnpaidTotal }} รอชำระ</span>
+          <span><i class="ti ti-x" aria-hidden="true"></i> {{ bookingMonthCancelledTotal }} ยกเลิก</span>
+          <span>รวม {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }}</span>
         </div>
+        <AdminCalendarLocationLegend extra="ชิปในช่อง = จำนวนคิวของวันนั้น" />
 
         <AdminBookingPaymentSlips
           :active="activeTab === 'bookings' && !selectedBookingDate"
@@ -5612,31 +5641,14 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               :style="cell ? revenueDayStyle(cell.iso) : undefined"
             >
               <span v-if="cell" class="service-cal-num">{{ cell.day }}</span>
-              <div v-if="cell && revenueDayHasData(cell.iso)" class="revenue-cal-body">
-                <span
-                  v-if="revenueDayStats(cell.iso).deposit_amount > 0"
-                  class="revenue-cal-deposit"
-                  :title="`มัดจำ ${formatDayRevenue(revenueDayStats(cell.iso).deposit_amount)}`"
-                >
-                  ม.{{ formatDayRevenueCell(revenueDayStats(cell.iso).deposit_amount) }}
-                </span>
-                <span
-                  v-if="revenueDayStats(cell.iso).total_amount > 0"
-                  class="revenue-cal-total"
-                  :title="`ยอดบริการ ${formatDayRevenue(revenueDayStats(cell.iso).total_amount)}`"
-                >
-                  {{ formatDayRevenueCell(revenueDayStats(cell.iso).total_amount) }}
-                </span>
-                <span
-                  v-if="revenueDayStats(cell.iso).done_count > 0"
-                  class="revenue-cal-count"
-                >
-                  {{ revenueDayStats(cell.iso).done_count }} คิว
-                </span>
-              </div>
+              <AdminCalendarStatChips
+                v-if="cell && revenueDayHasData(cell.iso)"
+                :items="revenueDayChipItems(cell.iso)"
+              />
             </div>
           </div>
         </div>
+        <AdminCalendarLocationLegend extra="ชิปในช่อง = มัดจำ / ยอดบริการ / คิวทำเสร็จ" />
 
         <div class="revenue-month-summary">
           <div class="revenue-summary-grid">
@@ -9750,7 +9762,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .service-cal-day {
   position: relative;
-  min-height: 52px;
+  min-height: max(52px, var(--touch-min));
   min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -9946,8 +9958,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 14px;
-  font-size: 12px;
+  font-size: var(--text-caption);
   color: var(--color-text-muted);
+}
+
+.booking-cal-legend i {
+  margin-right: 2px;
 }
 
 .legend-paid,
@@ -10222,23 +10238,18 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   }
 
   .service-cal-day {
-    min-height: 48px;
+    min-height: var(--touch-min);
     padding: 3px 1px;
     border-radius: 8px;
   }
 
   .booking-cal-day,
   .block-cal-day {
-    min-height: 52px;
+    min-height: var(--touch-min);
   }
 
   .service-cal-num {
-    font-size: 11px;
-  }
-
-  .booking-cal-stats {
-    font-size: 8px;
-    gap: 1px;
+    font-size: var(--text-caption);
   }
 
   .block-cal-marker {
