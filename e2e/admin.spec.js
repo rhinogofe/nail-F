@@ -170,7 +170,7 @@ test.describe('Admin page', () => {
     await expect(toggle).toBeVisible()
     const was = await toggle.isChecked()
     await toggle.click()
-    await expect(section.getByText('บันทึกแล้ว')).toBeVisible({ timeout: 10000 })
+    await expect(section.locator('label.admin-switch').getByText('บันทึกแล้ว')).toBeVisible({ timeout: 10000 })
     await toggle.click()
     await expect(toggle).toBeChecked({ checked: was, timeout: 10000 })
   })
@@ -182,22 +182,80 @@ test.describe('Admin page', () => {
     const toggle = section.getByRole('switch', { name: 'ชำระเต็มจำนวนตามราคาบริการ' })
     if (await toggle.isChecked()) {
       await toggle.click()
-      await expect(section.getByText('บันทึกแล้ว')).toBeVisible({ timeout: 10000 })
+      await expect(section.locator('label.admin-switch').getByText('บันทึกแล้ว')).toBeVisible({ timeout: 10000 })
     }
     const input = section.getByRole('spinbutton', { name: 'ยอดมัดจำ (บาท)' })
     await expect(input).toBeEnabled()
+    const amountRow = section.locator('.admin-form-row')
     const original = await input.inputValue()
     const next = original === '301' ? '302' : '301'
     await input.fill(next)
+    await expect(amountRow.getByText('บันทึกแล้ว')).toHaveCount(0)
     await input.blur()
-    await expect(section.getByText('บันทึกแล้ว')).toBeVisible({ timeout: 10000 })
+    await expect(amountRow.getByText('บันทึกแล้ว')).toBeVisible({ timeout: 10000 })
+
+    await page.reload()
+    await page.getByRole('navigation', { name: 'เมนูแอดมิน' }).getByRole('button', { name: 'ตั้งค่า' }).click()
+    await page.getByRole('navigation', { name: 'หัวข้อตั้งค่า' }).getByRole('button', { name: 'มัดจำ' }).click()
+    await expect(input).toHaveValue(next)
+
     await input.fill(original)
     await input.blur()
     await expect(input).toHaveValue(original, { timeout: 10000 })
   })
 
+  test('UI tab shows a floating save bar only while edits are unsaved', async ({ page }) => {
+    await page.getByRole('navigation', { name: 'เมนูแอดมิน' }).getByRole('button', { name: 'UI' }).click()
+    const field = page.locator('#settings-ui').getByRole('textbox', { name: 'ชื่อแบรนด์ (ส่วนหลัก)' })
+    await expect(field).toBeVisible()
+    const original = await field.inputValue()
+    const bar = page.locator('.admin-ui-dirty-bar')
+    await expect(bar).toHaveCount(0)
+
+    await field.fill(`${original}x`)
+    await expect(bar).toBeVisible()
+    await expect(bar).toContainText('มีการแก้ไขที่ยังไม่บันทึก')
+    await expect(bar).toBeInViewport()
+
+    await bar.getByRole('button', { name: 'ยกเลิก' }).click()
+    await expect(bar).toHaveCount(0)
+    await expect(field).toHaveValue(original)
+  })
+
+  test('tab strip fades only on the side with hidden tabs (mobile)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const wrap = page.locator('.admin-tab-wrap')
+    const nav = page.getByRole('navigation', { name: 'เมนูแอดมิน' })
+    await expect(wrap).toHaveClass(/admin-tab-wrap--fade-right/)
+    await expect(wrap).not.toHaveClass(/admin-tab-wrap--fade-left/)
+
+    await nav.evaluate((el) => { el.scrollLeft = el.scrollWidth })
+    await expect(wrap).toHaveClass(/admin-tab-wrap--fade-left/)
+    await expect(wrap).not.toHaveClass(/admin-tab-wrap--fade-right/)
+  })
+
+  test('error toast stays until dismissed', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
+    await page.route('**/api/admin/bookings/calendar-summary**', (route) => route.fulfill({
+      status: 500,
+      json: { error: 'ทดสอบข้อผิดพลาด' },
+    }))
+    await page.getByRole('button', { name: 'ดูเดือนถัดไปในปฏิทินคิว' }).click()
+    const toast = page.locator('.admin-toast-stack').getByRole('alert')
+    await expect(toast).toHaveText(/ทดสอบข้อผิดพลาด/)
+    await page.waitForTimeout(3500)
+    await expect(toast).toBeVisible()
+    await toast.getByRole('button', { name: 'ปิดข้อความผิดพลาด' }).click()
+    await expect(toast).toHaveCount(0)
+  })
+
   test('booking calendar shows location color legend', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'จัดการคิวตามวัน' })).toBeVisible()
-    await expect(page.getByText('สีพื้นช่องวัน = สถานที่ให้บริการ ไม่ใช่สถานะคิว')).toBeVisible()
+    await expect(page.locator('.cal-location-legend:visible')).toHaveText(/สีพื้นช่องวัน = สถานที่ให้บริการ ไม่ใช่สถานะคิว/)
+    const legend = page.getByRole('group', { name: 'คำอธิบายปฏิทินคิว · ทั้งเดือน' })
+    await expect(legend).toBeVisible()
+    for (const label of ['ชำระแล้ว', 'รอชำระ', 'ยกเลิก']) {
+      await expect(legend.getByText(label, { exact: true })).toBeVisible()
+    }
   })
 })

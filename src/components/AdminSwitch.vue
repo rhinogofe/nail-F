@@ -1,13 +1,17 @@
 <script setup>
+import AdminSaveStatus from './AdminSaveStatus.vue'
+
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   label: { type: String, default: '' },
   hint: { type: String, default: '' },
   compact: { type: Boolean, default: false },
+  saveStatus: { type: String, default: '' },
+  saveError: { type: String, default: '' },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'retry'])
 
 function onChange(event) {
   if (props.disabled) {
@@ -32,6 +36,13 @@ function onChange(event) {
         <slot>{{ label }}</slot>
       </span>
       <span v-if="hint" class="admin-switch-hint">{{ hint }}</span>
+      <AdminSaveStatus
+        v-if="saveStatus && saveStatus !== 'idle'"
+        class="admin-switch-save"
+        :status="saveStatus"
+        :error="saveError"
+        @retry="emit('retry')"
+      />
     </span>
     <span class="admin-switch-control" :class="{ disabled }">
       <input
@@ -127,6 +138,11 @@ function onChange(event) {
   line-height: 1.4;
 }
 
+.admin-switch-save {
+  min-height: 0;
+  cursor: default;
+}
+
 .admin-switch-control {
   position: relative;
   flex-shrink: 0;
@@ -142,6 +158,7 @@ function onChange(event) {
 .admin-switch-control input {
   position: absolute;
   inset: 0;
+  z-index: 1;
   opacity: 0;
   margin: 0;
   width: 100%;
@@ -157,6 +174,7 @@ function onChange(event) {
   background: color-mix(in srgb, var(--color-text-muted) 32%, transparent);
   transition: background 180ms ease;
   position: relative;
+  pointer-events: none;
 }
 
 .admin-switch--compact .admin-switch-track {

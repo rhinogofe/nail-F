@@ -433,33 +433,28 @@ const optionFormUseColor = ref(false)
 const loading = ref(false)
 const message = ref('')
 const errorMessage = ref('')
-const adminToast = ref(null)
+const adminToastSuccess = ref('')
+const adminToastError = ref('')
 let adminToastTimer = 0
 
-function dismissAdminToast() {
-  if (adminToastTimer) {
-    clearTimeout(adminToastTimer)
-    adminToastTimer = 0
-  }
-  adminToast.value = null
-  message.value = ''
+function dismissAdminError() {
+  adminToastError.value = ''
   errorMessage.value = ''
 }
 
 function showAdminToast(type, text) {
   if (!text) return
-  if (adminToastTimer) {
-    clearTimeout(adminToastTimer)
+  if (type === 'error') {
+    adminToastError.value = text
+    return
+  }
+  if (adminToastTimer) clearTimeout(adminToastTimer)
+  adminToastSuccess.value = text
+  adminToastTimer = window.setTimeout(() => {
+    adminToastSuccess.value = ''
+    message.value = ''
     adminToastTimer = 0
-  }
-  adminToast.value = { type, text }
-  if (type !== 'error') {
-    adminToastTimer = window.setTimeout(() => {
-      adminToast.value = null
-      message.value = ''
-      adminToastTimer = 0
-    }, 3000)
-  }
+  }, 3000)
 }
 
 watch(message, (val) => {
@@ -469,6 +464,37 @@ watch(errorMessage, (val) => {
   if (val) showAdminToast('error', val)
 })
 const activeTab = ref('bookings')
+const adminNavRef = ref(null)
+const adminNavOverflow = ref({ left: false, right: false })
+
+function updateAdminNavOverflow() {
+  const el = adminNavRef.value
+  if (!el) {
+    adminNavOverflow.value = { left: false, right: false }
+    return
+  }
+  adminNavOverflow.value = {
+    left: el.scrollLeft > 4,
+    right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+  }
+}
+
+function scrollActiveAdminTabIntoView({ smooth = true } = {}) {
+  nextTick(() => {
+    const nav = adminNavRef.value
+    const btn = nav?.querySelector('.admin-nav-item.active')
+    if (!nav || !btn) {
+      updateAdminNavOverflow()
+      return
+    }
+    const navRect = nav.getBoundingClientRect()
+    const btnRect = btn.getBoundingClientRect()
+    const left = nav.scrollLeft + (btnRect.left - navRect.left) - (nav.clientWidth - btnRect.width) / 2
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    nav.scrollTo({ left: Math.max(0, left), behavior: smooth && !reduceMotion ? 'smooth' : 'auto' })
+    updateAdminNavOverflow()
+  })
+}
 
 const bookingEditOpen = ref(false)
 const bookingEditItem = ref(null)
@@ -1116,6 +1142,11 @@ function snapshotUiForm() {
 }
 
 const uiFormDirty = computed(() => JSON.stringify(uiForm.value || {}) !== uiFormSnapshot.value)
+const UPLOADED_UI_FIELD = {
+  logo: 'ui_logo_url',
+  hero: 'ui_hero_image_url',
+  kshop_qr: 'ui_kshop_qr_url',
+}
 const uiImageUploading = ref('')
 const pendingUiUploadKind = ref('')
 const uiImageFileInput = ref(null)
@@ -1164,14 +1195,13 @@ async function loadAdvanceDays() {
 }
 
 async function saveAdvanceExtendToggle(nextValue) {
-  if (typeof nextValue === 'boolean') advanceExtendEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'advance-days:extend',
     url: '/api/admin/settings/advance-days',
     payload: { extend_enabled: nextValue },
     label: 'ขยายวันจองล่วงหน้า',
     nextValue,
-    revert: () => { advanceExtendEnabled.value = !nextValue },
+    model: advanceExtendEnabled,
     apply: (data) => {
       advanceDays.value = data.advance_days ?? advanceDays.value
       bookUntilDate.value = data.book_until_date || bookUntilDate.value
@@ -1550,8 +1580,23 @@ async function loadUiSettingsAdmin() {
   }
 }
 
-async function discardUiForm() {
-  await loadUiSettingsAdmin()
+function discardUiForm() {
+  uiForm.value = JSON.parse(uiFormSnapshot.value || '{}')
+}
+
+function pendingUiEdits() {
+  const saved = JSON.parse(uiFormSnapshot.value || '{}')
+  const edits = {}
+  for (const [key, value] of Object.entries(uiForm.value || {})) {
+    if (value !== saved[key]) edits[key] = value
+  }
+  return edits
+}
+
+function onAdminBeforeUnload(event) {
+  if (!uiFormDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 async function saveUiSettingsAdmin() {
@@ -1588,6 +1633,7 @@ async function confirmLeaveUiDirty() {
     confirmButtonText: 'ออกโดยไม่บันทึก',
     cancelButtonText: 'อยู่ต่อ',
   })
+  if (result.isConfirmed) discardUiForm()
   return result.isConfirmed
 }
 
@@ -1644,9 +1690,14 @@ async function onUiImageSelected(event) {
       image_data: base64,
       image_mime: mime,
     })
-    uiForm.value = { ...(data.settings || uiForm.value) }
+    const savedSettings = { ...(data.settings || uiForm.value) }
+    const edits = pendingUiEdits()
+    uiForm.value = savedSettings
     snapshotUiForm()
-    uiSettingsStore.applyLocal(data.settings || uiForm.value)
+    for (const [key, value] of Object.entries(edits)) {
+      if (key !== UPLOADED_UI_FIELD[kind]) uiForm.value[key] = value
+    }
+    uiSettingsStore.applyLocal(savedSettings)
     message.value = kind === 'logo'
       ? 'อัปโหลดโลโก้แล้ว'
       : kind === 'kshop_qr'
@@ -2545,14 +2596,23 @@ function bookingDayHasUnpaid(iso) {
   return bookingDayStats(iso).unpaid_count > 0
 }
 
-function bookingDayChipItems(iso) {
-  const stats = bookingDayStats(iso)
+function bookingChipItems(stats) {
   return [
     { key: 'paid', icon: 'ti-check', value: stats.paid_count, title: CALENDAR_PAID_LABEL, tone: 'success' },
     { key: 'unpaid', icon: BOOKING_STATUS.awaiting_payment.icon, value: stats.unpaid_count, title: BOOKING_STATUS.awaiting_payment.label, tone: 'warning' },
     { key: 'cancelled', icon: BOOKING_STATUS.cancelled.icon, value: stats.cancelled_count, title: BOOKING_STATUS.cancelled.label, tone: 'muted' },
   ]
 }
+
+function bookingDayChipItems(iso) {
+  return bookingChipItems(bookingDayStats(iso))
+}
+
+const bookingMonthLegendItems = computed(() => bookingChipItems({
+  paid_count: bookingMonthPaidTotal.value,
+  unpaid_count: bookingMonthUnpaidTotal.value,
+  cancelled_count: bookingMonthCancelledTotal.value,
+}))
 
 function bookingDayColor(iso) {
   return colorForDate(nailOptions.value, iso)
@@ -2650,8 +2710,8 @@ async function onAdminShopRealtimeUpdate(event) {
     tasks.push(loadNailOptions(), loadServiceCategories(), loadServiceLocations())
   }
   if (type === 'settings') {
+    if (!uiFormDirty.value) tasks.push(loadUiSettingsAdmin())
     tasks.push(
-      loadUiSettingsAdmin(),
       loadDepositSetting(),
       loadCouponSetting(),
       loadUnpaidAutoCancelSetting(),
@@ -2747,6 +2807,12 @@ function revenueDayChipItems(iso) {
     },
   ]
 }
+
+const revenueLegendItems = [
+  { key: 'deposit', icon: 'ti-coin', title: 'มัดจำ', tone: 'warning' },
+  { key: 'total', icon: 'ti-receipt', title: 'ยอดบริการ', tone: 'success' },
+  { key: 'done', icon: 'ti-check', title: 'คิวทำเสร็จ', tone: 'info' },
+]
 
 function shiftRevenueMonth(delta) {
   const [y, m] = revenueMonth.value.split('-').map(Number)
@@ -3012,7 +3078,7 @@ async function loadRegisterShopPinSetting() {
 async function saveRegisterShopPinSetting() {
   const pin = String(registerShopPin.value || '').replace(/\D/g, '').slice(0, 4)
   registerShopPin.value = pin
-  if (pin === registerShopPinSaved.value) return
+  if (pin === registerShopPinSaved.value) return autoSave.clearInvalid('register-pin')
   await autoSave.run('register-pin', {
     value: pin,
     restoreAttempt: () => { registerShopPin.value = pin },
@@ -3105,7 +3171,7 @@ async function saveCouponManualToggle(nextValue) {
 
 async function saveCouponDiscountPercent() {
   const discount = Number(couponDiscountPercent.value)
-  if (discount === couponDiscountPercentSaved.value) return
+  if (discount === couponDiscountPercentSaved.value) return autoSave.clearInvalid('coupon:discount')
   await saveCouponField('coupon:discount', () => {
     if (!Number.isInteger(discount) || discount < 1 || discount > 100) return 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
     return ''
@@ -3114,7 +3180,7 @@ async function saveCouponDiscountPercent() {
 
 async function saveCouponRequiredPoints() {
   const points = Number(couponRequiredPoints.value)
-  if (points === couponRequiredPointsSaved.value) return
+  if (points === couponRequiredPointsSaved.value) return autoSave.clearInvalid('coupon:points')
   await saveCouponField('coupon:points', () => {
     if (!Number.isInteger(points) || points < 1) return 'แต้มที่ใช้แลกต้องมากกว่า 0'
     return ''
@@ -3123,7 +3189,7 @@ async function saveCouponRequiredPoints() {
 
 async function saveCouponCompletionPoints() {
   const completion = Number(couponCompletionPoints.value)
-  if (completion === couponCompletionPointsSaved.value) return
+  if (completion === couponCompletionPointsSaved.value) return autoSave.clearInvalid('coupon:completion')
   await saveCouponField('coupon:completion', () => {
     if (!Number.isInteger(completion) || completion < 0) return 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
     return ''
@@ -3253,29 +3319,28 @@ async function testLinePushSetting() {
   }
 }
 
-async function autoSaveSettingToggle({ key, url, payload, label, nextValue, revert, apply, restoreAttempt }) {
-  message.value = ''
-  errorMessage.value = ''
+async function autoSaveSettingToggle({ key, url, payload, label, nextValue, model, apply }) {
+  if (model) model.value = nextValue
   await autoSave.run(key, {
     value: nextValue,
-    restoreAttempt,
+    restoreAttempt: model ? () => { model.value = nextValue } : undefined,
     onStart: () => { settingToggleSaving.value = key },
     onFinally: () => {
       if (settingToggleSaving.value === key) settingToggleSaving.value = ''
     },
     save: async () => {
-      const { data } = await api.patch(url, payload)
-      return data
+      try {
+        const { data } = await api.patch(url, payload)
+        return data
+      } catch (error) {
+        throw new Error(error?.response?.data?.error || `บันทึก "${label}" ไม่สำเร็จ`)
+      }
     },
     apply: (data) => {
       apply?.(data)
     },
-    revert,
+    revert: model ? () => { model.value = !nextValue } : undefined,
   })
-  const field = autoSave.fields[key]
-  if (field?.status === 'error') {
-    errorMessage.value = field.error || `บันทึก "${label}" ไม่สำเร็จ`
-  }
 }
 
 const chatNotifyToggles = {
@@ -3292,14 +3357,13 @@ const chatNotifyToggles = {
 async function saveChatNotifyToggle(field, nextValue) {
   const entry = chatNotifyToggles[field]
   if (!entry) return
-  if (typeof nextValue === 'boolean') entry.model.value = nextValue
   await autoSaveSettingToggle({
     key: `chat-notify:${field}`,
     url: '/api/admin/settings/chat-notify',
     payload: { [field]: nextValue },
     label: entry.label,
     nextValue,
-    revert: () => { entry.model.value = !nextValue },
+    model: entry.model,
     apply: (data) => {
       if (typeof data?.[field] === 'boolean') entry.model.value = data[field]
     },
@@ -3311,14 +3375,13 @@ async function saveLinePushToggle(field, nextValue) {
   const label = field === 'enabled'
     ? 'แจ้งเตือน LINE เมื่อลูกค้าจองคิว'
     : 'ใช้ LINE Bot ของร้านเอง (Premium)'
-  if (typeof nextValue === 'boolean') model.value = nextValue
   await autoSaveSettingToggle({
     key: `line-push:${field}`,
     url: '/api/admin/settings/line-push',
     payload: { [field]: nextValue },
     label,
     nextValue,
-    revert: () => { model.value = !nextValue },
+    model,
     apply: (data) => {
       linePushEnabled.value = data.enabled !== false
       lineUsesOwnBot.value = Boolean(data.uses_own_bot)
@@ -3334,14 +3397,13 @@ async function saveLinePushToggle(field, nextValue) {
 }
 
 async function saveUnpaidAutoCancelToggle(nextValue) {
-  if (typeof nextValue === 'boolean') unpaidAutoCancelEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'unpaid:enabled',
     url: '/api/admin/settings/unpaid-auto-cancel',
     payload: { enabled: nextValue, expire_hours: unpaidExpireHoursSaved.value },
     label: 'ยกเลิกคิวรอชำระอัตโนมัติ',
     nextValue,
-    revert: () => { unpaidAutoCancelEnabled.value = !nextValue },
+    model: unpaidAutoCancelEnabled,
     apply: (data) => { unpaidAutoCancelEnabled.value = data.enabled !== false },
   })
 }
@@ -3351,14 +3413,13 @@ async function saveExtendBookingToggle(field, nextValue) {
   const label = field === 'enabled'
     ? 'ขยายเวลาจองตามบริการ'
     : 'ขยายเวลาเกินเวลาปิดร้าน'
-  if (typeof nextValue === 'boolean') model.value = nextValue
   await autoSaveSettingToggle({
     key: `extend-booking:${field}`,
     url: '/api/admin/settings/extend-booking-by-services',
     payload: { [field === 'enabled' ? 'enabled' : 'past_close_enabled']: nextValue },
     label,
     nextValue,
-    revert: () => { model.value = !nextValue },
+    model,
     apply: (data) => {
       extendBookingByServices.value = data.enabled === true
       extendBookingPastClose.value = data.past_close_enabled === true
@@ -3367,14 +3428,13 @@ async function saveExtendBookingToggle(field, nextValue) {
 }
 
 async function saveBookingMinGapToggle(nextValue) {
-  if (typeof nextValue === 'boolean') bookingMinGapEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'booking-min-gap:enabled',
     url: '/api/admin/settings/booking-min-gap',
     payload: { enabled: nextValue },
     label: 'เปิดจองช่องว่างระหว่างคิว',
     nextValue,
-    revert: () => { bookingMinGapEnabled.value = !nextValue },
+    model: bookingMinGapEnabled,
     apply: (data) => {
       bookingMinGapEnabled.value = data.enabled === true
       bookingMinGapMinutes.value = normalizeBookingMinGapMinutes(data.minutes)
@@ -3419,7 +3479,7 @@ async function loadChatNotifySetting() {
 
 async function saveChatNotifySetting() {
   const minutes = Number(chatNotifyUpcomingMinutes.value)
-  if (minutes === chatNotifyUpcomingMinutesSaved.value) return
+  if (minutes === chatNotifyUpcomingMinutesSaved.value) return autoSave.clearInvalid('chat-notify:minutes')
   const previous = chatNotifyUpcomingMinutesSaved.value
   await autoSave.run('chat-notify:minutes', {
     value: minutes,
@@ -3453,7 +3513,7 @@ async function loadUnpaidAutoCancelSetting() {
 
 async function saveUnpaidAutoCancelSetting() {
   const hours = Number(unpaidExpireHours.value)
-  if (hours === unpaidExpireHoursSaved.value) return
+  if (hours === unpaidExpireHoursSaved.value) return autoSave.clearInvalid('unpaid:hours')
   const previous = unpaidExpireHoursSaved.value
   await autoSave.run('unpaid:hours', {
     value: hours,
@@ -3501,7 +3561,7 @@ async function saveDepositFullPaymentToggle(nextValue) {
 
 async function saveDepositAmount() {
   const amount = Number(depositAmount.value)
-  if (amount === depositAmountSaved.value) return
+  if (amount === depositAmountSaved.value) return autoSave.clearInvalid('deposit:amount')
   const previous = depositAmountSaved.value
   await autoSave.run('deposit:amount', {
     value: amount,
@@ -4224,13 +4284,13 @@ async function deleteBooking(id) {
 async function restoreBooking(item) {
   const result = await adminSwal.fire({
     title: 'คืนสถานะจอง',
-    html: 'คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน<br><small class="muted">ถ้าเลือกรอชำระเงิน ระบบจะเริ่มนับเวลาชำระใหม่</small>',
+    html: `คืนคิวที่ยกเลิกแล้วกลับมาใช้งานได้อีกครั้ง<br>เลือกสถานะหลังคืน<br><small class="muted">ถ้าเลือก${BOOKING_STATUS.awaiting_payment.label} ระบบจะเริ่มนับเวลาชำระใหม่</small>`,
     icon: 'question',
     showCancelButton: true,
-    confirmButtonText: 'รอชำระเงิน',
+    confirmButtonText: BOOKING_STATUS.awaiting_payment.label,
     cancelButtonText: 'ปิด',
     showDenyButton: true,
-    denyButtonText: 'ชำระแล้ว / รอให้บริการ',
+    denyButtonText: `${BOOKING_STATUS.pending.label} (${CALENDAR_PAID_LABEL})`,
   })
   if (!result.isConfirmed && !result.isDenied) return
 
@@ -4371,7 +4431,7 @@ async function saveBookingAdd() {
   if (bookingAddStatus.value === 'done') {
     const total = Number(bookingAddTotal.value)
     if (bookingAddTotal.value === '' || !Number.isFinite(total) || total < 0) {
-      bookingAddError.value = 'สถานะทำเสร็จแล้วต้องระบุยอดเงิน'
+      bookingAddError.value = `สถานะ${BOOKING_STATUS.done.label}ต้องระบุยอดเงิน`
       return
     }
     if (couponManualCompletionPoints.value) {
@@ -5201,10 +5261,15 @@ watch(() => shopFeaturesStore.staffEnabled, (enabled) => {
   }
 })
 
+watch(activeTab, () => {
+  scrollActiveAdminTabIntoView()
+})
+
 watch(visibleAdminTabs, (tabs) => {
   if (!tabs.some((t) => t.key === activeTab.value)) {
     activeTab.value = tabs[0]?.key || 'bookings'
   }
+  scrollActiveAdminTabIntoView({ smooth: false })
 })
 
 watch(visibleSettingsSections, (sections) => {
@@ -5248,19 +5313,24 @@ onMounted(() => {
   window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
   startBranchUsagePolling()
   window.addEventListener('focus', onAdminWindowFocus)
+  window.addEventListener('beforeunload', onAdminBeforeUnload)
+  window.addEventListener('resize', updateAdminNavOverflow)
+  scrollActiveAdminTabIntoView({ smooth: false })
 })
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
   window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
   stopBranchUsagePolling()
   window.removeEventListener('focus', onAdminWindowFocus)
+  window.removeEventListener('beforeunload', onAdminBeforeUnload)
+  window.removeEventListener('resize', updateAdminNavOverflow)
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
   if (adminToastTimer) clearTimeout(adminToastTimer)
 })
 
 onBeforeRouteLeave(async () => {
-  if (activeTab.value !== 'ui' || !uiFormDirty.value) return true
+  if (!uiFormDirty.value) return true
   return confirmLeaveUiDirty()
 })
 
@@ -5338,8 +5408,19 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       เพื่อดูวิธีเปิด
     </button>
 
-    <div class="admin-tab-wrap">
-    <nav class="admin-nav" aria-label="เมนูแอดมิน">
+    <div
+      class="admin-tab-wrap"
+      :class="{
+        'admin-tab-wrap--fade-left': adminNavOverflow.left,
+        'admin-tab-wrap--fade-right': adminNavOverflow.right,
+      }"
+    >
+    <nav
+      ref="adminNavRef"
+      class="admin-nav"
+      aria-label="เมนูแอดมิน"
+      @scroll.passive="updateAdminNavOverflow"
+    >
       <button
         v-for="tab in visibleAdminTabs"
         :key="tab.key"
@@ -5356,27 +5437,22 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
     </div>
 
     <Teleport to="body">
-      <div v-if="adminToast" class="admin-toast-stack" :data-type="adminToast.type">
-        <p
-          class="admin-toast"
-          :class="`admin-toast--${adminToast.type}`"
-          :role="adminToast.type === 'error' ? 'alert' : 'status'"
-        >
-          <i
-            class="ti"
-            :class="adminToast.type === 'error' ? 'ti-alert-triangle' : 'ti-check'"
-            aria-hidden="true"
-          ></i>
-          <span>{{ adminToast.text }}</span>
+      <div v-if="adminToastError || adminToastSuccess" class="admin-toast-stack">
+        <p v-if="adminToastError" class="admin-toast admin-toast--error" role="alert">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          <span>{{ adminToastError }}</span>
           <button
-            v-if="adminToast.type === 'error'"
             type="button"
             class="admin-toast-close"
             aria-label="ปิดข้อความผิดพลาด"
-            @click="dismissAdminToast"
+            @click="dismissAdminError"
           >
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
+        </p>
+        <p v-if="adminToastSuccess" class="admin-toast admin-toast--success" role="status">
+          <i class="ti ti-check" aria-hidden="true"></i>
+          <span>{{ adminToastSuccess }}</span>
         </p>
       </div>
     </Teleport>
@@ -5446,11 +5522,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
 
         <div class="service-cal-nav">
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(-1)" aria-label="เดือนก่อน">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(-1)" aria-label="ดูเดือนก่อนหน้าในปฏิทินคิว">
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </button>
           <span class="service-cal-month">{{ bookingMonthLabel }}</span>
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(1)" aria-label="เดือนถัดไป">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftBookingMonth(1)" aria-label="ดูเดือนถัดไปในปฏิทินคิว">
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -5484,13 +5560,13 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           </div>
         </div>
 
-        <div class="booking-cal-legend" aria-label="คำอธิบายปฏิทินคิว">
-          <span><i class="ti ti-check" aria-hidden="true"></i> {{ bookingMonthPaidTotal }} {{ CALENDAR_PAID_LABEL }}</span>
-          <span><i class="ti ti-clock" aria-hidden="true"></i> {{ bookingMonthUnpaidTotal }} {{ BOOKING_STATUS.awaiting_payment.label }}</span>
-          <span><i class="ti ti-x" aria-hidden="true"></i> {{ bookingMonthCancelledTotal }} {{ BOOKING_STATUS.cancelled.label }}</span>
-          <span>รวม {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }}</span>
+        <div class="booking-cal-legend" role="group" aria-label="คำอธิบายปฏิทินคิว · ทั้งเดือน">
+          <AdminCalendarStatChips legend :items="bookingMonthLegendItems" />
+          <span class="booking-cal-legend-total">
+            รวม {{ bookingMonthPaidTotal + bookingMonthUnpaidTotal + bookingMonthCancelledTotal }} คิว
+          </span>
         </div>
-        <AdminCalendarLocationLegend extra="ชิปในช่อง = จำนวนคิวของวันนั้น" />
+        <AdminCalendarLocationLegend />
 
         <AdminBookingPaymentSlips
           :active="activeTab === 'bookings' && !selectedBookingDate"
@@ -5661,11 +5737,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       </label>
 
       <div class="service-cal-nav">
-        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(-1)" aria-label="เดือนก่อน">
+        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(-1)" aria-label="ดูเดือนก่อนหน้าในสรุปยอด">
           <i class="ti ti-chevron-left" aria-hidden="true"></i>
         </button>
         <span class="service-cal-month">{{ revenueMonthLabel }}</span>
-        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(1)" aria-label="เดือนถัดไป">
+        <button type="button" class="btn service-cal-nav-btn" @click="shiftRevenueMonth(1)" aria-label="ดูเดือนถัดไปในสรุปยอด">
           <i class="ti ti-chevron-right" aria-hidden="true"></i>
         </button>
       </div>
@@ -5701,7 +5777,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             </div>
           </div>
         </div>
-        <AdminCalendarLocationLegend extra="ชิปในช่อง = มัดจำ / ยอดบริการ / คิวทำเสร็จ" />
+        <div class="booking-cal-legend" role="group" aria-label="คำอธิบายปฏิทินสรุปยอด">
+          <AdminCalendarStatChips legend :items="revenueLegendItems" />
+        </div>
+        <AdminCalendarLocationLegend />
 
         <div class="revenue-month-summary">
           <div class="revenue-summary-grid">
@@ -5831,11 +5910,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         </div>
 
         <div class="service-cal-nav">
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(-1)" aria-label="เดือนก่อน">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(-1)" aria-label="ดูเดือนก่อนหน้าในปฏิทินบริการ">
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </button>
           <span class="service-cal-month">{{ serviceMonthLabel }}</span>
-          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(1)" aria-label="เดือนถัดไป">
+          <button type="button" class="btn service-cal-nav-btn" @click="shiftServiceMonth(1)" aria-label="ดูเดือนถัดไปในปฏิทินบริการ">
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -5907,7 +5986,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 type="button"
                 class="btn service-order-btn"
                 :disabled="index === 0"
-                aria-label="เลื่อนขึ้น"
+                :aria-label="`เลื่อน ${item.option_name} ขึ้น`"
                 @click="moveNailOption(item, 'up', { everyday: true })"
               >
                 <i class="ti ti-chevron-up" aria-hidden="true"></i>
@@ -5916,7 +5995,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 type="button"
                 class="btn service-order-btn"
                 :disabled="index === everyDayOptions.length - 1"
-                aria-label="เลื่อนลง"
+                :aria-label="`เลื่อน ${item.option_name} ลง`"
                 @click="moveNailOption(item, 'down', { everyday: true })"
               >
                 <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -6062,7 +6141,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               type="button"
               class="btn service-order-btn"
               :disabled="index === 0"
-              aria-label="เลื่อนขึ้น"
+              :aria-label="`เลื่อน ${item.option_name} ขึ้น`"
               @click="moveNailOption(item, 'up', { date: selectedServiceDate })"
             >
               <i class="ti ti-chevron-up" aria-hidden="true"></i>
@@ -6071,7 +6150,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               type="button"
               class="btn service-order-btn"
               :disabled="index === selectedDayOptions.length - 1"
-              aria-label="เลื่อนลง"
+              :aria-label="`เลื่อน ${item.option_name} ลง`"
               @click="moveNailOption(item, 'down', { date: selectedServiceDate })"
             >
               <i class="ti ti-chevron-down" aria-hidden="true"></i>
@@ -6135,7 +6214,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-modal="true" aria-labelledby="staff-form-title">
           <div class="booking-edit-header">
             <h3 id="staff-form-title">{{ staffEditTarget ? 'แก้ไขช่าง' : 'เพิ่มช่าง' }}</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeStaffForm">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดฟอร์มช่าง" @click="closeStaffForm">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -6202,7 +6281,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
-              aria-label="ปิดหัวข้อ"
+              aria-label="ปิดหัวข้อตั้งค่า"
               @click="settingsNavOpen = false"
             >
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -6250,12 +6329,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <AdminSwitch
         v-model="depositFullPaymentEnabled"
         label="ชำระเต็มจำนวนตามราคาบริการ"
-        :disabled="autoSaveState('deposit:full').status === 'saving'"
+        :save-status="autoSaveState('deposit:full').status"
+        :save-error="autoSaveState('deposit:full').error"
         @update:model-value="saveDepositFullPaymentToggle"
-      />
-      <AdminSaveStatus
-        :status="autoSaveState('deposit:full').status"
-        :error="autoSaveState('deposit:full').error"
         @retry="autoSave.retry('deposit:full')"
       />
       <p v-if="depositFullPaymentEnabled" class="muted admin-settings-hint">
@@ -6300,12 +6376,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <AdminSwitch
         v-model="couponManualCompletionPoints"
         label="กรอกแต้มเองเมื่อทำคิวเสร็จ"
-        :disabled="autoSaveState('coupon:manual').status === 'saving'"
+        :save-status="autoSaveState('coupon:manual').status"
+        :save-error="autoSaveState('coupon:manual').error"
         @update:model-value="saveCouponManualToggle"
-      />
-      <AdminSaveStatus
-        :status="autoSaveState('coupon:manual').status"
-        :error="autoSaveState('coupon:manual').error"
         @retry="autoSave.retry('coupon:manual')"
       />
       <p v-if="couponManualCompletionPoints" class="muted admin-settings-hint">
@@ -6414,8 +6487,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             v-model="lineUseOwnBot"
             label="ใช้ LINE Bot ของร้านเอง"
             hint="Premium — override บอทกลางสำหรับสาขานี้"
-            :disabled="settingToggleSaving === 'line-push:use_own_bot'"
+            :save-status="autoSaveState('line-push:use_own_bot').status"
+            :save-error="autoSaveState('line-push:use_own_bot').error"
             @update:model-value="(v) => saveLinePushToggle('use_own_bot', v)"
+            @retry="autoSave.retry('line-push:use_own_bot')"
           />
         </div>
       </div>
@@ -6429,8 +6504,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             v-model="linePushEnabled"
             label="เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว"
             :hint="`สาขา ${shopStore.shopName || shopSlug}`"
-            :disabled="settingToggleSaving === 'line-push:enabled'"
+            :save-status="autoSaveState('line-push:enabled').status"
+            :save-error="autoSaveState('line-push:enabled').error"
             @update:model-value="(v) => saveLinePushToggle('enabled', v)"
+            @retry="autoSave.retry('line-push:enabled')"
           />
         </div>
       </div>
@@ -6575,32 +6652,42 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <AdminSwitch
             v-model="chatNotifyNewBookingEnabled"
             label="มีคิวจองใหม่"
-            :disabled="settingToggleSaving === 'chat-notify:new_booking_enabled'"
+            :save-status="autoSaveState('chat-notify:new_booking_enabled').status"
+            :save-error="autoSaveState('chat-notify:new_booking_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('new_booking_enabled', v)"
+            @retry="autoSave.retry('chat-notify:new_booking_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyUpcomingAdminEnabled"
             label="ก่อนถึงคิว"
-            :disabled="settingToggleSaving === 'chat-notify:upcoming_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:upcoming_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:upcoming_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('upcoming_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:upcoming_admin_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyCancelAdminEnabled"
             label="คิวถูกยกเลิก"
-            :disabled="settingToggleSaving === 'chat-notify:cancel_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:cancel_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:cancel_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('cancel_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:cancel_admin_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyPaidAdminEnabled"
             label="ชำระเงินแล้ว"
-            :disabled="settingToggleSaving === 'chat-notify:paid_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:paid_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:paid_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('paid_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:paid_admin_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifySlipAdminEnabled"
             label="ลูกค้าอัปโหลดสลิป"
-            :disabled="settingToggleSaving === 'chat-notify:slip_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:slip_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:slip_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('slip_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:slip_admin_enabled')"
           />
         </div>
       </div>
@@ -6611,20 +6698,26 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <AdminSwitch
             v-model="chatNotifyUpcomingCustomerEnabled"
             label="ก่อนถึงคิว"
-            :disabled="settingToggleSaving === 'chat-notify:upcoming_customer_enabled'"
+            :save-status="autoSaveState('chat-notify:upcoming_customer_enabled').status"
+            :save-error="autoSaveState('chat-notify:upcoming_customer_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('upcoming_customer_enabled', v)"
+            @retry="autoSave.retry('chat-notify:upcoming_customer_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyCancelCustomerEnabled"
             label="คิวถูกยกเลิก"
-            :disabled="settingToggleSaving === 'chat-notify:cancel_customer_enabled'"
+            :save-status="autoSaveState('chat-notify:cancel_customer_enabled').status"
+            :save-error="autoSaveState('chat-notify:cancel_customer_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('cancel_customer_enabled', v)"
+            @retry="autoSave.retry('chat-notify:cancel_customer_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyPaidCustomerEnabled"
             label="ชำระเงินแล้ว"
-            :disabled="settingToggleSaving === 'chat-notify:paid_customer_enabled'"
+            :save-status="autoSaveState('chat-notify:paid_customer_enabled').status"
+            :save-error="autoSaveState('chat-notify:paid_customer_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('paid_customer_enabled', v)"
+            @retry="autoSave.retry('chat-notify:paid_customer_enabled')"
           />
         </div>
       </div>
@@ -6661,8 +6754,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <AdminSwitch
             v-model="unpaidAutoCancelEnabled"
             label="เปิดยกเลิกอัตโนมัติ"
-            :disabled="settingToggleSaving === 'unpaid:enabled'"
+            :save-status="autoSaveState('unpaid:enabled').status"
+            :save-error="autoSaveState('unpaid:enabled').error"
             @update:model-value="saveUnpaidAutoCancelToggle"
+            @retry="autoSave.retry('unpaid:enabled')"
           />
         </div>
         <label class="admin-label-grow" :class="{ muted: !unpaidAutoCancelEnabled }">
@@ -6948,7 +7043,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
-              aria-label="ปิดหัวข้อ"
+              aria-label="ปิดหัวข้อ UI"
               @click="uiNavOpen = false"
             >
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -7097,6 +7192,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               class="ui-image-file-input"
               @change="onUiImageSelected"
             />
+            <div v-if="uiFormDirty" class="admin-ui-dirty-spacer" aria-hidden="true"></div>
             <div v-if="uiFormDirty" class="admin-ui-dirty-bar" role="status">
               <p class="admin-ui-dirty-bar-text">มีการแก้ไขที่ยังไม่บันทึก</p>
               <div class="admin-ui-dirty-actions">
@@ -7130,7 +7226,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             <button
               type="button"
               class="admin-drawer-icon-btn admin-drawer-close"
-              aria-label="ปิดหัวข้อ"
+              aria-label="ปิดหัวข้อเวลา"
               @click="blocksNavOpen = false"
             >
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -7224,11 +7320,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 </div>
 
                 <div class="service-cal-nav">
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="เดือนก่อน">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(-1)" aria-label="ดูเดือนก่อนหน้าในเวลาเปิด-ปิดเฉพาะวัน">
                     <i class="ti ti-chevron-left" aria-hidden="true"></i>
                   </button>
                   <span class="service-cal-month">{{ dayHoursMonthLabel }}</span>
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(1)" aria-label="เดือนถัดไป">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftDayHoursMonth(1)" aria-label="ดูเดือนถัดไปในเวลาเปิด-ปิดเฉพาะวัน">
                     <i class="ti ti-chevron-right" aria-hidden="true"></i>
                   </button>
                 </div>
@@ -7409,16 +7505,20 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   <AdminSwitch
                     v-model="extendBookingByServices"
                     label="ขยายเวลาจองตามบริการ"
-                    :disabled="settingToggleSaving === 'extend-booking:enabled'"
+                    :save-status="autoSaveState('extend-booking:enabled').status"
+                    :save-error="autoSaveState('extend-booking:enabled').error"
                     @update:model-value="(v) => saveExtendBookingToggle('enabled', v)"
+                    @retry="autoSave.retry('extend-booking:enabled')"
                   />
                   <AdminSwitch
                     v-if="extendBookingByServices"
                     v-model="extendBookingPastClose"
                     label="ขยายเกินเวลาปิดร้านได้"
                     hint="ลูกค้าจองได้แม้บริการรวมยาวเกินเวลาปิด (ยังติดคิวถัดไปไม่ได้)"
-                    :disabled="settingToggleSaving === 'extend-booking:past_close_enabled'"
+                    :save-status="autoSaveState('extend-booking:past_close_enabled').status"
+                    :save-error="autoSaveState('extend-booking:past_close_enabled').error"
                     @update:model-value="(v) => saveExtendBookingToggle('past_close_enabled', v)"
+                    @retry="autoSave.retry('extend-booking:past_close_enabled')"
                   />
                 </div>
                 <div class="shop-hours-preview">
@@ -7440,8 +7540,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     v-model="bookingMinGapEnabled"
                     label="เปิดจองช่องว่างระหว่างคิว"
                     hint="ปิด = ใช้ค่า 60 นาที (ช่องว่างสั้นกว่า 1 ชม. ไม่เปิดจอง)"
-                    :disabled="settingToggleSaving === 'booking-min-gap:enabled'"
+                    :save-status="autoSaveState('booking-min-gap:enabled').status"
+                    :save-error="autoSaveState('booking-min-gap:enabled').error"
                     @update:model-value="saveBookingMinGapToggle"
+                    @retry="autoSave.retry('booking-min-gap:enabled')"
                   />
                 </div>
                 <div v-if="bookingMinGapEnabled" class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end;gap:10px">
@@ -7506,8 +7608,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     v-model="advanceExtendEnabled"
                     label="ขยายวันจองล่วงหน้า"
                     hint="เปิด = ลูกค้าจองได้ล่วงหน้ากี่วันนับจากวันนี้เสมอ · ปิด = ล็อกวันสิ้นสุดไว้"
-                    :disabled="settingToggleSaving === 'advance-days:extend'"
+                    :save-status="autoSaveState('advance-days:extend').status"
+                    :save-error="autoSaveState('advance-days:extend').error"
                     @update:model-value="saveAdvanceExtendToggle"
+                    @retry="autoSave.retry('advance-days:extend')"
                   />
                 </div>
               </div>
@@ -7588,11 +7692,11 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                 </div>
 
                 <div class="service-cal-nav">
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="เดือนก่อน">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(-1)" aria-label="ดูเดือนก่อนหน้าในปฏิทินปิดรับคิว">
                     <i class="ti ti-chevron-left" aria-hidden="true"></i>
                   </button>
                   <span class="service-cal-month">{{ blockMonthLabel }}</span>
-                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="เดือนถัดไป">
+                  <button type="button" class="btn service-cal-nav-btn" @click="shiftBlockMonth(1)" aria-label="ดูเดือนถัดไปในปฏิทินปิดรับคิว">
                     <i class="ti ti-chevron-right" aria-hidden="true"></i>
                   </button>
                 </div>
@@ -7961,7 +8065,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="shop-edit-title">
           <div class="booking-edit-header">
             <h3 id="shop-edit-title">แก้ไขสาขา</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeShopEdit">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดหน้าต่างแก้ไขสาขา" @click="closeShopEdit">×</button>
           </div>
           <p v-if="shopEditItem" class="muted booking-edit-meta">/{{ shopEditItem.slug }}</p>
           <label class="booking-edit-field">
@@ -8021,7 +8125,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-chat-send-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="chat-send-title">
           <div class="booking-edit-header">
             <h3 id="chat-send-title">ส่งข้อความ</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeSendMessageModal">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดหน้าต่างส่งข้อความ" @click="closeSendMessageModal">×</button>
           </div>
           <p v-if="chatSendUser" class="muted booking-edit-meta">
             ถึง <strong>{{ chatSendUser.name }}</strong>
@@ -8057,7 +8161,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card user-history-modal" role="dialog" aria-labelledby="user-history-title">
           <div class="booking-edit-header">
             <h3 id="user-history-title">ประวัติการจอง</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserHistory">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดประวัติการจอง" @click="closeUserHistory">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8113,7 +8217,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="staff-add-title">
           <div class="booking-edit-header">
             <h3 id="staff-add-title">{{ staffAddBtnLabel }}</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeStaffAdd">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดหน้าต่างเพิ่มแอดมิน" @click="closeStaffAdd">×</button>
           </div>
           <p v-if="isSuperAdmin" class="muted booking-edit-meta">
             สร้างบัญชีล็อกอินเบอร์โทร + ให้สิทธิ์แอดมินตามสาขาที่เลือก
@@ -8181,7 +8285,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-user-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="user-edit-title">
           <div class="booking-edit-header">
             <h3 id="user-edit-title">แก้ไขข้อมูลผู้ใช้</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeUserEdit">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดหน้าต่างแก้ไขผู้ใช้" @click="closeUserEdit">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8313,7 +8417,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div class="booking-edit-modal card" role="dialog" aria-labelledby="booking-add-title">
           <div class="booking-edit-header">
             <h3 id="booking-add-title">เพิ่มคิว</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingAdd">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดหน้าต่างเพิ่มคิว" @click="closeBookingAdd">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8388,7 +8492,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               min="0"
               step="1"
               class="admin-input"
-              :placeholder="bookingAddStatus === 'done' ? 'จำเป็นสำหรับสถานะทำเสร็จแล้ว' : 'ไม่บังคับ'"
+              :placeholder="bookingAddStatus === 'done' ? `จำเป็นสำหรับสถานะ${BOOKING_STATUS.done.label}` : 'ไม่บังคับ'"
               @input="bookingAddError = ''"
             />
           </label>
@@ -8527,7 +8631,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-booking-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="booking-edit-title">
           <div class="booking-edit-header">
             <h3 id="booking-edit-title">{{ isBookingRestoreMode ? 'เลือกเวลาเพื่อคืนสถานะจอง' : 'แก้ไขข้อมูลคิว' }}</h3>
-            <button type="button" class="btn booking-edit-close" aria-label="ปิด" @click="closeBookingEdit">
+            <button type="button" class="btn booking-edit-close" aria-label="ปิดหน้าต่างแก้ไขคิว" @click="closeBookingEdit">
               <i class="ti ti-x" aria-hidden="true"></i>
             </button>
           </div>
@@ -8731,7 +8835,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-day-hour-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="day-hour-edit-title">
           <div class="booking-edit-header">
             <h3 id="day-hour-edit-title">แก้ไขช่วงเวลา</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeDayHourForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มเวลาเฉพาะวัน" @click="closeDayHourForm">×</button>
           </div>
           <p v-if="selectedDayHoursDate" class="muted booking-edit-meta">
             วันที่ {{ formatServiceDateLabel(selectedDayHoursDate) }}
@@ -8794,7 +8898,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-category-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="category-edit-title">
           <div class="booking-edit-header">
             <h3 id="category-edit-title">แก้ไขหมวดหมู่</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetCategoryForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มหมวดหมู่" @click="resetCategoryForm">×</button>
           </div>
           <div class="admin-form-grid admin-option-grid">
             <label>
@@ -8828,7 +8932,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-option-edit-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-labelledby="option-edit-title">
           <div class="booking-edit-header">
             <h3 id="option-edit-title">แก้ไขบริการ</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetOptionForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มแก้ไขบริการ" @click="resetOptionForm">×</button>
           </div>
           <p v-if="optionEditScopeLabel" class="muted booking-edit-meta">{{ optionEditScopeLabel }}</p>
           <div class="admin-form-grid admin-option-grid">
@@ -8905,7 +9009,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-option-add-everyday-modal" class="booking-edit-modal admin-edit-modal-wide card" role="dialog" aria-modal="true" aria-labelledby="option-add-everyday-title">
           <div class="booking-edit-header">
             <h3 id="option-add-everyday-title">เพิ่มบริการทุกวัน</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="closeEveryDayForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มเพิ่มบริการทุกวัน" @click="closeEveryDayForm">×</button>
           </div>
           <p class="muted booking-edit-meta">บริการนี้จะแสดงให้ลูกค้าเลือกได้ทุกวัน</p>
           <div class="admin-form-grid admin-option-grid">
@@ -8983,7 +9087,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-location-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="location-edit-title">
           <div class="booking-edit-header">
             <h3 id="location-edit-title">แก้ไขสถานที่</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetLocationForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มสถานที่" @click="resetLocationForm">×</button>
           </div>
           <div class="admin-form-grid admin-option-grid">
             <label>
@@ -9041,7 +9145,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
         <div id="admin-clip-edit-modal" class="booking-edit-modal card" role="dialog" aria-labelledby="clip-edit-title">
           <div class="booking-edit-header">
             <h3 id="clip-edit-title">แก้ไขคลิป</h3>
-            <button type="button" class="booking-edit-close" aria-label="ปิด" @click="resetClipForm">×</button>
+            <button type="button" class="booking-edit-close" aria-label="ปิดฟอร์มคลิปรีวิว" @click="resetClipForm">×</button>
           </div>
           <label class="booking-edit-field">
             ลิงก์ TikTok / Instagram
@@ -9183,19 +9287,26 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 20px;
+  width: 32px;
   z-index: 2;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
 }
 
 .admin-tab-wrap::before {
   left: 0;
-  background: linear-gradient(to right, var(--color-surface), transparent);
+  background: linear-gradient(to right, var(--color-background), transparent);
 }
 
 .admin-tab-wrap::after {
   right: 0;
-  background: linear-gradient(to left, var(--color-surface), transparent);
+  background: linear-gradient(to left, var(--color-background), transparent);
+}
+
+.admin-tab-wrap--fade-left::before,
+.admin-tab-wrap--fade-right::after {
+  opacity: 1;
 }
 
 .admin-nav {
@@ -10022,14 +10133,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 .booking-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
   font-size: var(--text-caption);
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
 }
 
-.booking-cal-legend i {
-  margin-right: 2px;
+.booking-cal-legend .cal-stat-chips--legend {
+  margin-top: 0;
 }
 
 .legend-paid,
@@ -10356,7 +10468,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
   }
 
   .revenue-section .service-cal-num {
-    font-size: 11px;
+    font-size: var(--text-caption);
   }
 
   .revenue-summary-deposit,
@@ -10605,17 +10717,27 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 
 .color-preset-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
 
 .color-preset-btn {
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
+}
+
+/* Extends the tap target to 44px; with the 8px row gap neighbours never overlap. */
+.color-preset-btn::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
 }
 
 .color-preset-btn.active {
@@ -10795,7 +10917,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .service-order-btn {
-  min-width: 36px;
+  min-width: var(--touch-min);
   padding: 6px 8px;
 }
 
@@ -11067,8 +11189,15 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
 }
 
 .booking-edit-close {
-  padding: 6px 10px;
-  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  font-size: 22px;
+  line-height: 1;
 }
 
 .booking-edit-meta {

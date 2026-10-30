@@ -6,6 +6,7 @@ import { applyTheme, clearTheme } from '../bookingSite/theme.js'
 import { defaultNav, isSectionVisible, navHref, pageSectionOrder } from '../bookingSite/sections.js'
 import { hasShopMapUrl, resolveShopMapEmbedUrl } from '../utils/shopMapEmbed'
 import LoopCarousel from '../bookingSite/LoopCarousel.vue'
+import { serviceIcon } from '../bookingSite/serviceIcons.js'
 import '../bookingSite/style.css'
 
 const { shopSlug } = useShopRoute()
@@ -212,8 +213,9 @@ onUnmounted(() => {
         <LoopCarousel :items="c.rooms" :min-loop="3" :label="c.roomsHeading || 'บริการ'">
           <template #head><h2>{{ c.roomsHeading || 'บริการ' }}</h2></template>
           <template #default="{ item: r, index: i }">
-            <article class="card" :style="roomCardStyle(r)">
-              <div v-if="showImg(r)" class="img" :class="'g' + (i % 4)" :style="bg(r.image)"></div>
+            <article class="card" :class="{ 'card--icon': !(showImg(r) && r.image) }" :style="roomCardStyle(r)">
+              <div v-if="showImg(r) && r.image" class="img" :style="bg(r.image)"></div>
+              <span v-else class="card-icon" aria-hidden="true"><i class="ti" :class="'ti-' + serviceIcon(r, i)"></i></span>
               <h3>{{ r.name }}</h3><p>{{ r.detail }}</p>
               <a class="link" :href="book(r.link)" :target="tg" rel="noopener">จองเลย</a>
             </article>

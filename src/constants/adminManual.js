@@ -1,3 +1,5 @@
+import { BOOKING_STATUS, CALENDAR_PAID_LABEL } from './bookingStatus'
+
 export const ADMIN_MANUAL_SECTIONS = [
   {
     key: 'overview',
@@ -48,10 +50,8 @@ export const ADMIN_MANUAL_SECTIONS = [
       {
         title: 'สถานะคิว',
         bullets: [
-          'รอชำระเงิน — ลูกค้าจองแล้ว ยังไม่โอน/ยังไม่ยืนยัน',
-          'ชำระแล้ว / รอให้บริการ — แอดมินยืนยันการชำระแล้ว',
-          'ทำเสร็จ — จบงาน (ลูกค้าได้แต้มตามที่ตั้งไว้)',
-          'ยกเลิก — คิวถูกยกเลิก',
+          ...Object.values(BOOKING_STATUS).map((s) => `${s.label} — ${s.description}`),
+          `ในปฏิทิน «${CALENDAR_PAID_LABEL}» = ${BOOKING_STATUS.pending.label} + ${BOOKING_STATUS.done.label} รวมกัน`,
         ],
       },
       {
