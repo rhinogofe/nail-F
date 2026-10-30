@@ -1116,6 +1116,11 @@ function snapshotUiForm() {
 }
 
 const uiFormDirty = computed(() => JSON.stringify(uiForm.value || {}) !== uiFormSnapshot.value)
+const UPLOADED_UI_FIELD = {
+  logo: 'ui_logo_url',
+  hero: 'ui_hero_image_url',
+  kshop_qr: 'ui_kshop_qr_url',
+}
 const uiImageUploading = ref('')
 const pendingUiUploadKind = ref('')
 const uiImageFileInput = ref(null)
@@ -1164,14 +1169,13 @@ async function loadAdvanceDays() {
 }
 
 async function saveAdvanceExtendToggle(nextValue) {
-  if (typeof nextValue === 'boolean') advanceExtendEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'advance-days:extend',
     url: '/api/admin/settings/advance-days',
     payload: { extend_enabled: nextValue },
     label: 'ขยายวันจองล่วงหน้า',
     nextValue,
-    revert: () => { advanceExtendEnabled.value = !nextValue },
+    model: advanceExtendEnabled,
     apply: (data) => {
       advanceDays.value = data.advance_days ?? advanceDays.value
       bookUntilDate.value = data.book_until_date || bookUntilDate.value
@@ -1550,8 +1554,23 @@ async function loadUiSettingsAdmin() {
   }
 }
 
-async function discardUiForm() {
-  await loadUiSettingsAdmin()
+function discardUiForm() {
+  uiForm.value = JSON.parse(uiFormSnapshot.value || '{}')
+}
+
+function pendingUiEdits() {
+  const saved = JSON.parse(uiFormSnapshot.value || '{}')
+  const edits = {}
+  for (const [key, value] of Object.entries(uiForm.value || {})) {
+    if (value !== saved[key]) edits[key] = value
+  }
+  return edits
+}
+
+function onAdminBeforeUnload(event) {
+  if (!uiFormDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 async function saveUiSettingsAdmin() {
@@ -1588,6 +1607,7 @@ async function confirmLeaveUiDirty() {
     confirmButtonText: 'ออกโดยไม่บันทึก',
     cancelButtonText: 'อยู่ต่อ',
   })
+  if (result.isConfirmed) discardUiForm()
   return result.isConfirmed
 }
 
@@ -1644,9 +1664,14 @@ async function onUiImageSelected(event) {
       image_data: base64,
       image_mime: mime,
     })
-    uiForm.value = { ...(data.settings || uiForm.value) }
+    const savedSettings = { ...(data.settings || uiForm.value) }
+    const edits = pendingUiEdits()
+    uiForm.value = savedSettings
     snapshotUiForm()
-    uiSettingsStore.applyLocal(data.settings || uiForm.value)
+    for (const [key, value] of Object.entries(edits)) {
+      if (key !== UPLOADED_UI_FIELD[kind]) uiForm.value[key] = value
+    }
+    uiSettingsStore.applyLocal(savedSettings)
     message.value = kind === 'logo'
       ? 'อัปโหลดโลโก้แล้ว'
       : kind === 'kshop_qr'
@@ -2650,8 +2675,8 @@ async function onAdminShopRealtimeUpdate(event) {
     tasks.push(loadNailOptions(), loadServiceCategories(), loadServiceLocations())
   }
   if (type === 'settings') {
+    if (!uiFormDirty.value) tasks.push(loadUiSettingsAdmin())
     tasks.push(
-      loadUiSettingsAdmin(),
       loadDepositSetting(),
       loadCouponSetting(),
       loadUnpaidAutoCancelSetting(),
@@ -3012,7 +3037,7 @@ async function loadRegisterShopPinSetting() {
 async function saveRegisterShopPinSetting() {
   const pin = String(registerShopPin.value || '').replace(/\D/g, '').slice(0, 4)
   registerShopPin.value = pin
-  if (pin === registerShopPinSaved.value) return
+  if (pin === registerShopPinSaved.value) return autoSave.clearInvalid('register-pin')
   await autoSave.run('register-pin', {
     value: pin,
     restoreAttempt: () => { registerShopPin.value = pin },
@@ -3105,7 +3130,7 @@ async function saveCouponManualToggle(nextValue) {
 
 async function saveCouponDiscountPercent() {
   const discount = Number(couponDiscountPercent.value)
-  if (discount === couponDiscountPercentSaved.value) return
+  if (discount === couponDiscountPercentSaved.value) return autoSave.clearInvalid('coupon:discount')
   await saveCouponField('coupon:discount', () => {
     if (!Number.isInteger(discount) || discount < 1 || discount > 100) return 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
     return ''
@@ -3114,7 +3139,7 @@ async function saveCouponDiscountPercent() {
 
 async function saveCouponRequiredPoints() {
   const points = Number(couponRequiredPoints.value)
-  if (points === couponRequiredPointsSaved.value) return
+  if (points === couponRequiredPointsSaved.value) return autoSave.clearInvalid('coupon:points')
   await saveCouponField('coupon:points', () => {
     if (!Number.isInteger(points) || points < 1) return 'แต้มที่ใช้แลกต้องมากกว่า 0'
     return ''
@@ -3123,7 +3148,7 @@ async function saveCouponRequiredPoints() {
 
 async function saveCouponCompletionPoints() {
   const completion = Number(couponCompletionPoints.value)
-  if (completion === couponCompletionPointsSaved.value) return
+  if (completion === couponCompletionPointsSaved.value) return autoSave.clearInvalid('coupon:completion')
   await saveCouponField('coupon:completion', () => {
     if (!Number.isInteger(completion) || completion < 0) return 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
     return ''
@@ -3253,29 +3278,28 @@ async function testLinePushSetting() {
   }
 }
 
-async function autoSaveSettingToggle({ key, url, payload, label, nextValue, revert, apply, restoreAttempt }) {
-  message.value = ''
-  errorMessage.value = ''
+async function autoSaveSettingToggle({ key, url, payload, label, nextValue, model, apply }) {
+  if (model) model.value = nextValue
   await autoSave.run(key, {
     value: nextValue,
-    restoreAttempt,
+    restoreAttempt: model ? () => { model.value = nextValue } : undefined,
     onStart: () => { settingToggleSaving.value = key },
     onFinally: () => {
       if (settingToggleSaving.value === key) settingToggleSaving.value = ''
     },
     save: async () => {
-      const { data } = await api.patch(url, payload)
-      return data
+      try {
+        const { data } = await api.patch(url, payload)
+        return data
+      } catch (error) {
+        throw new Error(error?.response?.data?.error || `บันทึก "${label}" ไม่สำเร็จ`)
+      }
     },
     apply: (data) => {
       apply?.(data)
     },
-    revert,
+    revert: model ? () => { model.value = !nextValue } : undefined,
   })
-  const field = autoSave.fields[key]
-  if (field?.status === 'error') {
-    errorMessage.value = field.error || `บันทึก "${label}" ไม่สำเร็จ`
-  }
 }
 
 const chatNotifyToggles = {
@@ -3292,14 +3316,13 @@ const chatNotifyToggles = {
 async function saveChatNotifyToggle(field, nextValue) {
   const entry = chatNotifyToggles[field]
   if (!entry) return
-  if (typeof nextValue === 'boolean') entry.model.value = nextValue
   await autoSaveSettingToggle({
     key: `chat-notify:${field}`,
     url: '/api/admin/settings/chat-notify',
     payload: { [field]: nextValue },
     label: entry.label,
     nextValue,
-    revert: () => { entry.model.value = !nextValue },
+    model: entry.model,
     apply: (data) => {
       if (typeof data?.[field] === 'boolean') entry.model.value = data[field]
     },
@@ -3311,14 +3334,13 @@ async function saveLinePushToggle(field, nextValue) {
   const label = field === 'enabled'
     ? 'แจ้งเตือน LINE เมื่อลูกค้าจองคิว'
     : 'ใช้ LINE Bot ของร้านเอง (Premium)'
-  if (typeof nextValue === 'boolean') model.value = nextValue
   await autoSaveSettingToggle({
     key: `line-push:${field}`,
     url: '/api/admin/settings/line-push',
     payload: { [field]: nextValue },
     label,
     nextValue,
-    revert: () => { model.value = !nextValue },
+    model,
     apply: (data) => {
       linePushEnabled.value = data.enabled !== false
       lineUsesOwnBot.value = Boolean(data.uses_own_bot)
@@ -3334,14 +3356,13 @@ async function saveLinePushToggle(field, nextValue) {
 }
 
 async function saveUnpaidAutoCancelToggle(nextValue) {
-  if (typeof nextValue === 'boolean') unpaidAutoCancelEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'unpaid:enabled',
     url: '/api/admin/settings/unpaid-auto-cancel',
     payload: { enabled: nextValue, expire_hours: unpaidExpireHoursSaved.value },
     label: 'ยกเลิกคิวรอชำระอัตโนมัติ',
     nextValue,
-    revert: () => { unpaidAutoCancelEnabled.value = !nextValue },
+    model: unpaidAutoCancelEnabled,
     apply: (data) => { unpaidAutoCancelEnabled.value = data.enabled !== false },
   })
 }
@@ -3351,14 +3372,13 @@ async function saveExtendBookingToggle(field, nextValue) {
   const label = field === 'enabled'
     ? 'ขยายเวลาจองตามบริการ'
     : 'ขยายเวลาเกินเวลาปิดร้าน'
-  if (typeof nextValue === 'boolean') model.value = nextValue
   await autoSaveSettingToggle({
     key: `extend-booking:${field}`,
     url: '/api/admin/settings/extend-booking-by-services',
     payload: { [field === 'enabled' ? 'enabled' : 'past_close_enabled']: nextValue },
     label,
     nextValue,
-    revert: () => { model.value = !nextValue },
+    model,
     apply: (data) => {
       extendBookingByServices.value = data.enabled === true
       extendBookingPastClose.value = data.past_close_enabled === true
@@ -3367,14 +3387,13 @@ async function saveExtendBookingToggle(field, nextValue) {
 }
 
 async function saveBookingMinGapToggle(nextValue) {
-  if (typeof nextValue === 'boolean') bookingMinGapEnabled.value = nextValue
   await autoSaveSettingToggle({
     key: 'booking-min-gap:enabled',
     url: '/api/admin/settings/booking-min-gap',
     payload: { enabled: nextValue },
     label: 'เปิดจองช่องว่างระหว่างคิว',
     nextValue,
-    revert: () => { bookingMinGapEnabled.value = !nextValue },
+    model: bookingMinGapEnabled,
     apply: (data) => {
       bookingMinGapEnabled.value = data.enabled === true
       bookingMinGapMinutes.value = normalizeBookingMinGapMinutes(data.minutes)
@@ -3419,7 +3438,7 @@ async function loadChatNotifySetting() {
 
 async function saveChatNotifySetting() {
   const minutes = Number(chatNotifyUpcomingMinutes.value)
-  if (minutes === chatNotifyUpcomingMinutesSaved.value) return
+  if (minutes === chatNotifyUpcomingMinutesSaved.value) return autoSave.clearInvalid('chat-notify:minutes')
   const previous = chatNotifyUpcomingMinutesSaved.value
   await autoSave.run('chat-notify:minutes', {
     value: minutes,
@@ -3453,7 +3472,7 @@ async function loadUnpaidAutoCancelSetting() {
 
 async function saveUnpaidAutoCancelSetting() {
   const hours = Number(unpaidExpireHours.value)
-  if (hours === unpaidExpireHoursSaved.value) return
+  if (hours === unpaidExpireHoursSaved.value) return autoSave.clearInvalid('unpaid:hours')
   const previous = unpaidExpireHoursSaved.value
   await autoSave.run('unpaid:hours', {
     value: hours,
@@ -3501,7 +3520,7 @@ async function saveDepositFullPaymentToggle(nextValue) {
 
 async function saveDepositAmount() {
   const amount = Number(depositAmount.value)
-  if (amount === depositAmountSaved.value) return
+  if (amount === depositAmountSaved.value) return autoSave.clearInvalid('deposit:amount')
   const previous = depositAmountSaved.value
   await autoSave.run('deposit:amount', {
     value: amount,
@@ -5248,19 +5267,21 @@ onMounted(() => {
   window.addEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
   startBranchUsagePolling()
   window.addEventListener('focus', onAdminWindowFocus)
+  window.addEventListener('beforeunload', onAdminBeforeUnload)
 })
 onUnmounted(() => {
   adminMobileMq?.removeEventListener('change', updateAdminMobileLayout)
   window.removeEventListener(PUSH_DEVICE_STATUS_EVENT, onPushDeviceStatusChanged)
   stopBranchUsagePolling()
   window.removeEventListener('focus', onAdminWindowFocus)
+  window.removeEventListener('beforeunload', onAdminBeforeUnload)
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
   if (adminToastTimer) clearTimeout(adminToastTimer)
 })
 
 onBeforeRouteLeave(async () => {
-  if (activeTab.value !== 'ui' || !uiFormDirty.value) return true
+  if (!uiFormDirty.value) return true
   return confirmLeaveUiDirty()
 })
 
@@ -6250,12 +6271,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <AdminSwitch
         v-model="depositFullPaymentEnabled"
         label="ชำระเต็มจำนวนตามราคาบริการ"
-        :disabled="autoSaveState('deposit:full').status === 'saving'"
+        :save-status="autoSaveState('deposit:full').status"
+        :save-error="autoSaveState('deposit:full').error"
         @update:model-value="saveDepositFullPaymentToggle"
-      />
-      <AdminSaveStatus
-        :status="autoSaveState('deposit:full').status"
-        :error="autoSaveState('deposit:full').error"
         @retry="autoSave.retry('deposit:full')"
       />
       <p v-if="depositFullPaymentEnabled" class="muted admin-settings-hint">
@@ -6300,12 +6318,9 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
       <AdminSwitch
         v-model="couponManualCompletionPoints"
         label="กรอกแต้มเองเมื่อทำคิวเสร็จ"
-        :disabled="autoSaveState('coupon:manual').status === 'saving'"
+        :save-status="autoSaveState('coupon:manual').status"
+        :save-error="autoSaveState('coupon:manual').error"
         @update:model-value="saveCouponManualToggle"
-      />
-      <AdminSaveStatus
-        :status="autoSaveState('coupon:manual').status"
-        :error="autoSaveState('coupon:manual').error"
         @retry="autoSave.retry('coupon:manual')"
       />
       <p v-if="couponManualCompletionPoints" class="muted admin-settings-hint">
@@ -6414,8 +6429,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             v-model="lineUseOwnBot"
             label="ใช้ LINE Bot ของร้านเอง"
             hint="Premium — override บอทกลางสำหรับสาขานี้"
-            :disabled="settingToggleSaving === 'line-push:use_own_bot'"
+            :save-status="autoSaveState('line-push:use_own_bot').status"
+            :save-error="autoSaveState('line-push:use_own_bot').error"
             @update:model-value="(v) => saveLinePushToggle('use_own_bot', v)"
+            @retry="autoSave.retry('line-push:use_own_bot')"
           />
         </div>
       </div>
@@ -6429,8 +6446,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             v-model="linePushEnabled"
             label="เปิดแจ้งเตือน LINE เมื่อลูกค้าจองคิว"
             :hint="`สาขา ${shopStore.shopName || shopSlug}`"
-            :disabled="settingToggleSaving === 'line-push:enabled'"
+            :save-status="autoSaveState('line-push:enabled').status"
+            :save-error="autoSaveState('line-push:enabled').error"
             @update:model-value="(v) => saveLinePushToggle('enabled', v)"
+            @retry="autoSave.retry('line-push:enabled')"
           />
         </div>
       </div>
@@ -6575,32 +6594,42 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <AdminSwitch
             v-model="chatNotifyNewBookingEnabled"
             label="มีคิวจองใหม่"
-            :disabled="settingToggleSaving === 'chat-notify:new_booking_enabled'"
+            :save-status="autoSaveState('chat-notify:new_booking_enabled').status"
+            :save-error="autoSaveState('chat-notify:new_booking_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('new_booking_enabled', v)"
+            @retry="autoSave.retry('chat-notify:new_booking_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyUpcomingAdminEnabled"
             label="ก่อนถึงคิว"
-            :disabled="settingToggleSaving === 'chat-notify:upcoming_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:upcoming_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:upcoming_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('upcoming_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:upcoming_admin_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyCancelAdminEnabled"
             label="คิวถูกยกเลิก"
-            :disabled="settingToggleSaving === 'chat-notify:cancel_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:cancel_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:cancel_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('cancel_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:cancel_admin_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyPaidAdminEnabled"
             label="ชำระเงินแล้ว"
-            :disabled="settingToggleSaving === 'chat-notify:paid_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:paid_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:paid_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('paid_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:paid_admin_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifySlipAdminEnabled"
             label="ลูกค้าอัปโหลดสลิป"
-            :disabled="settingToggleSaving === 'chat-notify:slip_admin_enabled'"
+            :save-status="autoSaveState('chat-notify:slip_admin_enabled').status"
+            :save-error="autoSaveState('chat-notify:slip_admin_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('slip_admin_enabled', v)"
+            @retry="autoSave.retry('chat-notify:slip_admin_enabled')"
           />
         </div>
       </div>
@@ -6611,20 +6640,26 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <AdminSwitch
             v-model="chatNotifyUpcomingCustomerEnabled"
             label="ก่อนถึงคิว"
-            :disabled="settingToggleSaving === 'chat-notify:upcoming_customer_enabled'"
+            :save-status="autoSaveState('chat-notify:upcoming_customer_enabled').status"
+            :save-error="autoSaveState('chat-notify:upcoming_customer_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('upcoming_customer_enabled', v)"
+            @retry="autoSave.retry('chat-notify:upcoming_customer_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyCancelCustomerEnabled"
             label="คิวถูกยกเลิก"
-            :disabled="settingToggleSaving === 'chat-notify:cancel_customer_enabled'"
+            :save-status="autoSaveState('chat-notify:cancel_customer_enabled').status"
+            :save-error="autoSaveState('chat-notify:cancel_customer_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('cancel_customer_enabled', v)"
+            @retry="autoSave.retry('chat-notify:cancel_customer_enabled')"
           />
           <AdminSwitch
             v-model="chatNotifyPaidCustomerEnabled"
             label="ชำระเงินแล้ว"
-            :disabled="settingToggleSaving === 'chat-notify:paid_customer_enabled'"
+            :save-status="autoSaveState('chat-notify:paid_customer_enabled').status"
+            :save-error="autoSaveState('chat-notify:paid_customer_enabled').error"
             @update:model-value="(v) => saveChatNotifyToggle('paid_customer_enabled', v)"
+            @retry="autoSave.retry('chat-notify:paid_customer_enabled')"
           />
         </div>
       </div>
@@ -6661,8 +6696,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           <AdminSwitch
             v-model="unpaidAutoCancelEnabled"
             label="เปิดยกเลิกอัตโนมัติ"
-            :disabled="settingToggleSaving === 'unpaid:enabled'"
+            :save-status="autoSaveState('unpaid:enabled').status"
+            :save-error="autoSaveState('unpaid:enabled').error"
             @update:model-value="saveUnpaidAutoCancelToggle"
+            @retry="autoSave.retry('unpaid:enabled')"
           />
         </div>
         <label class="admin-label-grow" :class="{ muted: !unpaidAutoCancelEnabled }">
@@ -7097,6 +7134,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               class="ui-image-file-input"
               @change="onUiImageSelected"
             />
+            <div v-if="uiFormDirty" class="admin-ui-dirty-spacer" aria-hidden="true"></div>
             <div v-if="uiFormDirty" class="admin-ui-dirty-bar" role="status">
               <p class="admin-ui-dirty-bar-text">มีการแก้ไขที่ยังไม่บันทึก</p>
               <div class="admin-ui-dirty-actions">
@@ -7409,16 +7447,20 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                   <AdminSwitch
                     v-model="extendBookingByServices"
                     label="ขยายเวลาจองตามบริการ"
-                    :disabled="settingToggleSaving === 'extend-booking:enabled'"
+                    :save-status="autoSaveState('extend-booking:enabled').status"
+                    :save-error="autoSaveState('extend-booking:enabled').error"
                     @update:model-value="(v) => saveExtendBookingToggle('enabled', v)"
+                    @retry="autoSave.retry('extend-booking:enabled')"
                   />
                   <AdminSwitch
                     v-if="extendBookingByServices"
                     v-model="extendBookingPastClose"
                     label="ขยายเกินเวลาปิดร้านได้"
                     hint="ลูกค้าจองได้แม้บริการรวมยาวเกินเวลาปิด (ยังติดคิวถัดไปไม่ได้)"
-                    :disabled="settingToggleSaving === 'extend-booking:past_close_enabled'"
+                    :save-status="autoSaveState('extend-booking:past_close_enabled').status"
+                    :save-error="autoSaveState('extend-booking:past_close_enabled').error"
                     @update:model-value="(v) => saveExtendBookingToggle('past_close_enabled', v)"
+                    @retry="autoSave.retry('extend-booking:past_close_enabled')"
                   />
                 </div>
                 <div class="shop-hours-preview">
@@ -7440,8 +7482,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     v-model="bookingMinGapEnabled"
                     label="เปิดจองช่องว่างระหว่างคิว"
                     hint="ปิด = ใช้ค่า 60 นาที (ช่องว่างสั้นกว่า 1 ชม. ไม่เปิดจอง)"
-                    :disabled="settingToggleSaving === 'booking-min-gap:enabled'"
+                    :save-status="autoSaveState('booking-min-gap:enabled').status"
+                    :save-error="autoSaveState('booking-min-gap:enabled').error"
                     @update:model-value="saveBookingMinGapToggle"
+                    @retry="autoSave.retry('booking-min-gap:enabled')"
                   />
                 </div>
                 <div v-if="bookingMinGapEnabled" class="admin-form-row" style="flex-wrap:wrap;align-items:flex-end;gap:10px">
@@ -7506,8 +7550,10 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
                     v-model="advanceExtendEnabled"
                     label="ขยายวันจองล่วงหน้า"
                     hint="เปิด = ลูกค้าจองได้ล่วงหน้ากี่วันนับจากวันนี้เสมอ · ปิด = ล็อกวันสิ้นสุดไว้"
-                    :disabled="settingToggleSaving === 'advance-days:extend'"
+                    :save-status="autoSaveState('advance-days:extend').status"
+                    :save-error="autoSaveState('advance-days:extend').error"
                     @update:model-value="saveAdvanceExtendToggle"
+                    @retry="autoSave.retry('advance-days:extend')"
                   />
                 </div>
               </div>

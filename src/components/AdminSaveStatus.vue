@@ -13,6 +13,7 @@ defineEmits(['retry'])
     class="admin-save-status"
     :data-status="status"
     role="status"
+    @click.prevent
   >
     <i v-if="status === 'saving'" class="ti ti-loader-2 admin-save-status-spin" aria-hidden="true"></i>
     <span v-if="status === 'saving'" class="admin-save-status-text">กำลังบันทึก</span>
@@ -63,14 +64,16 @@ defineEmits(['retry'])
 }
 
 .admin-ui-dirty-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: var(--z-toast);
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 2 * var(--space-3)));
+  z-index: var(--z-overlay);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-4);
   padding: var(--space-3);
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border-strong);
@@ -89,5 +92,9 @@ defineEmits(['retry'])
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.admin-ui-dirty-spacer {
+  height: 120px;
 }
 </style>
