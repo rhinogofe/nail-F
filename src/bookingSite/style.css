@@ -21,8 +21,8 @@ margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-weig
 .booking-site .g2{background:radial-gradient(60% 50% at 60% 35%,var(--ph-to,#6a4a2b) 0,transparent 70%),radial-gradient(40% 40% at 25% 75%,var(--ph-from,#2a1d12) 0,transparent 70%),var(--bg)}
 .booking-site .g3{background:radial-gradient(60% 50% at 70% 45%,var(--gold,#d8b98a) 0,transparent 72%),radial-gradient(40% 40% at 20% 70%,var(--ph-from,#2a1d12) 0,transparent 70%),var(--bg)}
 .booking-site .copy{position:relative;z-index:2;padding:0 40px;max-width:760px;margin-top:22vh}
-.booking-site .copy h1{font-family:var(--serif);font-weight:400;font-size:var(--hero-title-size,clamp(40px,6.2vw,76px));line-height:1.02;margin:0 0 18px;text-transform:uppercase}
-.booking-site .copy p{margin:0 0 28px;color:var(--hero-mute,var(--mute));max-width:440px;font-size:var(--hero-lead-size,1.125rem);line-height:1.55}
+.booking-site .copy h1{font-family:var(--serif);font-weight:400;font-size:var(--hero-title-size,clamp(40px,6.2vw,76px));line-height:1.02;margin:0 0 18px;text-transform:uppercase;color:var(--slide-title,var(--hero-title,inherit))}
+.booking-site .copy p{margin:0 0 28px;color:var(--slide-lead,var(--hero-lead,var(--hero-mute,var(--mute))));max-width:440px;font-size:var(--hero-lead-size,1.125rem);line-height:1.55}
 .booking-site .btn{display:inline-block;background:#fff;color:#111;font-size:var(--hero-btn-size,13px);letter-spacing:.06em;font-weight:600;padding:14px 24px;border:1px solid #fff;border-radius:var(--radius,0);transition:background .2s,color .2s}
 .booking-site .btn:hover{background:transparent;color:#fff}
 .booking-site .hero .btn{background:var(--hero-btn-bg,#fff);color:var(--hero-btn-text,#111);border-color:var(--hero-btn-bg,#fff)}
@@ -86,10 +86,11 @@ margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-weig
 .booking-site .loop-btn{width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--border,var(--line));border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;transition:background .2s,color .2s,border-color .2s}
 .booking-site .loop-btn:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 .booking-site .loop-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.booking-site .loop-track{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 52px) / 3);gap:26px;overflow:hidden}
-.booking-site .loop-track.on{overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.booking-site .loop-track.on::-webkit-scrollbar{display:none}
-.booking-site .loop-slide{scroll-snap-align:start;min-width:0}
+.booking-site .loop-viewport{overflow:hidden;overflow-x:clip;overflow-y:visible}
+.booking-site .loop-track{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 52px) / 3);gap:26px}
+.booking-site .loop-track.on{touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;will-change:transform}
+.booking-site .loop-track.dragging{cursor:grabbing}
+.booking-site .loop-slide{min-width:0}
 .booking-site .loop-slide>.card{height:100%}
 .booking-site .place-info{margin:0 0 30px;display:grid;gap:16px;max-width:520px}
 .booking-site .place-info div{display:grid;grid-template-columns:72px 1fr;gap:16px;padding-top:16px;border-top:1px solid var(--line)}
@@ -194,9 +195,19 @@ margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-weig
 .booking-site.adm .color-pick input[type=text]{flex:1}
 .booking-site.adm .theme-live{grid-column:1/-1;border:1px solid var(--border,var(--line));overflow:hidden}
 .booking-site.adm .theme-live-hero{min-height:168px;padding:28px 24px;background:radial-gradient(50% 60% at 78% 36%,var(--ph-to,#6a4a2b) 0,transparent 70%),radial-gradient(36% 40% at 18% 78%,var(--ph-from,#2a1d12) 0,transparent 70%),var(--bg);color:var(--hero-text,var(--ink));font-family:var(--sans)}
-.booking-site.adm .theme-live-hero b{display:block;font-family:var(--serif);font-size:clamp(22px,3vw,32px);font-weight:400;line-height:1.15;margin:0 0 8px}
-.booking-site.adm .theme-live-hero p{margin:0 0 16px;max-width:36em;color:var(--hero-mute,var(--mute));font-size:14px;line-height:1.5}
+.booking-site.adm .theme-live-hero b{color:var(--hero-title,inherit);display:block;font-family:var(--serif);font-size:clamp(22px,3vw,32px);font-weight:400;line-height:1.15;margin:0 0 8px}
+.booking-site.adm .theme-live-hero p{margin:0 0 16px;max-width:36em;color:var(--hero-lead,var(--hero-mute,var(--mute)));font-size:14px;line-height:1.5}
 .booking-site.adm .theme-live-hero .btn{background:var(--hero-btn-bg,#fff);color:var(--hero-btn-text,#111);border-color:var(--hero-btn-bg,#fff);border-radius:var(--radius,0)}
+.booking-site.adm .font-preview{grid-column:1/-1;padding:22px 24px;border:1px solid var(--border,var(--line));background:var(--bg)}
+.booking-site.adm .font-preview b{display:block;font-family:var(--serif);font-weight:400;font-size:clamp(22px,3vw,30px);line-height:1.25;margin:0 0 8px;color:var(--ink)}
+.booking-site.adm .font-preview p{margin:0;font-family:var(--sans);font-size:15px;color:var(--mute)}
+.booking-site.adm .font-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.booking-site.adm .font-card{display:grid;gap:4px;text-align:left;padding:12px 14px;border-color:var(--border,var(--line));background:var(--bg)}
+.booking-site.adm .font-card:hover{border-color:var(--ink)}
+.booking-site.adm .font-card.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
+.booking-site.adm .font-card.part{border-style:dashed;border-color:var(--gold)}
+.booking-site.adm .font-sample{font-size:20px;line-height:1.3;color:var(--ink)}
+.booking-site.adm .font-card small{font-family:"Noto Sans Thai",sans-serif;font-size:11.5px;color:var(--mute)}
 .booking-site.adm .preset-using{color:var(--gold);font-size:13px;margin:0 0 8px}
 .booking-site.adm .preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .booking-site.adm .preset-card{display:grid;gap:10px;padding:16px;background:var(--bg);border:1px solid var(--border,var(--line));align-content:start}

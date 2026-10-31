@@ -1,14 +1,7 @@
 import { defaultTheme } from './theme.js'
+import { FONT_STACKS } from './fonts.js'
 
-export const FONT_STACKS = [
-  { id: 'bodoni', label: 'Bodoni Moda (หรู)', value: '"Bodoni Moda","Didot","Times New Roman",serif' },
-  { id: 'cormorant', label: 'Cormorant Garamond (หวาน)', value: '"Cormorant Garamond","Georgia",serif' },
-  { id: 'kanit', label: 'Kanit (ทันสมัย)', value: '"Kanit","Noto Sans Thai",sans-serif' },
-  { id: 'prompt', label: 'Prompt (สะอาด)', value: '"Prompt","Noto Sans Thai",sans-serif' },
-  { id: 'sarabun', label: 'Sarabun (มินิมอล)', value: '"Sarabun","Noto Sans Thai",sans-serif' },
-  { id: 'mitr', label: 'Mitr (สปา)', value: '"Mitr","Noto Sans Thai",sans-serif' },
-  { id: 'noto', label: 'Noto Sans Thai (อ่านง่าย)', value: '"Noto Sans Thai","Helvetica Neue",Arial,sans-serif' },
-]
+export { FONT_STACKS }
 
 export const DEFAULT_PRESET_ID = 'rose-blush'
 

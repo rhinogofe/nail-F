@@ -5,6 +5,7 @@ import { getContent, saveContent, upload, listImages, img } from '../bookingSite
 import { defaultTheme, sizePlaceholders, normalizeThemeSizes, applyTheme } from '../bookingSite/theme.js'
 import { THEME_PRESETS, FONT_STACKS, matchingPresetId, applyPresetTheme, defaultPreset } from '../bookingSite/themePresets.js'
 import { defaultNav, navSectionOptions } from '../bookingSite/sections.js'
+import { loadAllFonts } from '../bookingSite/fonts.js'
 import { SERVICE_ICONS, MORE_SERVICE_ICONS, isMoreIcon, serviceIcon } from '../bookingSite/serviceIcons.js'
 import '../bookingSite/style.css'
 
@@ -30,6 +31,13 @@ const S = {
         fields: []
       },
       {
+        id: 'fonts',
+        shortTitle: 'ฟอนต์',
+        title: 'ฟอนต์ทั้งเว็บ',
+        hint: 'กดเลือกฟอนต์ด้านล่างเพื่อใช้ทั้งเว็บ (หัวข้อและเนื้อหา) หรือปรับแยกได้ในช่องด้านล่างสุด — กดบันทึกทั้งหมดเพื่อใช้บนหน้าเว็บ · ฟอนต์ที่เขียน «อังกฤษ» ไม่มีตัวไทย ตัวไทยจะใช้ฟอนต์สำรองแทน',
+        fields: [['serif', 'ฟอนต์หัวข้อ (ชื่อร้าน หัวข้อใหญ่ หัวข้อแต่ละส่วน)', 'font'], ['sans', 'ฟอนต์เนื้อหา (ข้อความ เมนู ปุ่ม)', 'font']]
+      },
+      {
         id: 'colors-base',
         shortTitle: 'สีหลัก',
         title: 'สีหลักทั้งไซต์',
@@ -51,7 +59,7 @@ const S = {
         shortTitle: 'Layout & รูป',
         title: 'สี layout & รูป',
         hint: 'ใช้เมื่อเปิด layout อัตโนมัติ — ว่าง = ระบบคำนวณให้',
-        fields: [['surface', 'พื้นสลับส่วน', 'color'], ['line', 'เส้นแบ่งส่วน', 'color'], ['border', 'กรอบรูป / การ์ด', 'color'], ['phFrom', 'placeholder รูป (เข้ม)', 'color'], ['phTo', 'placeholder รูป (อ่อน)', 'color'], ['serif', 'ฟอนต์หัวข้อ', 'font'], ['sans', 'ฟอนต์เนื้อหา', 'font'], ['radius', 'ความโค้งการ์ด / ปุ่ม', 'size']]
+        fields: [['surface', 'พื้นสลับส่วน', 'color'], ['line', 'เส้นแบ่งส่วน', 'color'], ['border', 'กรอบรูป / การ์ด', 'color'], ['phFrom', 'placeholder รูป (เข้ม)', 'color'], ['phTo', 'placeholder รูป (อ่อน)', 'color'], ['radius', 'ความโค้งการ์ด / ปุ่ม', 'size']]
       },
       {
         id: 'size-site',
@@ -77,7 +85,8 @@ const S = {
         id: 'colors-hero',
         shortTitle: 'สี Hero',
         title: 'สี Hero — ข้อความ & ปุ่ม',
-        fields: [['heroText', 'ข้อความหลัก (ว่าง = ใช้สีตัวอักษร)', 'color'], ['heroMute', 'ข้อความรอง (ว่าง = ใช้ mute)', 'color'], ['heroAccent', 'accent / เส้นแท็บที่เลือก & เลื่อนลง', 'color'], ['heroBtnBg', 'ปุ่มใต้หัวข้อ (พื้น)', 'color'], ['heroBtnText', 'ปุ่มใต้หัวข้อ (ตัวอักษร)', 'color']]
+        hint: 'สีที่เลือกจะใช้ตามนั้นเสมอ — ถ้าแต่ละสไลด์ใช้รูปต่างกัน ตั้งสีแยกต่อสไลด์ได้ในแท็บ Hero (สไลด์หน้าแรก)',
+        fields: [['heroTitle', 'หัวข้อใหญ่ (ว่าง = ใช้สีข้อความหลัก)', 'color'], ['heroLead', 'ข้อความรองใต้หัวข้อ (ว่าง = ใช้สีข้อความรอง)', 'color'], ['heroText', 'ข้อความหลัก — โลโก้ เมนู แท็บ (ว่าง = ใช้สีตัวอักษร)', 'color'], ['heroMute', 'ข้อความรอง — ใต้โลโก้ (ว่าง = ใช้ mute)', 'color'], ['heroAccent', 'accent / เส้นแท็บที่เลือก & เลื่อนลง', 'color'], ['heroBtnBg', 'ปุ่มใต้หัวข้อ (พื้น)', 'color'], ['heroBtnText', 'ปุ่มใต้หัวข้อ (ตัวอักษร)', 'color']]
       },
       {
         id: 'colors-hero-bar',
@@ -93,7 +102,7 @@ const S = {
       }
     ]
   },
-  hero: { label: 'Hero (สไลด์หน้าแรก)', list: true, fields: [['tab', 'ชื่อแท็บด้านล่าง'], ['title', 'หัวข้อใหญ่'], ['text', 'ข้อความ', 'area'], ['button', 'ข้อความบนปุ่ม (ว่าง = ไม่แสดงปุ่ม)'], ['link', 'ลิงก์ปุ่ม (ว่าง = ใช้ลิงก์จองหลัก)', 'url'], ['showBooking', 'แสดงแถบเลือกวันและจองคิว', 'bool'], ['showImage', 'แสดงรูปพื้นหลัง', 'bool'], ['image', 'รูปพื้นหลัง', 'image']] },
+  hero: { label: 'Hero (สไลด์หน้าแรก)', list: true, fields: [['tab', 'ชื่อแท็บด้านล่าง'], ['title', 'หัวข้อใหญ่'], ['titleColor', 'สีหัวข้อใหญ่ (ว่าง = ตามธีม)', 'color'], ['text', 'ข้อความ', 'area'], ['textColor', 'สีข้อความรอง (ว่าง = ตามธีม)', 'color'], ['button', 'ข้อความบนปุ่ม (ว่าง = ไม่แสดงปุ่ม)'], ['link', 'ลิงก์ปุ่ม (ว่าง = ใช้ลิงก์จองหลัก)', 'url'], ['showBooking', 'แสดงแถบเลือกวันและจองคิว', 'bool'], ['showImage', 'แสดงรูปพื้นหลัง', 'bool'], ['image', 'รูปพื้นหลัง', 'image']] },
   about: { label: 'ที่อยู่ร้าน', hint: 'ส่วนนี้อยู่ท้ายหน้าเว็บ — ที่อยู่ เบอร์โทร อีเมล ดึงจากแท็บ «ตั้งค่าทั่วไป» · ลิงก์ Google Maps: เปิด Google Maps → แชร์ → คัดลอกลิงก์ แล้ววางด้านล่าง กดบันทึกแล้วระบบสร้างแผนที่ให้', fields: [['title', 'หัวข้อ'], ['text', 'ข้อความสั้น (เช่น วิธีเดินทาง ที่จอดรถ)', 'area'], ['mapUrl', 'ลิงก์ Google Maps (ว่าง = ใช้ลิงก์จากแอดมินร้าน ถ้ามี)', 'url'], ['showMap', 'แสดงแผนที่ Google Maps', 'bool'], ['showImage', 'แสดงรูป (ใช้เมื่อไม่มีแผนที่)', 'bool'], ['imageFirst', 'แผนที่ / รูปอยู่ด้านซ้าย (ปิด = ข้อความซ้าย)', 'bool'], ['image', 'รูป', 'image']] },
   rooms: { label: 'บริการ', list: true, prefixRoot: [['roomsHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['name', 'ชื่อรายการ'], ['type', 'รหัสโฟลเดอร์รูป (a-z 0-9 - _ เช่น classic)'], ['detail', 'รายละเอียดสั้น'], ['icon', 'ไอคอน (แสดงเมื่อไม่มีรูป — อัตโนมัติ = เลือกจากชื่อบริการ)', 'icon'], ['titleColor', 'สีชื่อบริการ (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียด (ว่าง = ตามธีม)', 'color'], ['linkColor', 'สีลิงก์จองเลย (ว่าง = ตามธีม)', 'color'], ['showImage', 'ใช้รูปแทนไอคอน (ถ้าอัปโหลดรูปไว้)', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจองของรายการนี้ (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
   promos: { label: 'โปรโมชั่น', list: true, prefixRoot: [['promosHeading', 'หัวข้อด้านบนส่วนนี้ (h2)']], fields: [['title', 'หัวข้อ'], ['text', 'รายละเอียด', 'area'], ['titleColor', 'สีหัวข้อบนรูป (ว่าง = ตามธีม)', 'color'], ['textColor', 'สีรายละเอียดบนรูป (ว่าง = ตามธีม)', 'color'], ['showImage', 'แสดงรูป', 'bool'], ['image', 'รูป', 'image'], ['link', 'ลิงก์ปุ่มจอง (ว่าง = ใช้ลิงก์หลัก)', 'url']] },
@@ -115,6 +124,7 @@ const colorPlaceholder = key => {
   if (key === 'surface' || key === 'line') return 'ว่าง = อัตโนมัติ'
   if (key === 'border') return 'ว่าง = ใช้สีเส้นแบ่ง'
   if (key === 'heroText' || key === 'heroMute') return 'ว่าง = ใช้สีหลัก'
+  if (key === 'heroTitle' || key === 'heroLead') return 'ว่าง = ใช้สีข้อความ Hero'
   if (key === 'heroTabText' || key === 'heroScrollText') return 'ว่าง = ใช้ข้อความหลัก Hero'
   if (key === 'heroTabsBorder') return 'ว่าง = สีเส้นแบ่งธีม'
   if (key === 'heroBarBg') return 'rgba(0,0,0,.35)'
@@ -137,6 +147,10 @@ const hexColor = (v, key) => {
   if (key === 'line' || key === 'border') return '#dddddd'
   if (key === 'heroText') return themeInk()
   if (key === 'heroMute') return themeMute()
+  const heroTitleHex = () => [c.value?.theme?.heroTitle, c.value?.theme?.heroText].map(x => (x || '').trim()).find(x => /^#[0-9a-fA-F]{6}$/.test(x)) || themeInk()
+  const heroLeadHex = () => [c.value?.theme?.heroLead, c.value?.theme?.heroMute].map(x => (x || '').trim()).find(x => /^#[0-9a-fA-F]{6}$/.test(x)) || themeMute()
+  if (key === 'heroTitle') return heroTitleHex()
+  if (key === 'heroLead') return heroLeadHex()
   if (key === 'heroTabText' || key === 'heroScrollText') return themeInk()
   if (key === 'heroTabsBorder') return '#dddddd'
   if (key === 'heroBarBg') return '#333333'
@@ -144,10 +158,12 @@ const hexColor = (v, key) => {
   if (key === 'roomText') return themeMute()
   if (key === 'titleColor') {
     if (tab.value === 'rooms') return (c.value?.theme?.roomTitle || '').trim() || themeInk()
+    if (tab.value === 'hero') return heroTitleHex()
     return '#111111'
   }
   if (key === 'textColor') {
     if (tab.value === 'rooms') return (c.value?.theme?.roomText || '').trim() || themeMute()
+    if (tab.value === 'hero') return heroLeadHex()
     return '#e6ddd0'
   }
   if (key === 'linkColor') return (c.value?.theme?.roomLink || '').trim() || themeInk()
@@ -192,6 +208,7 @@ function paintAdmin() {
 watch(adminEl, paintAdmin)
 watch(() => c.value?.theme, paintAdmin, { deep: true })
 
+watch(themeTab, id => { if (id === 'fonts') loadAllFonts() }, { immediate: true })
 watch([livePreviewEl, themeTab], () => {
   if (themeTab.value === 'presets') paintLivePreview()
 })
@@ -357,6 +374,29 @@ onMounted(async () => {
         <section v-else-if="activeThemeGroup" class="box theme-group" role="tabpanel" :aria-labelledby="'theme-tab-' + activeThemeGroup.id">
           <h2 class="theme-group-title" :id="'theme-tab-' + activeThemeGroup.id">{{ activeThemeGroup.title }}</h2>
           <p v-if="activeThemeGroup.hint" class="theme-group-hint">{{ activeThemeGroup.hint }}</p>
+          <template v-if="activeThemeGroup.id === 'fonts'">
+            <div class="font-preview" aria-label="ตัวอย่างฟอนต์">
+              <b>เล็บสวยแบบจองคิวได้ · Nail Studio</b>
+              <p>ทาสีเจล เติมเล็บ และสปา จองคิวล่วงหน้าได้ ไม่ต้องรอที่ร้าน 0123456789</p>
+            </div>
+            <div class="font-grid" role="radiogroup" aria-label="ฟอนต์ทั้งเว็บ">
+              <button
+                v-for="f in FONT_STACKS"
+                :key="f.id"
+                type="button"
+                role="radio"
+                class="font-card"
+                :class="{ on: c.theme.serif === f.value && c.theme.sans === f.value, part: (c.theme.serif === f.value) !== (c.theme.sans === f.value) }"
+                :aria-checked="c.theme.serif === f.value && c.theme.sans === f.value"
+                :style="{ fontFamily: f.value }"
+                @click="c.theme.serif = f.value; c.theme.sans = f.value"
+              >
+                <span class="font-sample">ร้านเล็บสวย Aa</span>
+                <small>{{ f.label }}</small>
+              </button>
+            </div>
+            <p class="theme-group-hint">ปรับแยกหัวข้อกับเนื้อหา</p>
+          </template>
           <label v-for="f in activeThemeGroup.fields" :key="f[0]" :class="{ chk: f[2] === 'bool' }">
             {{ f[1] }}
             <input v-if="f[2] === 'bool' && f[0] === 'darkEnhance'" type="checkbox" :checked="c.theme[f[0]] === true" @change="c.theme[f[0]] = $event.target.checked">

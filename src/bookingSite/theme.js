@@ -1,3 +1,5 @@
+import { loadFonts } from './fonts.js'
+
 const VARS = {
   bg: '--bg',
   ink: '--ink',
@@ -21,6 +23,8 @@ const HERO_CSS = {
 }
 
 const HERO_OPTIONAL_CSS = {
+  heroTitle: '--hero-title',
+  heroLead: '--hero-lead',
   heroTabText: '--hero-tab-text',
   heroTabsBorder: '--hero-tabs-border',
   heroScrollText: '--hero-scroll-text'
@@ -69,6 +73,8 @@ export const defaultTheme = {
   heroBarText: '#3a2428',
   heroBarBtnBg: '#9b3354',
   heroBarBtnText: '#fff8f6',
+  heroTitle: '',
+  heroLead: '',
   heroTabText: '',
   heroTabsBorder: '',
   heroScrollText: '',
@@ -146,11 +152,12 @@ function roomColor(t, key) {
   return readableOn(t.bg, preferred, '#1a1614', '#f4efe8')
 }
 
+/** สีที่ผู้ใช้เลือกเองใช้ตามนั้น (ข้อความ Hero มักวางบนรูป เทียบกับพื้นหน้าเว็บไม่ได้) — ปรับให้อ่านออกเฉพาะตอนเว้นว่าง */
 function heroColor(t, key) {
   const v = (t[key] || '').trim()
-  if (key === 'heroText') return readableOn(t.bg, v || t.ink, '#1a1614', '#f4efe8')
-  if (key === 'heroMute') return readableOn(t.bg, v || t.mute, '#5c4f4a', '#cfc4b6')
   if (v) return v
+  if (key === 'heroText') return readableOn(t.bg, t.ink, '#1a1614', '#f4efe8')
+  if (key === 'heroMute') return readableOn(t.bg, t.mute, '#5c4f4a', '#cfc4b6')
   return defaultTheme[key]
 }
 
@@ -260,6 +267,7 @@ export function applyTheme(theme, rootEl, opts = {}) {
   const root = rootEl || docEl
   if (!root) return
   const t = { ...defaultTheme, ...(theme || {}) }
+  loadFonts([t.serif, t.sans])
   paintTheme(root, t, true)
   const documentToo = opts.documentToo !== false
   if (documentToo && docEl && root !== docEl) paintTheme(docEl, t, false)

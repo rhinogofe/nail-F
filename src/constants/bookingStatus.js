@@ -38,6 +38,18 @@ export const BOOKING_STATUS = {
   },
 }
 
+/** Wording customers see for their own bookings. Admin labels above are shop-internal. */
+export const BOOKING_STATUS_CUSTOMER_LABELS = Object.freeze({
+  awaiting_payment: 'รอชำระ',
+  pending: 'ชำระแล้ว · รอรับบริการ',
+  done: 'ทำเสร็จแล้ว',
+  cancelled: 'ยกเลิก',
+})
+
+export function bookingStatusCustomerLabel(status) {
+  return BOOKING_STATUS_CUSTOMER_LABELS[status] || status || ''
+}
+
 export const BOOKING_STATUS_FILTERS = [
   { value: '', label: 'ทั้งหมด' },
   { value: 'awaiting_payment', label: BOOKING_STATUS.awaiting_payment.label },

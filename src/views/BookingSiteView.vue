@@ -31,6 +31,14 @@ const heroBtnHref = computed(() => {
   return link || book()
 })
 const heroBtnLabel = computed(() => (h.value?.button || '').trim())
+const slideCopyStyle = computed(() => {
+  const s = {}
+  const t = (h.value?.titleColor || '').trim()
+  const x = (h.value?.textColor || '').trim()
+  if (t) s['--slide-title'] = t
+  if (x) s['--slide-lead'] = x
+  return s
+})
 const bg = u => (u ? { background: `url("${img(u)}") center/cover` } : null)
 const showImg = o => o?.showImage !== false
 const itemBg = o => (showImg(o) && o?.image ? bg(o.image) : null)
@@ -165,7 +173,7 @@ onUnmounted(() => {
 
       <div v-for="(s, i) in c.hero" :key="i" class="slide" :class="['g' + (i % 4), { on: i === cur }]" :style="itemBg(s)"></div>
 
-      <div class="copy">
+      <div class="copy" :style="slideCopyStyle">
         <h1>{{ h.title }}</h1>
         <p>{{ h.text }}</p>
         <a v-if="heroBtnLabel" class="btn" :href="heroBtnHref" :target="tg" rel="noopener">{{ heroBtnLabel }}</a>
