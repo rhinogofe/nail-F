@@ -17,6 +17,8 @@ const focused = ref(false)
 const dragging = ref(false)
 /** ตำแหน่งเป็นหน่วย «การ์ด» ไม่มีขอบเขต — การ์ดที่ตำแหน่ง k คือ items[k mod n] จึงวนเป็นวงกลมได้ทั้งสองทาง */
 const pos = ref(0)
+/** การ์ดแรกที่เห็นตอนหยุดนิ่ง — ใช้ซ่อนการ์ดนอกจอจาก screen reader; ไม่เปลี่ยนระหว่างลาก เพราะ inert กลางนิ้วทำให้ iOS ยกเลิกการแตะ */
+const restIndex = ref(0)
 const stride = ref(0)
 const perView = ref(1)
 
@@ -37,7 +39,7 @@ const slides = computed(() => {
   const n = props.items.length
   if (!active.value) return props.items.map((item, index) => ({ item, index, key: 'r' + index, hidden: false }))
   const count = Math.max(perView.value + 2, n) + 1
-  const first = Math.round(pos.value)
+  const first = restIndex.value
   const out = []
   for (let k = windowStart.value; k < windowStart.value + count; k++) {
     const index = mod(k, n)
@@ -62,6 +64,7 @@ async function refresh() {
   stopAnim()
   active.value = false
   pos.value = 0
+  restIndex.value = 0
   await nextTick()
   measure()
   const n = props.items.length
@@ -79,20 +82,26 @@ function stopAnim() {
   target = null
 }
 
+function rest(to) {
+  pos.value = to
+  restIndex.value = to
+  target = null
+}
+
 function animateTo(to) {
   stopAnim()
-  if (reduceMotion) { pos.value = to; return }
+  if (reduceMotion) { rest(to); return }
   target = to
   const from = pos.value
   const dist = Math.abs(to - from)
-  if (dist < 0.001) { pos.value = to; target = null; return }
+  if (dist < 0.001) { rest(to); return }
   const duration = Math.min(650, 260 + dist * 140)
   const t0 = performance.now()
   const step = now => {
     const t = Math.min(1, (now - t0) / duration)
     pos.value = from + (to - from) * (1 - (1 - t) ** 3)
     if (t < 1) anim = requestAnimationFrame(step)
-    else { anim = null; target = null; pos.value = to }
+    else { anim = null; rest(to) }
   }
   anim = requestAnimationFrame(step)
 }
@@ -113,30 +122,31 @@ function onKeydown(e) {
   else if (e.key === 'ArrowLeft') { e.preventDefault(); userGo(-1) }
 }
 
-function onPointerDown(e) {
-  if (!active.value || (e.pointerType === 'mouse' && e.button !== 0)) return
+function dragStart(id, x, y) {
+  if (!active.value) return
   stopAnim()
   holdUntil = Date.now() + 8000
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pos: pos.value, moved: false, samples: [[e.timeStamp, e.clientX]] }
+  drag = { id, x, y, pos: pos.value, moved: false, samples: [[performance.now(), x]] }
 }
 
-function onPointerMove(e) {
-  if (!drag || e.pointerId !== drag.id || !stride.value) return
-  const dx = e.clientX - drag.x
+/** คืนค่า true เมื่อเป็นการลากแนวนอน (ให้ผู้เรียกกันเบราว์เซอร์เลื่อนหน้า) */
+function dragMove(id, x, y) {
+  if (!drag || id !== drag.id || !stride.value) return false
+  const dx = x - drag.x
   if (!drag.moved) {
-    if (Math.abs(dx) < 6) return
-    if (Math.abs(e.clientY - drag.y) > Math.abs(dx)) { drag = null; return }
+    if (Math.abs(dx) < 6) return false
+    if (Math.abs(y - drag.y) > Math.abs(dx)) { drag = null; return false }
     drag.moved = true
     dragging.value = true
-    track.value?.setPointerCapture?.(e.pointerId)
   }
   pos.value = drag.pos - dx / stride.value
-  drag.samples.push([e.timeStamp, e.clientX])
+  drag.samples.push([performance.now(), x])
   if (drag.samples.length > 6) drag.samples.shift()
+  return true
 }
 
-function onPointerUp(e) {
-  if (!drag || e.pointerId !== drag.id) return
+function dragEnd(id) {
+  if (!drag || id !== drag.id) return
   const d = drag
   drag = null
   if (!d.moved) return
@@ -151,6 +161,33 @@ function onPointerUp(e) {
   let to = Math.round(pos.value + flick)
   if (to === start && Math.abs(pos.value - d.pos) > 0.15) to = start + Math.sign(pos.value - d.pos)
   animateTo(to)
+}
+
+function onPointerDown(e) {
+  if (e.pointerType === 'touch' || (e.pointerType === 'mouse' && e.button !== 0)) return
+  dragStart(e.pointerId, e.clientX, e.clientY)
+}
+function onPointerMove(e) {
+  if (e.pointerType === 'touch') return
+  if (dragMove(e.pointerId, e.clientX, e.clientY) && !track.value?.hasPointerCapture?.(e.pointerId)) {
+    track.value?.setPointerCapture?.(e.pointerId)
+  }
+}
+function onPointerUp(e) {
+  if (e.pointerType !== 'touch') dragEnd(e.pointerId)
+}
+
+function onTouchStart(e) {
+  if (e.touches.length !== 1) { if (drag?.moved) dragEnd(drag.id); drag = null; return }
+  const t = e.touches[0]
+  dragStart('touch', t.clientX, t.clientY)
+}
+function onTouchMove(e) {
+  const t = e.touches[0]
+  if (t && dragMove('touch', t.clientX, t.clientY) && e.cancelable) e.preventDefault()
+}
+function onTouchEnd() {
+  dragEnd('touch')
 }
 
 function onClickCapture(e) {
@@ -233,6 +270,10 @@ onUnmounted(() => {
         @pointermove="onPointerMove"
         @pointerup="onPointerUp"
         @pointercancel="onPointerUp"
+        @touchstart.passive="onTouchStart"
+        @touchmove="onTouchMove"
+        @touchend="onTouchEnd"
+        @touchcancel="onTouchEnd"
         @wheel="onWheel"
         @click.capture="onClickCapture"
         @dragstart.prevent

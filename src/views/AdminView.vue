@@ -18,6 +18,7 @@ import AdminSaveStatus from '../components/AdminSaveStatus.vue'
 import AdminCalendarStatChips from '../components/AdminCalendarStatChips.vue'
 import AdminCalendarLocationLegend from '../components/AdminCalendarLocationLegend.vue'
 import { useAutoSaveField } from '../composables/useAutoSaveField'
+import { createSerialQueue } from '../utils/serialQueue'
 import { usePushNotifications } from '../composables/usePushNotifications'
 import { PUSH_DEVICE_STATUS_EVENT } from '../utils/pushNotifications'
 import { isFirebaseConfigured } from '../utils/firebaseConfig'
@@ -235,6 +236,11 @@ const couponDiscountPercentSaved = ref(20)
 const couponRequiredPointsSaved = ref(100)
 const couponCompletionPointsSaved = ref(10)
 const couponManualCompletionPoints = ref(false)
+const couponManualCompletionPointsSaved = ref(false)
+// The coupon endpoint needs every numeric field on each save; fields share one queue so
+// payloads are built in order from what the user committed, never from in-progress drafts.
+const couponSaveQueue = createSerialQueue()
+const couponCommitted = { discount: null, points: null, completion: null }
 const linePushEnabled = ref(false)
 const lineCanEditEnabled = ref(false)
 const linePushToId = ref('')
@@ -289,9 +295,13 @@ const staffAddBtnLabel = computed(() => {
 })
 const unpaidAutoCancelEnabled = ref(true)
 const unpaidExpireHours = ref(24)
-// Auto-saving the enable switch must not persist an unsaved edit in the hours
-// field, so keep the last value the server actually confirmed.
+// Last values the server confirmed. The endpoint needs both fields on every save.
+const unpaidAutoCancelEnabledSaved = ref(true)
 const unpaidExpireHoursSaved = ref(24)
+// Switch and hours share one endpoint; saves must not overlap or an older payload can land last.
+const unpaidSaveQueue = createSerialQueue()
+// Hours value from the latest blur/Enter that passed validation; text still being typed is never sent.
+let unpaidHoursCommitted = null
 const settingToggleSaving = ref('')
 const useCouponCode = ref('')
 const nailOptions = ref([])
@@ -3075,10 +3085,47 @@ async function loadRegisterShopPinSetting() {
   }
 }
 
+// Set while the "close registration?" dialog is open or its confirmed save is running,
+// so the blur that follows the dialog does not ask again.
+let registerPinClosePending = false
+
+async function confirmCloseShopRegistration() {
+  const result = await adminSwal.fire({
+    title: 'ปิดรับสมัครร้านใหม่?',
+    text: 'รหัสว่างจะซ่อนปุ่มสมัครร้านในหน้าล็อกอิน ร้านใหม่สมัครไม่ได้จนกว่าจะตั้งรหัสอีกครั้ง',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ปิดรับสมัคร',
+    cancelButtonText: 'ยกเลิก',
+    focusCancel: true,
+    returnFocus: false,
+  })
+  return result.isConfirmed
+}
+
 async function saveRegisterShopPinSetting() {
+  if (registerPinClosePending) return
   const pin = String(registerShopPin.value || '').replace(/\D/g, '').slice(0, 4)
   registerShopPin.value = pin
   if (pin === registerShopPinSaved.value) return autoSave.clearInvalid('register-pin')
+  if (!pin) {
+    registerPinClosePending = true
+    try {
+      if (!(await confirmCloseShopRegistration())) {
+        registerShopPin.value = registerShopPinSaved.value
+        autoSave.clearInvalid('register-pin')
+        return
+      }
+      await runRegisterShopPinSave(pin)
+    } finally {
+      registerPinClosePending = false
+    }
+    return
+  }
+  await runRegisterShopPinSave(pin)
+}
+
+async function runRegisterShopPinSave(pin) {
   await autoSave.run('register-pin', {
     value: pin,
     restoreAttempt: () => { registerShopPin.value = pin },
@@ -3103,97 +3150,110 @@ function onRegisterPinInput(event) {
   registerShopPin.value = String(event.target.value || '').replace(/\D/g, '').slice(0, 4)
 }
 
+const COUPON_FIELDS = {
+  discount: {
+    model: couponDiscountPercent,
+    saved: couponDiscountPercentSaved,
+    error: (v) => (!Number.isInteger(v) || v < 1 || v > 100 ? 'ส่วนลดต้องอยู่ระหว่าง 1–100%' : ''),
+  },
+  points: {
+    model: couponRequiredPoints,
+    saved: couponRequiredPointsSaved,
+    error: (v) => (!Number.isInteger(v) || v < 1 ? 'แต้มที่ใช้แลกต้องมากกว่า 0' : ''),
+  },
+  completion: {
+    model: couponCompletionPoints,
+    saved: couponCompletionPointsSaved,
+    error: (v) => (!Number.isInteger(v) || v < 0 ? 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ' : ''),
+  },
+}
+
 function applyCouponResponse(data) {
   couponDiscountPercent.value = Number(data.discount_percent) || couponDiscountPercent.value
   couponRequiredPoints.value = Number(data.required_points) || couponRequiredPoints.value
   couponCompletionPoints.value = Number(data.completion_points ?? couponCompletionPoints.value)
-  couponDiscountPercentSaved.value = couponDiscountPercent.value
-  couponRequiredPointsSaved.value = couponRequiredPoints.value
-  couponCompletionPointsSaved.value = couponCompletionPoints.value
   couponManualCompletionPoints.value = Boolean(data.manual_completion_points)
+  storeCouponSaved(data)
 }
 
-function couponPayload(overrides = {}) {
-  return {
-    discount_percent: Number(couponDiscountPercent.value),
-    required_points: Number(couponRequiredPoints.value),
-    completion_points: Number(couponCompletionPoints.value),
-    manual_completion_points: couponManualCompletionPoints.value,
-    ...overrides,
+function storeCouponSaved(data) {
+  couponDiscountPercentSaved.value = Number(data.discount_percent) || couponDiscountPercentSaved.value
+  couponRequiredPointsSaved.value = Number(data.required_points) || couponRequiredPointsSaved.value
+  couponCompletionPointsSaved.value = Number(data.completion_points ?? couponCompletionPointsSaved.value)
+  couponManualCompletionPointsSaved.value = Boolean(data.manual_completion_points)
+  for (const [name, field] of Object.entries(COUPON_FIELDS)) {
+    if (couponCommitted[name] === field.saved.value) couponCommitted[name] = null
   }
 }
 
 async function loadCouponSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/coupon')
+    for (const name of Object.keys(couponCommitted)) couponCommitted[name] = null
     applyCouponResponse(data)
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่าคูปองไม่สำเร็จ'
   }
 }
 
-async function saveCouponField(key, validate, previousManual) {
-  const payload = couponPayload()
-  const previous = {
-    discount: couponDiscountPercentSaved.value,
-    points: couponRequiredPointsSaved.value,
-    completion: couponCompletionPointsSaved.value,
-    manual: previousManual ?? couponManualCompletionPoints.value,
+function sendCouponSettings() {
+  return couponSaveQueue(async () => {
+    const committedOrSaved = (name) => couponCommitted[name] ?? COUPON_FIELDS[name].saved.value
+    const { data } = await api.patch('/api/admin/settings/coupon', {
+      discount_percent: committedOrSaved('discount'),
+      required_points: committedOrSaved('points'),
+      completion_points: committedOrSaved('completion'),
+      manual_completion_points: couponManualCompletionPoints.value,
+    })
+    storeCouponSaved(data)
+    return data
+  })
+}
+
+async function saveCouponNumberField(name) {
+  const field = COUPON_FIELDS[name]
+  const key = `coupon:${name}`
+  const value = Number(field.model.value)
+  if (value === field.saved.value) {
+    couponCommitted[name] = null
+    return autoSave.clearInvalid(key)
   }
+  if (!field.error(value)) couponCommitted[name] = value
   await autoSave.run(key, {
-    value: payload,
+    value,
+    validate: field.error,
     restoreAttempt: () => {
-      couponDiscountPercent.value = payload.discount_percent
-      couponRequiredPoints.value = payload.required_points
-      couponCompletionPoints.value = payload.completion_points
-      couponManualCompletionPoints.value = payload.manual_completion_points
+      field.model.value = value
+      couponCommitted[name] = value
     },
-    validate,
-    save: async (body) => {
-      const { data } = await api.patch('/api/admin/settings/coupon', body)
-      return data
-    },
-    apply: (data) => applyCouponResponse(data),
+    save: sendCouponSettings,
     revert: () => {
-      couponDiscountPercent.value = previous.discount
-      couponRequiredPoints.value = previous.points
-      couponCompletionPoints.value = previous.completion
-      couponManualCompletionPoints.value = previous.manual
+      if (couponCommitted[name] === value) couponCommitted[name] = null
+      field.model.value = field.saved.value
     },
   })
 }
 
 async function saveCouponManualToggle(nextValue) {
-  const previousManual = !nextValue
   couponManualCompletionPoints.value = nextValue
-  await saveCouponField('coupon:manual', () => '', previousManual)
-}
-
-async function saveCouponDiscountPercent() {
-  const discount = Number(couponDiscountPercent.value)
-  if (discount === couponDiscountPercentSaved.value) return autoSave.clearInvalid('coupon:discount')
-  await saveCouponField('coupon:discount', () => {
-    if (!Number.isInteger(discount) || discount < 1 || discount > 100) return 'ส่วนลดต้องอยู่ระหว่าง 1–100%'
-    return ''
+  await autoSave.run('coupon:manual', {
+    value: nextValue,
+    restoreAttempt: () => { couponManualCompletionPoints.value = nextValue },
+    save: sendCouponSettings,
+    revert: () => { couponManualCompletionPoints.value = couponManualCompletionPointsSaved.value },
   })
 }
 
-async function saveCouponRequiredPoints() {
-  const points = Number(couponRequiredPoints.value)
-  if (points === couponRequiredPointsSaved.value) return autoSave.clearInvalid('coupon:points')
-  await saveCouponField('coupon:points', () => {
-    if (!Number.isInteger(points) || points < 1) return 'แต้มที่ใช้แลกต้องมากกว่า 0'
-    return ''
-  })
+function saveCouponDiscountPercent() {
+  return saveCouponNumberField('discount')
 }
 
-async function saveCouponCompletionPoints() {
-  const completion = Number(couponCompletionPoints.value)
-  if (completion === couponCompletionPointsSaved.value) return autoSave.clearInvalid('coupon:completion')
-  await saveCouponField('coupon:completion', () => {
-    if (!Number.isInteger(completion) || completion < 0) return 'แต้มเมื่อทำเสร็จต้องเป็นจำนวนเต็มที่ไม่ติดลบ'
-    return ''
-  })
+function saveCouponRequiredPoints() {
+  return saveCouponNumberField('points')
+}
+
+function saveCouponCompletionPoints() {
+  return saveCouponNumberField('completion')
 }
 
 function applyLinePushResponse(data) {
@@ -3396,15 +3456,32 @@ async function saveLinePushToggle(field, nextValue) {
   })
 }
 
+function unpaidHoursError(value) {
+  if (!Number.isInteger(value) || value < 1 || value > 168) return 'เวลายกเลิกต้องเป็นจำนวนเต็ม 1–168 ชั่วโมง'
+  return ''
+}
+
+function sendUnpaidAutoCancelSettings() {
+  return unpaidSaveQueue(async () => {
+    const payload = {
+      enabled: unpaidAutoCancelEnabled.value,
+      expire_hours: unpaidHoursCommitted ?? unpaidExpireHoursSaved.value,
+    }
+    const { data } = await api.patch('/api/admin/settings/unpaid-auto-cancel', payload)
+    unpaidAutoCancelEnabledSaved.value = data.enabled !== false
+    unpaidExpireHoursSaved.value = Number(data.expire_hours) || payload.expire_hours
+    if (unpaidHoursCommitted === unpaidExpireHoursSaved.value) unpaidHoursCommitted = null
+    return data
+  })
+}
+
 async function saveUnpaidAutoCancelToggle(nextValue) {
-  await autoSaveSettingToggle({
-    key: 'unpaid:enabled',
-    url: '/api/admin/settings/unpaid-auto-cancel',
-    payload: { enabled: nextValue, expire_hours: unpaidExpireHoursSaved.value },
-    label: 'ยกเลิกคิวรอชำระอัตโนมัติ',
-    nextValue,
-    model: unpaidAutoCancelEnabled,
-    apply: (data) => { unpaidAutoCancelEnabled.value = data.enabled !== false },
+  unpaidAutoCancelEnabled.value = nextValue
+  await autoSave.run('unpaid:enabled', {
+    value: nextValue,
+    restoreAttempt: () => { unpaidAutoCancelEnabled.value = nextValue },
+    save: sendUnpaidAutoCancelSettings,
+    revert: () => { unpaidAutoCancelEnabled.value = unpaidAutoCancelEnabledSaved.value },
   })
 }
 
@@ -3504,8 +3581,10 @@ async function loadUnpaidAutoCancelSetting() {
   try {
     const { data } = await api.get('/api/admin/settings/unpaid-auto-cancel')
     unpaidAutoCancelEnabled.value = data.enabled !== false
+    unpaidAutoCancelEnabledSaved.value = unpaidAutoCancelEnabled.value
     unpaidExpireHours.value = Number(data.expire_hours) || 24
     unpaidExpireHoursSaved.value = unpaidExpireHours.value
+    unpaidHoursCommitted = null
   } catch (error) {
     errorMessage.value = error?.response?.data?.error || 'โหลดตั้งค่ายกเลิกอัตโนมัติไม่สำเร็จ'
   }
@@ -3513,28 +3592,23 @@ async function loadUnpaidAutoCancelSetting() {
 
 async function saveUnpaidAutoCancelSetting() {
   const hours = Number(unpaidExpireHours.value)
-  if (hours === unpaidExpireHoursSaved.value) return autoSave.clearInvalid('unpaid:hours')
-  const previous = unpaidExpireHoursSaved.value
+  if (hours === unpaidExpireHoursSaved.value) {
+    unpaidHoursCommitted = null
+    return autoSave.clearInvalid('unpaid:hours')
+  }
+  if (!unpaidHoursError(hours)) unpaidHoursCommitted = hours
   await autoSave.run('unpaid:hours', {
     value: hours,
-    restoreAttempt: () => { unpaidExpireHours.value = hours },
-    validate: (value) => {
-      if (!Number.isInteger(value) || value < 1 || value > 168) return 'เวลายกเลิกต้องเป็นจำนวนเต็ม 1–168 ชั่วโมง'
-      return ''
+    restoreAttempt: () => {
+      unpaidExpireHours.value = hours
+      unpaidHoursCommitted = hours
     },
-    save: async (value) => {
-      const { data } = await api.patch('/api/admin/settings/unpaid-auto-cancel', {
-        enabled: unpaidAutoCancelEnabled.value,
-        expire_hours: value,
-      })
-      return data
+    validate: unpaidHoursError,
+    save: sendUnpaidAutoCancelSettings,
+    revert: () => {
+      if (unpaidHoursCommitted === hours) unpaidHoursCommitted = null
+      unpaidExpireHours.value = unpaidExpireHoursSaved.value
     },
-    apply: (data) => {
-      unpaidAutoCancelEnabled.value = data.enabled !== false
-      unpaidExpireHours.value = Number(data.expire_hours) || hours
-      unpaidExpireHoursSaved.value = unpaidExpireHours.value
-    },
-    revert: () => { unpaidExpireHours.value = previous },
   })
 }
 
@@ -6350,12 +6424,12 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
             @blur="saveDepositAmount"
             @keydown.enter.prevent="saveDepositAmount"
           />
+          <AdminSaveStatus
+            :status="autoSaveState('deposit:amount').status"
+            :error="autoSaveState('deposit:amount').error"
+            @retry="autoSave.retry('deposit:amount')"
+          />
         </label>
-        <AdminSaveStatus
-          :status="autoSaveState('deposit:amount').status"
-          :error="autoSaveState('deposit:amount').error"
-          @retry="autoSave.retry('deposit:amount')"
-        />
       </div>
       <div class="shop-hours-preview">
         <i class="ti ti-cash" style="font-size:16px;color:var(--color-primary)"></i>
@@ -6363,7 +6437,7 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
           ลูกค้าชำระ <strong>เต็มจำนวน</strong> ตามราคาบริการในคิว
         </template>
         <template v-else>
-          ลูกค้าชำระมัดจำ <strong>{{ depositAmount.toLocaleString('th-TH') }}</strong> บาท
+          ลูกค้าชำระมัดจำ <strong>{{ depositAmountSaved.toLocaleString('th-TH') }}</strong> บาท
         </template>
       </div>
       </div>

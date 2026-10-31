@@ -88,7 +88,7 @@ margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-weig
 .booking-site .loop-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .booking-site .loop-viewport{overflow:hidden;overflow-x:clip;overflow-y:visible}
 .booking-site .loop-track{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 52px) / 3);gap:26px}
-.booking-site .loop-track.on{touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;will-change:transform}
+.booking-site .loop-track.on{touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;will-change:transform}
 .booking-site .loop-track.dragging{cursor:grabbing}
 .booking-site .loop-slide{min-width:0}
 .booking-site .loop-slide>.card{height:100%}

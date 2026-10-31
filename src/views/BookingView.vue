@@ -1112,11 +1112,11 @@ const pointsBannerHtml = computed(() => {
   if (couponSettings.value.manualCompletionPoints) {
     return ui.get(
       'ui_points_banner_manual',
-      'เมื่อช่างทำเสร็จ ร้านจะบันทึกแต้มให้คุณ'
+      'เมื่อช่างทำเสร็จแล้ว ร้านจะบันทึกแต้มให้คุณ'
     )
   }
   return formatUiText(
-    ui.get('ui_points_banner', 'เมื่อช่างทำเสร็จ คุณจะได้รับ <strong>+{points} แต้ม</strong>'),
+    ui.get('ui_points_banner', 'เมื่อช่างทำเสร็จแล้ว คุณจะได้รับ <strong>+{points} แต้ม</strong>'),
     { points: (couponSettings.value.completionPoints ?? 10).toLocaleString('th-TH') }
   )
 })

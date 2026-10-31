@@ -9,7 +9,7 @@ import { useCoupons } from '../composables/useCoupons'
 import { useUiSettingsStore } from '../stores/uiSettings'
 import BrandMark from '../components/BrandMark.vue'
 import AccountMenuDrawer from '../components/AccountMenuDrawer.vue'
-import { bookingStatusCustomerLabel } from '../constants/bookingStatus'
+import { BOOKING_STATUS_CUSTOMER_LABELS, bookingStatusCustomerLabel } from '../constants/bookingStatus'
 
 const auth = useAuthStore()
 const bookingStore = useBookingStore()
@@ -191,7 +191,7 @@ onMounted(async () => {
               </div>
               <div class="stat-box">
                 <strong>{{ auth.user?.completed_bookings ?? 0 }}</strong>
-                <span>ทำเสร็จ</span>
+                <span>{{ BOOKING_STATUS_CUSTOMER_LABELS.done }}</span>
               </div>
               <div class="stat-box">
                 <strong>{{ auth.user?.cancelled_bookings ?? 0 }}</strong>
