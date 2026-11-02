@@ -15,41 +15,43 @@ const active = ref(false)
 const hover = ref(false)
 const focused = ref(false)
 const dragging = ref(false)
-/** ตำแหน่งเป็นหน่วย «การ์ด» ไม่มีขอบเขต — การ์ดที่ตำแหน่ง k คือ items[k mod n] จึงวนเป็นวงกลมได้ทั้งสองทาง */
-const pos = ref(0)
-/** การ์ดแรกที่เห็นตอนหยุดนิ่ง — ใช้ซ่อนการ์ดนอกจอจาก screen reader; ไม่เปลี่ยนระหว่างลาก เพราะ inert กลางนิ้วทำให้ iOS ยกเลิกการแตะ */
-const restIndex = ref(0)
 const stride = ref(0)
 const perView = ref(1)
+/** การ์ดแรกที่เห็นตอนหยุดนิ่ง (นับรวมสำเนา) — ใช้ซ่อนการ์ดนอกจอจาก screen reader */
+const restIndex = ref(0)
 
-let anim = null
 let target = null
+let settleTimer
 let playTimer
 let holdUntil = 0
 let ro
-let wheelTimer
 let drag = null
+let touching = false
 let suppressClick = false
 
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion:reduce)').matches
 const mod = (k, n) => ((k % n) + n) % n
+const n = computed(() => props.items.length)
+/**
+ * ใช้การเลื่อนแนวนอนของเบราว์เซอร์เอง (iOS Safari ปัดลื่นที่สุดแบบนี้) แล้วต่อสำเนาไว้หลายชุด
+ * พอหยุดเลื่อนจะกระโดดกลับชุดกลางแบบมองไม่เห็น — ต้องปัดต่อเนื่องเกินครึ่งหนึ่งของสำเนาทั้งหมดถึงจะชนขอบ
+ */
+const copies = computed(() => {
+  let c = Math.max(5, Math.ceil(100 / Math.max(1, n.value)))
+  if (c % 2 === 0) c++
+  return c
+})
+const middleStart = computed(() => Math.floor(copies.value / 2) * n.value)
 
-const windowStart = computed(() => Math.floor(pos.value) - 1)
 const slides = computed(() => {
-  const n = props.items.length
   if (!active.value) return props.items.map((item, index) => ({ item, index, key: 'r' + index, hidden: false }))
-  const count = Math.max(perView.value + 2, n) + 1
-  const first = restIndex.value
   const out = []
-  for (let k = windowStart.value; k < windowStart.value + count; k++) {
-    const index = mod(k, n)
-    out.push({ item: props.items[index], index, key: 'k' + k, hidden: k < first || k >= first + perView.value })
+  const total = copies.value * n.value
+  for (let k = 0; k < total; k++) {
+    out.push({ item: props.items[k % n.value], index: k % n.value, key: 'k' + k, hidden: k < restIndex.value || k >= restIndex.value + perView.value })
   }
   return out
 })
-const trackStyle = computed(() => (active.value
-  ? { transform: `translate3d(${-(pos.value - windowStart.value) * stride.value}px,0,0)` }
-  : null))
 
 function measure() {
   const el = track.value
@@ -60,55 +62,60 @@ function measure() {
   perView.value = stride.value ? Math.max(1, Math.round((viewport.value.clientWidth + gap) / stride.value)) : 1
 }
 
+const currentIndex = () => (stride.value && viewport.value ? Math.round(viewport.value.scrollLeft / stride.value) : 0)
+
+function jumpTo(k) {
+  const el = viewport.value
+  if (!el) return
+  el.style.scrollBehavior = 'auto'
+  el.scrollLeft = k * stride.value
+  el.style.scrollBehavior = ''
+}
+
 async function refresh() {
-  stopAnim()
+  clearTimeout(settleTimer)
+  target = null
   active.value = false
-  pos.value = 0
-  restIndex.value = 0
   await nextTick()
   measure()
-  const n = props.items.length
-  active.value = n > 1 && n >= perView.value && (n > props.minLoop || perView.value < n)
+  active.value = n.value > 1 && n.value >= perView.value && (n.value > props.minLoop || perView.value < n.value)
   if (active.value) {
     await nextTick()
     measure()
+    restIndex.value = middleStart.value
+    jumpTo(middleStart.value)
+  } else if (viewport.value) {
+    viewport.value.scrollLeft = 0
   }
   restartPlay()
 }
 
-function stopAnim() {
-  if (anim) cancelAnimationFrame(anim)
-  anim = null
+/** เรียกตอนเลื่อนหยุดแล้ว: ย้ายไปการ์ดเดียวกันในชุดกลาง (ภาพเหมือนเดิมทุกพิกเซล) */
+function settle() {
+  if (!active.value || touching || drag || !stride.value) return
+  const k = currentIndex()
+  const home = middleStart.value + mod(k - middleStart.value, n.value)
+  if (home !== k) jumpTo(home)
+  restIndex.value = home
   target = null
 }
 
-function rest(to) {
-  pos.value = to
-  restIndex.value = to
-  target = null
+function onScroll() {
+  clearTimeout(settleTimer)
+  settleTimer = setTimeout(settle, 160)
 }
 
-function animateTo(to) {
-  stopAnim()
-  if (reduceMotion) { rest(to); return }
-  target = to
-  const from = pos.value
-  const dist = Math.abs(to - from)
-  if (dist < 0.001) { rest(to); return }
-  const duration = Math.min(650, 260 + dist * 140)
-  const t0 = performance.now()
-  const step = now => {
-    const t = Math.min(1, (now - t0) / duration)
-    pos.value = from + (to - from) * (1 - (1 - t) ** 3)
-    if (t < 1) anim = requestAnimationFrame(step)
-    else { anim = null; rest(to) }
-  }
-  anim = requestAnimationFrame(step)
+function scrollToIndex(k) {
+  const el = viewport.value
+  if (!el) return
+  target = k
+  el.scrollTo({ left: k * stride.value, behavior: reduceMotion ? 'auto' : 'smooth' })
 }
 
 function go(dir) {
-  if (!active.value) return
-  animateTo((target ?? Math.round(pos.value)) + dir)
+  if (!active.value || !stride.value) return
+  if (target == null) settle()
+  scrollToIndex((target ?? currentIndex()) + dir)
 }
 
 function userGo(dir) {
@@ -122,95 +129,64 @@ function onKeydown(e) {
   else if (e.key === 'ArrowLeft') { e.preventDefault(); userGo(-1) }
 }
 
-function dragStart(id, x, y) {
-  if (!active.value) return
-  stopAnim()
+function onTouchStart() {
+  touching = true
+  target = null
   holdUntil = Date.now() + 8000
-  drag = { id, x, y, pos: pos.value, moved: false, samples: [[performance.now(), x]] }
+}
+function onTouchEnd() {
+  touching = false
+  onScroll()
 }
 
-/** คืนค่า true เมื่อเป็นการลากแนวนอน (ให้ผู้เรียกกันเบราว์เซอร์เลื่อนหน้า) */
-function dragMove(id, x, y) {
-  if (!drag || id !== drag.id || !stride.value) return false
-  const dx = x - drag.x
+function onPointerDown(e) {
+  if (!active.value || e.pointerType !== 'mouse' || e.button !== 0) return
+  target = null
+  holdUntil = Date.now() + 8000
+  drag = { id: e.pointerId, x: e.clientX, left: viewport.value.scrollLeft, moved: false, samples: [[performance.now(), e.clientX]] }
+}
+function onPointerMove(e) {
+  if (!drag || e.pointerId !== drag.id) return
+  const dx = e.clientX - drag.x
   if (!drag.moved) {
-    if (Math.abs(dx) < 6) return false
-    if (Math.abs(y - drag.y) > Math.abs(dx)) { drag = null; return false }
+    if (Math.abs(dx) < 6) return
     drag.moved = true
     dragging.value = true
+    viewport.value.setPointerCapture?.(e.pointerId)
   }
-  pos.value = drag.pos - dx / stride.value
-  drag.samples.push([performance.now(), x])
+  viewport.value.scrollLeft = drag.left - dx
+  drag.samples.push([performance.now(), e.clientX])
   if (drag.samples.length > 6) drag.samples.shift()
-  return true
 }
-
-function dragEnd(id) {
-  if (!drag || id !== drag.id) return
+async function onPointerUp(e) {
+  if (!drag || e.pointerId !== drag.id) return
   const d = drag
   drag = null
   if (!d.moved) return
-  dragging.value = false
   suppressClick = true
   setTimeout(() => { suppressClick = false }, 0)
   const [[t0, x0]] = d.samples
   const [t1, x1] = d.samples[d.samples.length - 1]
   const velocity = t1 > t0 ? (x1 - x0) / (t1 - t0) : 0
   const flick = Math.max(-perView.value, Math.min(perView.value, (-velocity * 180) / stride.value))
-  const start = Math.round(d.pos)
-  let to = Math.round(pos.value + flick)
-  if (to === start && Math.abs(pos.value - d.pos) > 0.15) to = start + Math.sign(pos.value - d.pos)
-  animateTo(to)
-}
-
-function onPointerDown(e) {
-  if (e.pointerType === 'touch' || (e.pointerType === 'mouse' && e.button !== 0)) return
-  dragStart(e.pointerId, e.clientX, e.clientY)
-}
-function onPointerMove(e) {
-  if (e.pointerType === 'touch') return
-  if (dragMove(e.pointerId, e.clientX, e.clientY) && !track.value?.hasPointerCapture?.(e.pointerId)) {
-    track.value?.setPointerCapture?.(e.pointerId)
-  }
-}
-function onPointerUp(e) {
-  if (e.pointerType !== 'touch') dragEnd(e.pointerId)
-}
-
-function onTouchStart(e) {
-  if (e.touches.length !== 1) { if (drag?.moved) dragEnd(drag.id); drag = null; return }
-  const t = e.touches[0]
-  dragStart('touch', t.clientX, t.clientY)
-}
-function onTouchMove(e) {
-  const t = e.touches[0]
-  if (t && dragMove('touch', t.clientX, t.clientY) && e.cancelable) e.preventDefault()
-}
-function onTouchEnd() {
-  dragEnd('touch')
+  const start = Math.round(d.left / stride.value)
+  const now = viewport.value.scrollLeft / stride.value
+  let to = Math.round(now + flick)
+  if (to === start && Math.abs(now - start) > 0.15) to = start + Math.sign(now - start)
+  dragging.value = false
+  await nextTick()
+  scrollToIndex(to)
 }
 
 function onClickCapture(e) {
   if (suppressClick) { e.preventDefault(); e.stopPropagation() }
 }
 
-function onWheel(e) {
-  if (!active.value || !stride.value) return
-  const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX
-  if (Math.abs(dx) <= Math.abs(e.shiftKey ? 0 : e.deltaY)) return
-  e.preventDefault()
-  stopAnim()
-  holdUntil = Date.now() + 8000
-  pos.value += (e.deltaMode === 1 ? dx * 16 : dx) / stride.value
-  clearTimeout(wheelTimer)
-  wheelTimer = setTimeout(() => animateTo(Math.round(pos.value)), 140)
-}
-
 function restartPlay() {
   clearInterval(playTimer)
   if (!active.value || reduceMotion || !props.autoplay) return
   playTimer = setInterval(() => {
-    if (hover.value || focused.value || drag || document.hidden || Date.now() < holdUntil) return
+    if (hover.value || focused.value || touching || drag || document.hidden || Date.now() < holdUntil) return
     go(1)
   }, props.autoplay)
 }
@@ -219,6 +195,7 @@ watch(() => props.items.length, () => refresh())
 
 onMounted(() => {
   refresh()
+  viewport.value?.addEventListener('scrollend', settle)
   if (typeof ResizeObserver === 'function') {
     let w = viewport.value?.clientWidth || 0
     ro = new ResizeObserver(() => {
@@ -229,9 +206,9 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
-  stopAnim()
+  clearTimeout(settleTimer)
   clearInterval(playTimer)
-  clearTimeout(wheelTimer)
+  viewport.value?.removeEventListener('scrollend', settle)
   ro?.disconnect()
 })
 </script>
@@ -260,24 +237,22 @@ onUnmounted(() => {
       </div>
     </div>
     <slot name="intro" />
-    <div ref="viewport" class="loop-viewport">
-      <div
-        ref="track"
-        class="loop-track"
-        :class="{ on: active, dragging }"
-        :style="trackStyle"
-        @pointerdown="onPointerDown"
-        @pointermove="onPointerMove"
-        @pointerup="onPointerUp"
-        @pointercancel="onPointerUp"
-        @touchstart.passive="onTouchStart"
-        @touchmove="onTouchMove"
-        @touchend="onTouchEnd"
-        @touchcancel="onTouchEnd"
-        @wheel="onWheel"
-        @click.capture="onClickCapture"
-        @dragstart.prevent
-      >
+    <div
+      ref="viewport"
+      class="loop-viewport"
+      :class="{ on: active, dragging }"
+      @scroll.passive="onScroll"
+      @touchstart.passive="onTouchStart"
+      @touchend.passive="onTouchEnd"
+      @touchcancel.passive="onTouchEnd"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+      @click.capture="onClickCapture"
+      @dragstart.prevent
+    >
+      <div ref="track" class="loop-track">
         <div
           v-for="s in slides"
           :key="s.key"
