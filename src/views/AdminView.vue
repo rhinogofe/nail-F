@@ -30,7 +30,7 @@ const adminSwal = Swal.mixin({
     container: 'swal-over-app-modal',
   },
 })
-import { buildBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, normalizeBookingMinGapMinutes, resolveEffectiveMinGapMinutes, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey, formatDurationMinutes, sumOptionDurationMinutes, applyServiceDurationToSlot } from '../utils/bookingSlots'
+import { buildBookingSlotSelectOptions, buildMoveBookingSlotSelectOptions, slotTimeLabel, normalizeShopOpenHour, normalizeShopLastBookingHour, normalizeBookingSlotHours, normalizeBookingMinGapMinutes, resolveEffectiveMinGapMinutes, bookingEndHour, formatHmLabel, formatLastBookingOptionLabel, availableStartHoursForDay, availableStartMinutesForHour, maxEndMinutesForDayHourStart, maxEndMinutesForDayHourEdit, toMinutesFromHm, bookingRowToSlot, slotLabel, slotKey, parseSlotKey, formatDurationMinutes, sumOptionDurationMinutes, applyServiceDurationToSlot } from '../utils/bookingSlots'
 import { clipThumbnailSrc } from '../utils/clipThumbnail'
 import { UI_FIELD_GROUPS } from '../constants/uiSettingsFields'
 import { BOOKING_STATUS, BOOKING_STATUS_FILTERS, CALENDAR_PAID_LABEL, bookingStatusLabel } from '../constants/bookingStatus'
@@ -676,7 +676,7 @@ const bookingEditBookingsForSlot = computed(() => {
 const bookingEditHourOptions = computed(() => {
   if (bookingEditDayClosed.value) return []
   const sameDay = bookingEditDate.value === bookingEditOriginalDate.value
-  return buildBookingSlotSelectOptions({
+  return buildMoveBookingSlotSelectOptions({
     openHour: shopOpenHour.value,
     lastBookingHour: shopLastBookingHour.value,
     extras: bookingEditExtraHours.value,
@@ -688,6 +688,7 @@ const bookingEditHourOptions = computed(() => {
     extendByServices: extendBookingByServices.value,
     minGapMinutes: effectiveMinGapMinutes.value,
   }, {
+    movingBookingId: bookingEditItem.value?.id ?? null,
     excludeSlotKey: sameDay ? bookingEditOriginalSlotKey.value : null,
   })
 })
@@ -763,27 +764,60 @@ function formatBookingOptionDuration(opt) {
   return formatDurationMinutes(mins)
 }
 
-const bookingAddUsers = computed(() => {
-  const q = bookingAddUserQuery.value.trim().toLowerCase()
-  if (!q) return users.value
-  return users.value.filter(
-    (u) =>
-      String(u.name || '').toLowerCase().includes(q)
-      || String(u.email || '').toLowerCase().includes(q)
-      || String(u.provider_id || '').includes(q)
-  )
-})
+const BOOKING_USER_SEARCH_LIMIT = 50
+const bookingAddUserResults = ref([])
+const bookingEditUserResults = ref([])
+const bookingAddUserSearching = ref(false)
+const bookingEditUserSearching = ref(false)
+const bookingUserCache = new Map()
+const bookingUserSearchSeq = { add: 0, edit: 0 }
+const bookingUserSearchTimers = { add: null, edit: null }
 
-const bookingEditUsers = computed(() => {
-  const q = bookingEditUserQuery.value.trim().toLowerCase()
-  if (!q) return users.value
-  return users.value.filter(
-    (u) =>
-      String(u.name || '').toLowerCase().includes(q)
-      || String(u.email || '').toLowerCase().includes(q)
-      || String(u.provider_id || '').includes(q)
-  )
-})
+function withSelectedUser(list, selectedId) {
+  if (!selectedId || list.some((u) => String(u.id) === String(selectedId))) return list
+  const selected = bookingUserCache.get(String(selectedId))
+  return selected ? [selected, ...list] : list
+}
+
+const bookingAddUsers = computed(() => withSelectedUser(bookingAddUserResults.value, bookingAddUserId.value))
+const bookingEditUsers = computed(() => withSelectedUser(bookingEditUserResults.value, bookingEditUserId.value))
+
+async function searchBookingUsers(target) {
+  const queryRef = target === 'add' ? bookingAddUserQuery : bookingEditUserQuery
+  const resultsRef = target === 'add' ? bookingAddUserResults : bookingEditUserResults
+  const loadingRef = target === 'add' ? bookingAddUserSearching : bookingEditUserSearching
+  const seq = ++bookingUserSearchSeq[target]
+  const q = queryRef.value.trim()
+  const params = { limit: BOOKING_USER_SEARCH_LIMIT, offset: 0, lookup: 'booking' }
+  if (q) params.q = q
+  loadingRef.value = true
+  try {
+    const { data } = await api.get('/api/admin/users', { params })
+    if (seq !== bookingUserSearchSeq[target]) return
+    const rows = Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : [])
+    for (const u of rows) bookingUserCache.set(String(u.id), u)
+    resultsRef.value = rows
+  } catch (err) {
+    if (seq !== bookingUserSearchSeq[target]) return
+    const message = err?.response?.data?.error || 'ค้นหาลูกค้าไม่สำเร็จ'
+    if (target === 'add') bookingAddError.value = message
+    else bookingEditError.value = message
+  } finally {
+    if (seq === bookingUserSearchSeq[target]) loadingRef.value = false
+  }
+}
+
+function bookingUserOptionLabel(u) {
+  const contact = u?.provider === 'phone' && u?.provider_id
+    ? u.provider_id
+    : String(u?.email || '').replace(/@phone\.local$/i, '')
+  return contact ? `${u?.name || '-'} (${contact})` : (u?.name || '-')
+}
+
+function queueBookingUserSearch(target) {
+  clearTimeout(bookingUserSearchTimers[target])
+  bookingUserSearchTimers[target] = setTimeout(() => searchBookingUsers(target), 300)
+}
 
 const adminTabs = [
   { key: 'bookings', label: 'จัดการคิว', icon: 'ti-calendar' },
@@ -2284,12 +2318,6 @@ async function loadUsers({ reset = false } = {}) {
     usersLoading.value = false
     usersLoadingMore.value = false
     nextTick(setupUsersInfiniteScroll)
-  }
-}
-
-async function ensureUsersLoaded() {
-  if (!usersLoaded.value && !usersLoading.value) {
-    await loadUsers({ reset: true })
   }
 }
 
@@ -4080,8 +4108,17 @@ async function editBooking(item) {
   bookingEditLoading.value = true
   bookingEditOpen.value = true
 
+  if (item.user_id) {
+    bookingUserCache.set(String(item.user_id), {
+      id: item.user_id,
+      name: item.user_name,
+      email: item.user_email,
+    })
+  }
+  bookingEditUserResults.value = []
+
   try {
-    await ensureUsersLoaded()
+    await searchBookingUsers('edit')
     const { data: hoursData } = await api.get('/api/bookings/shop-hours')
     shopOpenHour.value = normalizeShopOpenHour(hoursData?.open_hour)
     shopLastBookingHour.value = normalizeShopLastBookingHour(hoursData?.last_booking_hour, shopOpenHour.value)
@@ -4199,6 +4236,10 @@ async function saveBookingEdit() {
       start_hour: slot.startHour,
       start_minute: slot.startMinute,
       nailoption_ids: bookingEditSelectedIds.value,
+    }
+    if (bookingEditMoveToSlotKey.value) {
+      payload.end_hour = slot.endHour
+      payload.end_minute = slot.endMinute
     }
     const { data } = await api.patch(`/api/admin/bookings/${bookingEditItem.value.id}`, payload)
     message.value = data?.message || 'บันทึกแล้ว'
@@ -4460,9 +4501,10 @@ async function openBookingAdd() {
   bookingAddSlotBookings.value = []
   bookingAddSlotBlocks.value = []
   bookingAddError.value = ''
+  bookingAddUserResults.value = []
   bookingAddOpen.value = true
   await Promise.all([
-    ensureUsersLoaded(),
+    searchBookingUsers('add'),
     loadAdminStaff(),
   ])
   await loadBookingAddDayData()
@@ -5400,6 +5442,8 @@ onUnmounted(() => {
   window.removeEventListener('resize', updateAdminNavOverflow)
   usersObserver?.disconnect()
   if (userSearchDebounce) clearTimeout(userSearchDebounce)
+  clearTimeout(bookingUserSearchTimers.add)
+  clearTimeout(bookingUserSearchTimers.edit)
   if (adminToastTimer) clearTimeout(adminToastTimer)
 })
 
@@ -8508,16 +8552,20 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               type="search"
               class="admin-input"
               placeholder="ชื่อ อีเมล หรือเบอร์โทร"
-              @input="bookingAddError = ''"
+              @input="bookingAddError = ''; queueBookingUserSearch('add')"
             />
           </label>
+          <p v-if="bookingAddUserSearching" class="muted booking-edit-hint">กำลังค้นหาลูกค้า...</p>
+          <p v-else-if="bookingAddUserQuery.trim() && !bookingAddUserResults.length" class="muted booking-edit-hint">
+            ไม่พบลูกค้า · ลูกค้าใหม่ที่ยังไม่เคยจองร้านนี้ ให้พิมพ์เบอร์โทรหรืออีเมลให้ครบ
+          </p>
 
           <label class="booking-edit-field">
             ลูกค้า
             <select v-model="bookingAddUserId" class="admin-input" @change="bookingAddError = ''">
               <option value="">-- เลือกลูกค้า --</option>
               <option v-for="u in bookingAddUsers" :key="u.id" :value="u.id">
-                {{ u.name }} ({{ u.email }})
+                {{ bookingUserOptionLabel(u) }}
               </option>
             </select>
           </label>
@@ -8770,17 +8818,21 @@ watch([activeTab, usersHasMore, usersSentinelRef], () => {
               v-model="bookingEditUserQuery"
               type="search"
               class="admin-input"
-              placeholder="ชื่อ / อีเมล"
-              @input="bookingEditError = ''"
+              placeholder="ชื่อ อีเมล หรือเบอร์โทร"
+              @input="bookingEditError = ''; queueBookingUserSearch('edit')"
             />
           </label>
+          <p v-if="bookingEditUserSearching" class="muted booking-edit-hint">กำลังค้นหาลูกค้า...</p>
+          <p v-else-if="bookingEditUserQuery.trim() && !bookingEditUserResults.length" class="muted booking-edit-hint">
+            ไม่พบลูกค้า · ลูกค้าใหม่ที่ยังไม่เคยจองร้านนี้ ให้พิมพ์เบอร์โทรหรืออีเมลให้ครบ
+          </p>
 
           <label class="booking-edit-field">
             ลูกค้า
             <select v-model="bookingEditUserId" class="admin-input" @change="bookingEditError = ''">
               <option value="">-- เลือกลูกค้า --</option>
               <option v-for="u in bookingEditUsers" :key="u.id" :value="u.id">
-                {{ u.name }} ({{ u.email }})
+                {{ bookingUserOptionLabel(u) }}
               </option>
             </select>
           </label>

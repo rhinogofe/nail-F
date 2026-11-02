@@ -908,6 +908,14 @@ export function buildBookingSlotSelectOptions(params, { excludeSlotKey = null, i
   return slotsToSelectOptions(slots, { excludeSlotKey, includeSlotKey })
 }
 
+/** Move-to options for an existing booking: its own time is freed first, matching server validation. */
+export function buildMoveBookingSlotSelectOptions(params, { movingBookingId = null, excludeSlotKey = null } = {}) {
+  const bookings = movingBookingId == null
+    ? params.bookings
+    : (params.bookings || []).filter((b) => String(b.id) !== String(movingBookingId))
+  return buildBookingSlotSelectOptions({ ...params, bookings }, { excludeSlotKey })
+}
+
 export function buildBookableSlotHours(params) {
   const slot = normalizeBookingSlotHours(params.slotHours)
   const normalized = {
